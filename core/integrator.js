@@ -92,12 +92,13 @@ export function integrate(state, controls, config, dt) {
 
   const finalState = { ...state, ...next, t: state.t + dt };
   const forcesAtNew = computeForces(finalState, controls, config);
-  const aback = updateAback(finalState, forcesAtNew.aw.angleToBoat, dt);
+  const aback = updateAback(finalState, forcesAtNew.aw.angleToBoat, forcesAtNew.amaLoad, dt, config);
 
   return {
     ...finalState,
     amaLoad: forcesAtNew.amaLoad,
     abackTimer: aback.abackTimer,
+    overloadTimer: aback.overloadTimer,
     capsized: aback.capsized,
   };
 }

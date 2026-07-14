@@ -1,5 +1,7 @@
 # PROMPT SUPPLEMENT: Physics core architecture (Step 1 — headless)
 
+*Last reviewed: 2026-07-14*
+
 This document supplements PROMPT_proa_simulator_EN.md. In Step 1,
 implement ONLY the physics core and the test harness — no UI whatsoever.
 The core must be a pure JS module (ESM), runnable in Node >= 18 with no
@@ -53,6 +55,7 @@ changes.
       end,              // +1 | -1 — which hull end is the bow
       amaLoad,          // ama load 0..1+ (>1 = ama out of the water)
       abackTimer,       // duration of the aback state [s]
+      overloadTimer,    // duration amaLoad has been > 1.0 [s]
       capsized,         // bool
       shunt: { phase, progress }  // 'none'|'ease'|'transfer'|'swap'|'sheet'
     }
@@ -101,8 +104,17 @@ cross-check at startup as required by the main prompt. Fixed schema version: a
 
 ### stability.js
     computeAmaLoad(heelMoment, crewPos, config) -> amaLoad   // statics
-    updateAback(state, awAngle, dt) -> { abackTimer, capsized }
-      // aback: apparent wind from the ama side; capsize per prompt thresholds
+      // heelMoment < 0 (normal case, windward ama lifting): restoring
+      // capacity from ama.mass (weight). heelMoment > 0 (ama pressed down,
+      // e.g. aback): restoring capacity from ama.maxBuoyancy.
+    updateAback(state, awAngle, amaLoad, dt, config) -> { abackTimer, overloadTimer, capsized }
+      // aback: apparent wind from the ama side; capsize when abackTimer
+      // exceeds config.stability.abackCapsizeTime. Independently, capsize
+      // when overloadTimer (time amaLoad has stayed > 1.0) exceeds
+      // config.stability.overloadCapsizeTime. Both thresholds live in
+      // CONFIG, not as magic constants (extends the original
+      // `updateAback(state, awAngle, dt)` signature — see
+      // FIX_REQUEST_step1_review.md CRITICAL-1).
 
 ### shunt.js
     shuntStep(state, controls, config, dt) -> state patch

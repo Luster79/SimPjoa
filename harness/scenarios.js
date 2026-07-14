@@ -11,7 +11,7 @@ const HEADING0 = Math.PI / 2;
 function initialState() {
   return {
     t: 0, x: 0, y: 0, heading: HEADING0, u: 1.0, v: 0, r: 0, end: 1,
-    amaLoad: 0, abackTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 },
+    amaLoad: 0, abackTimer: 0, overloadTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 },
   };
 }
 

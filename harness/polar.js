@@ -27,10 +27,22 @@ function makeInitialState() {
   // settle, similar to real boats needing steerageway.
   return {
     t: 0, x: 0, y: 0, heading: HEADING0, u: 1.0, v: 0, r: 0, end: 1,
-    amaLoad: 0, abackTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 },
+    amaLoad: 0, abackTimer: 0, overloadTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 },
   };
 }
 
+// simulateToSteady -> { speed, settled }
+//   A badly-trimmed combination (e.g. yard far past the apparent-wind angle
+//   on a close course) can genuinely fail to reach any equilibrium — the
+//   sail stalls/backwinds, the autopilot fights it, and u/v/heading keep
+//   oscillating for as long as it's given. `settled` records whether the
+//   near-constant-speed criterion was actually met; when it wasn't, the
+//   instantaneous speed at the maxSeconds cutoff is just whatever the
+//   oscillation happened to be doing at that instant, not an achievable
+//   steady speed, and must not be reported as one (see bestForHeading —
+//   FIX_REQUEST_step1_review.md MEDIUM-2: a previous version returned it
+//   unconditionally, letting a transient spike from an unsettled, unstable
+//   trim masquerade as the polar's best speed for that heading).
 function simulateToSteady(config, twaDeg, tws, yardDeg, crewPos, maxSeconds = 25) {
   const windDirFrom = HEADING0 + twaDeg * DEG;
   const controls = {
@@ -44,6 +56,7 @@ function simulateToSteady(config, twaDeg, tws, yardDeg, crewPos, maxSeconds = 25
   const settleWindow = 10; // seconds of near-constant speed required
   let lastSampleSpeed = 0;
   let stableSeconds = 0;
+  let settled = false;
 
   const maxSteps = Math.round(maxSeconds * stepsPerSecond);
   for (let i = 0; i < maxSteps; i++) {
@@ -54,22 +67,31 @@ function simulateToSteady(config, twaDeg, tws, yardDeg, crewPos, maxSeconds = 25
       const speed = Math.hypot(state.u, state.v);
       if (Math.abs(speed - lastSampleSpeed) < 0.01) {
         stableSeconds += 1;
-        if (stableSeconds >= settleWindow) break;
+        if (stableSeconds >= settleWindow) { settled = true; break; }
       } else {
         stableSeconds = 0;
       }
       lastSampleSpeed = speed;
     }
   }
-  return Math.hypot(state.u, state.v);
+  return { speed: Math.hypot(state.u, state.v), settled };
 }
+
+// Crew ballast is searched across its full range, not just a token 0/0.3:
+// with the ama's much lower weight-based righting capacity (see
+// stability.js computeAmaLoad — FIX_REQUEST_step1_review.md MEDIUM-1), the
+// ama-drag penalty of an unballasted boat is severe enough that the
+// achievable polar speed genuinely depends on crew position across most of
+// its range, matching the prompt's "sailing controlled almost entirely by
+// sheet and crew position" description — not just a light-air trim detail.
+const CREW_POS_SEARCH = [0, 0.3, 0.6, 1.0];
 
 function bestForHeading(config, twaDeg, tws) {
   let best = { speed: 0, yard: 0, crewPos: 0 };
   for (let yard = 4; yard <= 88; yard += 4) {
-    for (const crewPos of [0, 0.3]) {
-      const speed = simulateToSteady(config, twaDeg, tws, yard, crewPos);
-      if (speed > best.speed) best = { speed, yard, crewPos };
+    for (const crewPos of CREW_POS_SEARCH) {
+      const { speed, settled } = simulateToSteady(config, twaDeg, tws, yard, crewPos);
+      if (settled && speed > best.speed) best = { speed, yard, crewPos };
     }
   }
   return best;

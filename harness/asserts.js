@@ -4,7 +4,7 @@
 
 import { tableCL, sailForces } from '../core/aero.js';
 import { integrate, computeForces } from '../core/integrator.js';
-import { computeAmaLoad } from '../core/stability.js';
+import { computeAmaLoad, updateAback } from '../core/stability.js';
 import { amaDrag } from '../core/hydro.js';
 import { computePolar, headingHoldRudder } from './polar.js';
 import { scenarioSquall, scenarioShunt, scenarioAback, scenarioStop } from './scenarios.js';
@@ -43,7 +43,7 @@ export function runAsserts(config) {
   // directional instability instead of the sail's near-wind thrust.
   {
     let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 0, v: 0, r: 0, end: 1, amaLoad: 0,
-      abackTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
+      abackTimer: 0, overloadTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
     const controls = { windDirFrom: HEADING0, windSpeed: 6, yardAngle: 5 * DEG, rudder: 0,
       brailLee: 0, brailWind: 0, crewPos: 0, shuntRequest: false };
     for (let i = 0; i < Math.round(4 / config.dt); i++) {
@@ -67,10 +67,27 @@ export function runAsserts(config) {
   const speed90 = bySpeed(90);
   check('speed at TWS=6, TWA=90 within [2.0, 3.6] m/s', speed90 >= 2.0 && speed90 <= 3.6, `speed=${speed90.toFixed(2)}`);
 
+  // Smoothness: an isolated >20% drop between adjacent TWA rows in 60-170
+  // is a settle/grid-search artifact, not real physics (see
+  // FIX_REQUEST_step1_review.md MEDIUM-2) — the polar should decline
+  // gently past its peak, not dip and recover.
+  {
+    const twasInRange = polar.map((r) => r.twa).filter((twa) => twa >= 60 && twa <= 170).sort((a, b) => a - b);
+    let worstDrop = 0, worstTwa = null;
+    for (let i = 1; i < twasInRange.length; i++) {
+      const prev = bySpeed(twasInRange[i - 1]), cur = bySpeed(twasInRange[i]);
+      if (prev <= 0) continue;
+      const drop = 1 - cur / prev;
+      if (drop > worstDrop) { worstDrop = drop; worstTwa = twasInRange[i]; }
+    }
+    check('polar speed does not drop >20% between adjacent TWA rows (60-170deg)', worstDrop <= 0.20,
+      `worstDrop=${(worstDrop * 100).toFixed(1)}% at twa=${worstTwa}`);
+  }
+
   // --- 4. Numerical stability + energy damping at zero wind ---
   {
     let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 2, v: 0.5, r: 0.1, end: 1, amaLoad: 0,
-      abackTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
+      abackTimer: 0, overloadTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
     const controls = { windDirFrom: 0, windSpeed: 0, yardAngle: 30 * DEG, rudder: 0,
       brailLee: 0, brailWind: 0, crewPos: 0, shuntRequest: false };
     const keInitial = state.u * state.u + state.v * state.v;
@@ -127,7 +144,7 @@ export function runAsserts(config) {
   // --- 6. Brail unit checks (moment-drop vs drive-drop ratio) ---
   {
     const state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 3, v: 0, r: 0, end: 1, amaLoad: 0,
-      abackTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
+      abackTimer: 0, overloadTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
     const base = { windDirFrom: HEADING0 - 70 * DEG, windSpeed: 8, yardAngle: 35 * DEG, rudder: 0, crewPos: 0, shuntRequest: false };
 
     const f0 = sailForces(state, { ...base, brailLee: 0, brailWind: 0 }, config);
@@ -159,13 +176,47 @@ export function runAsserts(config) {
       `drag(crew=-0.3)=${dragLeeCrew.toFixed(2)} drag(crew=0)=${dragCenterCrew.toFixed(2)}`);
   }
 
+  // --- 7b. Ama-overload capsize timer semantics (CRITICAL-1) ---
+  // updateAback's overload trigger is driven purely by a supplied amaLoad,
+  // so it's tested directly against a synthetic (non-aback) timer state
+  // rather than through a full sail-force simulation.
+  {
+    let timerState = { abackTimer: 0, overloadTimer: 0, capsized: false };
+    let capsizeTime = null;
+    const dt = config.dt;
+    for (let i = 0; i < Math.round(5 / dt) && capsizeTime === null; i++) {
+      timerState = updateAback(timerState, 0, 1.2, dt, config);
+      if (timerState.capsized) capsizeTime = (i + 1) * dt;
+    }
+    check('a boat pinned at amaLoad>1.2 capsizes in ~2s (1.5-3.5s window)',
+      capsizeTime !== null && capsizeTime >= 1.5 && capsizeTime <= 3.5,
+      `capsizeTime=${capsizeTime === null ? 'never' : capsizeTime.toFixed(2)}s`);
+
+    let spikeState = { abackTimer: 0, overloadTimer: 0, capsized: false };
+    const spikeSteps = Math.round(1 / dt);
+    const totalSteps = Math.round(6 / dt);
+    for (let i = 0; i < totalSteps; i++) {
+      const load = i < spikeSteps ? 1.1 : 0.5;
+      spikeState = updateAback(spikeState, 0, load, dt, config);
+    }
+    check('a brief 1s spike to amaLoad~1.1 followed by unloading does not capsize',
+      !spikeState.capsized, `capsized=${spikeState.capsized}`);
+  }
+
   // --- 8. Over-sheeting a close course: heel/leeway up, not speed ---
+  // Yard angles re-derived after CRITICAL-2 (FIX_REQUEST_step1_review.md):
+  // with the sign of alpha fixed, the yard sweep at TWA=50/TWS=8/crewPos=0
+  // now peaks cleanly at yard~16deg (a genuine close-hauled trim, matching
+  // the architecture doc's "small angles close-hauled" pattern) and falls
+  // off to both sides. "Well trimmed" is that optimum; "over-sheeted" is a
+  // yard pulled in tighter than optimal (smaller angle) — the traditional
+  // meaning of the term — not just "a different angle".
   {
     const twaDeg = 50;
     const windDirFrom = HEADING0 + twaDeg * DEG;
     const runFor = (yardDeg, seconds = 20) => {
       let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 1, v: 0, r: 0, end: 1, amaLoad: 0,
-        abackTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
+        abackTimer: 0, overloadTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
       const controls = { windDirFrom, windSpeed: 8, yardAngle: yardDeg * DEG, rudder: 0,
         brailLee: 0, brailWind: 0, crewPos: 0, shuntRequest: false };
       for (let i = 0; i < Math.round(seconds / config.dt); i++) {
@@ -174,13 +225,13 @@ export function runAsserts(config) {
       }
       return state;
     };
-    const wellTrimmed = runFor(85);
-    const overSheeted = runFor(15);
+    const wellTrimmed = runFor(16);
+    const overSheeted = runFor(8);
     const speedWell = Math.hypot(wellTrimmed.u, wellTrimmed.v);
     const speedOver = Math.hypot(overSheeted.u, overSheeted.v);
     check('over-sheeting a close course reduces speed vs a well-trimmed yard', speedOver < speedWell,
       `well=${speedWell.toFixed(2)} over=${speedOver.toFixed(2)}`);
-    check('over-sheeting a close course raises ama load vs well-trimmed', overSheeted.amaLoad > wellTrimmed.amaLoad * 0.9,
+    check('over-sheeting a close course raises ama load vs well-trimmed', overSheeted.amaLoad > wellTrimmed.amaLoad,
       `well=${wellTrimmed.amaLoad.toFixed(2)} over=${overSheeted.amaLoad.toFixed(2)}`);
   }
 

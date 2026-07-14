@@ -192,6 +192,7 @@ function buildDefaultConfig() {
     ama: {
       length: p.ama_length_m,             // 3.5 m
       maxBuoyancy: p.ama_buoyancy_kg,      // 80 kg
+      mass: p.ama_mass_kg,                 // 25 kg — resists lifting when windward (normal case)
       spacing: p.beam_overall_m,           // 2.5 m (hull-ama spacing, "B")
       wettedSurface: 0.6,                  // m^2 — tunable estimate, fully immersed
       dragCoeff: 0.4,                      // tunable — bluff slender body Cd estimate
@@ -211,6 +212,11 @@ function buildDefaultConfig() {
       mass: 90,                // kg
       posMin: -0.3,
       posMax: 1.0,
+    },
+
+    stability: {
+      abackCapsizeTime: 6,       // s — sustained aback before capsize (acceptance criterion 3)
+      overloadCapsizeTime: 2.0,  // s — sustained amaLoad > 1.0 (ama flying) before capsize
     },
 
     rudder: {
@@ -241,6 +247,8 @@ export function validateConfig(config) {
   inRange(config.crew.posMin, -1, 0, 'crew.posMin');
   inRange(config.crew.posMax, 0, 2, 'crew.posMax');
   inRange(config.rudder.maxDeflectionDeg, 1, 60, 'rudder.maxDeflectionDeg');
+  if (!(config.stability.abackCapsizeTime > 0)) errs.push('stability.abackCapsizeTime must be > 0');
+  if (!(config.stability.overloadCapsizeTime > 0)) errs.push('stability.overloadCapsizeTime must be > 0');
   if (!(config.hull.length > 0)) errs.push('hull.length must be > 0');
   if (!(config.ama.spacing > 0)) errs.push('ama.spacing must be > 0');
   if (!(config.sail.area > 0)) errs.push('sail.area must be > 0');

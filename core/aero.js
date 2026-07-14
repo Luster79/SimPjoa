@@ -2,18 +2,24 @@
 // CL/CD (table + camber + brails), and resulting boat-frame forces/moments.
 //
 // Angle-of-attack sign convention (derived once here, used throughout):
-//   The yard/boom always trims to the leeward (-y) side of the hull, so its
-//   chord direction in the boat frame is `chordAngle = -|yardAngle|`.
-//   `alpha` is defined as the chord's angle relative to the incoming
-//   apparent-wind flow, expressed in the flow's own reference frame and
-//   folded into [-90, 90] deg (the sail behaves as a flat, two-sided
-//   surface, so the response is symmetric about a full flip of the chord
-//   line). This makes CL's sign follow the conventional "nose-up = positive
-//   lift, 90 deg CCW from the flow direction" rule, which is what lets the
-//   L/D decomposition below reduce to a driving force on a well-trimmed
-//   course. Signs were verified with scripts/check_signs.mjs (Fx > 0 driving,
-//   Fy < 0 = pushes the hull to leeward/heels toward the ama) on a beam
-//   reach before being wired into the rest of the core.
+//   The yard/boom trims to the leeward (-y) side of the hull, but the chord
+//   DIRECTION VECTOR used to measure alpha is `chordAngle = +|yardAngle|`
+//   (NOT negated) — given the chirality of the awChordX/awChordYcw rotation
+//   below, this is what makes alpha reduce to the sailor's angle of attack
+//   (apparent wind angle minus sheeting angle), signed so that a
+//   well-trimmed course (chord swept less than the apparent wind angle)
+//   gives positive alpha and positive driving force. An earlier version
+//   used `-|yardAngle|`, which silently flipped the sign of CL relative to
+//   the fixed lift-direction convention below (see the L/D decomposition):
+//   since drag direction is fixed by the flow alone, flipping only CL's
+//   sign flips whether lift adds to or fights the drag component of Fx —
+//   that reversal, not a folding artefact, was the actual bug (verified
+//   numerically: FIX_REQUEST_step1_review.md CRITICAL-2).
+//   alpha itself is the RAW atan2 result (no reflection/fold) so it stays a
+//   true signed angle of attack across the full (-180, 180] range; a
+//   genuinely backwinded sail (|alpha| > 90 deg, flow on the leech side —
+//   e.g. aback) is handled explicitly in sailCoefficients() by mirroring
+//   only the CL/CD table lookup magnitude, not by reflecting alpha itself.
 
 import { polhamusAR, polhamusKp, polhamusKv, polhamusCL } from './config.js';
 
@@ -42,12 +48,6 @@ export function apparentWind(state, controls) {
   const angleToBoat = Math.atan2(vy, vx); // "blowing towards" angle, boat frame
 
   return { vx, vy, speed, angleToBoat };
-}
-
-function foldToHalfPi(a) {
-  if (a > Math.PI / 2) return Math.PI - a;
-  if (a < -Math.PI / 2) return -Math.PI - a;
-  return a;
 }
 
 function lerp(a, b, t) { return a + (b - a) * t; }
@@ -80,10 +80,17 @@ function camberCLFactor(alphaAbsDeg, camber) {
 }
 
 // sailCoefficients(alpha, controls, config) -> { CL, CD }
-// alpha: signed angle of attack [rad], folded to [-pi/2, pi/2] by the caller.
+// alpha: signed angle of attack [rad], raw atan2 range (-pi, pi]. |alpha| up
+// to 90deg is the sail's front face working normally; beyond that the flow
+// is on the leech side (genuinely backwinded, e.g. aback) — the two-sided
+// flat-plate table is looked up at the mirrored angle (180deg - |alpha|)
+// since the CL/CD magnitude is symmetric about a full chord flip, while the
+// sign (below) still comes from alpha itself, so which way the resulting
+// force pushes is unaffected by this mirroring.
 export function sailCoefficients(alpha, controls, config) {
   const { sail } = config;
-  const alphaAbsDeg = Math.min(Math.abs(alpha) / DEG, 90);
+  const rawAbsDeg = Math.abs(alpha) / DEG;
+  const alphaAbsDeg = rawAbsDeg <= 90 ? rawAbsDeg : 180 - rawAbsDeg;
   const alphaAbsRad = alphaAbsDeg * DEG;
 
   const CLtable = blendApexCL(sail.apexAngleDeg, alphaAbsDeg, config.aeroTable);
@@ -116,13 +123,14 @@ export function sailCoefficients(alpha, controls, config) {
 //   -> { Fx, Fy, heelMoment, yawMoment, alpha, aw }   (Fx, Fy in the boat frame)
 export function sailForces(state, controls, config) {
   const aw = apparentWind(state, controls);
-  const yardAngle = -Math.abs(controls.yardAngle); // always trims to leeward (-y)
+  const yardAngle = Math.abs(controls.yardAngle); // chord direction convention, see header comment
   const cx = Math.cos(yardAngle), cy = Math.sin(yardAngle);
 
-  // Flow components in the chord frame, then folded angle of attack.
+  // Flow components in the chord frame -> signed angle of attack (raw atan2,
+  // no reflection: see header comment and sailCoefficients()).
   const awChordX = aw.vx * cx + aw.vy * cy;
   const awChordYcw = aw.vx * cy - aw.vy * cx; // dot with the chord rotated -90deg
-  const alpha = foldToHalfPi(Math.atan2(awChordYcw, awChordX));
+  const alpha = Math.atan2(awChordYcw, awChordX);
 
   const { CL, CD } = sailCoefficients(alpha, controls, config);
 

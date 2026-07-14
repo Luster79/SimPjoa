@@ -32,6 +32,7 @@ export function createInitialState(config) {
     end: 1,
     amaLoad: 0,
     abackTimer: 0,
+    overloadTimer: 0,
     capsized: false,
     shunt: { phase: 'none', progress: 0 },
   };
