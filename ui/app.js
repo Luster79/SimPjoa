@@ -23,6 +23,110 @@ import { computePolar } from '../harness/polar.js';
 const DEG = Math.PI / 180;
 const MS_TO_KN = 1.9438;
 
+// ---------------------------------------------------------------------
+// i18n — EN/PL. Static labels are marked with data-i18n="key" in
+// index.html and set from TRANSLATIONS on load/switch; dynamic strings
+// (values baked in, e.g. countdowns) go through t()/tf() at the call site
+// instead, since they can't be pre-rendered into the DOM once.
+// ---------------------------------------------------------------------
+const TRANSLATIONS = {
+  en: {
+    'hud.speed': 'Speed', 'unit.kn': 'kn', 'hud.leeway': 'Leeway', 'hud.amaLoad': 'Ama load', 'hud.shunt': 'Shunt',
+    'btn.pause': 'Pause (P)', 'btn.step': 'Step (.)', 'btn.forces': 'Forces (F)', 'btn.polar': 'Polar (O)',
+    'legend.lift': 'sail lift', 'legend.drag': 'sail drag', 'legend.hullSide': 'hull side', 'legend.rudder': 'rudder',
+    'capsize.title': 'CAPSIZED', 'btn.reset': 'Reset (R)',
+    'h.wind': 'Wind', 'lbl.direction': 'Direction', 'lbl.strength': 'Strength',
+    'h.sail': 'Sail', 'lbl.yardAngle': 'Yard angle', 'hint.yard': '←/→ arrow keys ease/sheet',
+    'lbl.brailLee': 'Brail (lee)', 'hint.brailLee': 'Q sheets in, Z eases',
+    'lbl.brailWind': 'Brail (wind)', 'hint.brailWind': 'W sheets in, X eases',
+    'h.steering': 'Steering & trim', 'lbl.rudder': 'Rudder', 'hint.rudder': 'A/D deflect, auto-centers on release',
+    'lbl.crewPos': 'Crew pos.', 'hint.crewPos': 'J moves to leeward, L moves to the ama',
+    'h.shunt': 'Shunt', 'btn.shunt': 'SHUNT (space)',
+    'h.amaLoad': 'Ama load', 'h.reset': 'Reset',
+    'h.polarDiagram': 'Polar diagram',
+    'hint.polar': "Runs the headless polar sweep against the current config (TWS 4/6/8/10 m/s) and plots it. The boat's live (TWA, speed) point is overlaid once you return to sailing.",
+    'btn.runPolar': 'Run polar', 'btn.exportCsv': 'Export CSV', 'btn.backToSailing': 'Back to sailing',
+    'shunt.holdHint': 'Hold SPACE / click SHUNT to swap ends',
+    'shunt.lockoutHint': (v) => `Speed lockout: ease sail first (>${v} m/s)`,
+    'alarm.aback': (t) => `ABACK — ama to leeward — capsize in ${t}s`,
+    'alarm.overload': (t) => `OVERLOAD — ama flying — capsize in ${t}s`,
+    'capsize.causeAback': 'Cause: sustained ABACK (ama to leeward too long)',
+    'capsize.causeOverload': 'Cause: sustained OVERLOAD (ama flying too long)',
+    'shuntPhase.none': 'none', 'shuntPhase.ease': 'easing', 'shuntPhase.transfer': 'transfer',
+    'shuntPhase.swap': 'swap', 'shuntPhase.sheet': 'sheeting in',
+    'polar.running': 'Running...',
+    'polar.progress': (tws, twa) => `TWS ${tws} m/s, TWA ${twa}°...`,
+    'polar.done': (n) => `Done — ${n} points.`,
+    'polar.placeholder': 'Run the polar sweep to see the diagram.',
+    'wind.trueWindLabel': (v) => `TWS ${v} m/s`,
+    'polar.twsLegend': (v) => `TWS ${v} m/s`,
+    'doc.title': 'Proa Simulator — Step 2',
+  },
+  pl: {
+    'hud.speed': 'Prędkość', 'unit.kn': 'w', 'hud.leeway': 'Znos', 'hud.amaLoad': 'Obc. amy', 'hud.shunt': 'Zwrot',
+    'btn.pause': 'Pauza (P)', 'btn.step': 'Krok (.)', 'btn.forces': 'Siły (F)', 'btn.polar': 'Polara (O)',
+    'legend.lift': 'siła nośna żagla', 'legend.drag': 'opór żagla', 'legend.hullSide': 'siła boczna kadłuba', 'legend.rudder': 'ster',
+    'capsize.title': 'WYWROTKA', 'btn.reset': 'Reset (R)',
+    'h.wind': 'Wiatr', 'lbl.direction': 'Kierunek', 'lbl.strength': 'Siła',
+    'h.sail': 'Żagiel', 'lbl.yardAngle': 'Kąt reja', 'hint.yard': 'Strzałki ←/→: luzuj / wybieraj',
+    'lbl.brailLee': 'Brajda zawietrzna', 'hint.brailLee': 'Q wybiera, Z luzuje',
+    'lbl.brailWind': 'Brajda nawietrzna', 'hint.brailWind': 'W wybiera, X luzuje',
+    'h.steering': 'Sterowanie i wyważenie', 'lbl.rudder': 'Ster', 'hint.rudder': 'A/D wychyla ster, centruje się po puszczeniu',
+    'lbl.crewPos': 'Poz. załogi', 'hint.crewPos': 'J w stronę zawietrznej, L w stronę amy',
+    'h.shunt': 'Zwrot', 'btn.shunt': 'ZWROT (spacja)',
+    'h.amaLoad': 'Obciążenie amy', 'h.reset': 'Reset',
+    'h.polarDiagram': 'Diagram polarny',
+    'hint.polar': 'Uruchamia pomiar polary (bezekranowy silnik fizyki) dla bieżącej konfiguracji (TWS 4/6/8/10 m/s) i rysuje wykres. Po powrocie do żeglugi na wykresie pojawia się bieżący punkt (TWA, prędkość) łódki.',
+    'btn.runPolar': 'Uruchom polarę', 'btn.exportCsv': 'Eksportuj CSV', 'btn.backToSailing': 'Powrót do żeglugi',
+    'shunt.holdHint': 'Przytrzymaj SPACJĘ / kliknij ZWROT, aby zamienić końce',
+    'shunt.lockoutHint': (v) => `Blokada zwrotu: najpierw wyluzuj żagiel (>${v} m/s)`,
+    'alarm.aback': (t) => `ABACK — ama po zawietrznej — wywrotka za ${t}s`,
+    'alarm.overload': (t) => `PRZECIĄŻENIE — ama unosi się — wywrotka za ${t}s`,
+    'capsize.causeAback': 'Przyczyna: długotrwały ABACK (ama zbyt długo po zawietrznej)',
+    'capsize.causeOverload': 'Przyczyna: długotrwałe przeciążenie (ama zbyt długo w powietrzu)',
+    'shuntPhase.none': 'brak', 'shuntPhase.ease': 'luzowanie', 'shuntPhase.transfer': 'przenoszenie',
+    'shuntPhase.swap': 'zamiana', 'shuntPhase.sheet': 'wybieranie',
+    'polar.running': 'Uruchamianie...',
+    'polar.progress': (tws, twa) => `TWS ${tws} m/s, TWA ${twa}°...`,
+    'polar.done': (n) => `Gotowe — ${n} punktów.`,
+    'polar.placeholder': 'Uruchom pomiar polary, aby zobaczyć wykres.',
+    'wind.trueWindLabel': (v) => `Wiatr ${v} m/s`,
+    'polar.twsLegend': (v) => `Wiatr ${v} m/s`,
+    'doc.title': 'Symulator proa — Krok 2',
+  },
+};
+
+let currentLang = localStorage.getItem('proaLang') || (navigator.language?.startsWith('pl') ? 'pl' : 'en');
+
+function t(key, ...args) {
+  const entry = TRANSLATIONS[currentLang]?.[key] ?? TRANSLATIONS.en[key];
+  return typeof entry === 'function' ? entry(...args) : entry;
+}
+
+function applyStaticTranslations() {
+  document.documentElement.lang = currentLang;
+  document.title = t('doc.title');
+  for (const el of document.querySelectorAll('[data-i18n]')) {
+    el.textContent = t(el.getAttribute('data-i18n'));
+  }
+  const btnLang = document.getElementById('btnLang');
+  if (btnLang) btnLang.textContent = currentLang === 'en' ? 'PL' : 'EN';
+}
+
+function setLang(lang) {
+  currentLang = lang;
+  localStorage.setItem('proaLang', lang);
+  applyStaticTranslations();
+  // Canvas text (drawPolarView) is baked into pixels, not DOM — re-render
+  // immediately so a language switch doesn't leave stale text on screen
+  // until the next natural redraw. drawPolarView is a hoisted function
+  // declaration defined later in this module; polarMode/lastPolarRows are
+  // module-level vars already initialized by the time this can run (only
+  // reachable via the btnLang click handler, wired after full module
+  // evaluation) — safe despite the forward textual reference.
+  if (polarMode) drawPolarView(lastPolarRows);
+}
+
 const dims = createConfig(); // dimensions/limits only; the sim keeps its own internal config
 const sim = createSimulator();
 
@@ -174,6 +278,8 @@ document.getElementById('btnStep').addEventListener('click', () => { stepOnce = 
 document.getElementById('btnForces').addEventListener('click', toggleForces);
 document.getElementById('btnReset').addEventListener('click', doReset);
 document.getElementById('btnResetOverlay').addEventListener('click', doReset);
+document.getElementById('btnLang').addEventListener('click', () => setLang(currentLang === 'en' ? 'pl' : 'en'));
+applyStaticTranslations();
 
 // Click behaves like a brief press: one rising edge is all the core's
 // edge-triggered shuntRequest needs (see simulator.js step()).
@@ -258,7 +364,7 @@ function drawTrueWindArrow() {
   ctx.fillStyle = '#9fb4c8';
   ctx.beginPath(); ctx.arc(cx, cy, len + 14, 0, Math.PI * 2); ctx.strokeStyle = 'rgba(159,180,200,0.25)'; ctx.stroke();
   drawArrow(cx - dx / 2, cy - dy / 2, cx + dx / 2, cy + dy / 2, '#c9d9e6', 2.5);
-  ctx.fillText(`TWS ${controls.windSpeed.toFixed(1)} m/s`, cx - 30, cy + len + 26);
+  ctx.fillText(t('wind.trueWindLabel', controls.windSpeed.toFixed(1)), cx - 30, cy + len + 26);
   ctx.restore();
 }
 
@@ -473,7 +579,7 @@ function updateHud(state, forces) {
   hud.vmg.textContent = (vmg * MS_TO_KN).toFixed(1);
   hud.leeway.textContent = leewayDeg.toFixed(0);
   hud.amaLoad.textContent = (forces.amaLoadDisplay * 100).toFixed(0);
-  hud.shunt.textContent = state.shunt.phase;
+  hud.shunt.textContent = t(`shuntPhase.${state.shunt.phase}`);
   hud.tws.textContent = controls.windSpeed.toFixed(1);
 
   const loadFrac = clamp(forces.amaLoadDisplay, 0, 3) / 3;
@@ -484,8 +590,8 @@ function updateHud(state, forces) {
 
   const speedAboveLockout = speedMs > dims.shunt.speedLockout;
   shuntHint.textContent = speedAboveLockout
-    ? `Speed lockout: ease sail first (>${dims.shunt.speedLockout} m/s)`
-    : 'Hold SPACE / click SHUNT to swap ends';
+    ? t('shunt.lockoutHint', dims.shunt.speedLockout)
+    : t('shunt.holdHint');
 }
 
 function updateAlarms(state) {
@@ -495,18 +601,18 @@ function updateAlarms(state) {
   } else if (state.abackTimer > 0) {
     banner.className = 'aback';
     const remain = Math.max(0, dims.stability.abackCapsizeTime - state.abackTimer);
-    banner.textContent = `ABACK — ama to leeward — capsize in ${remain.toFixed(1)}s`;
+    banner.textContent = t('alarm.aback', remain.toFixed(1));
   } else if (state.overloadTimer > 0) {
     banner.className = 'overload';
     const remain = Math.max(0, dims.stability.overloadCapsizeTime - state.overloadTimer);
-    banner.textContent = `OVERLOAD — ama flying — capsize in ${remain.toFixed(1)}s`;
+    banner.textContent = t('alarm.overload', remain.toFixed(1));
   }
 
   if (state.capsized && !capsizeOverlay.classList.contains('show')) {
     capsizeOverlay.classList.add('show');
     capsizeCause.textContent = state.abackTimer > dims.stability.abackCapsizeTime - 0.05
-      ? 'Cause: sustained ABACK (ama to leeward too long)'
-      : 'Cause: sustained OVERLOAD (ama flying too long)';
+      ? t('capsize.causeAback')
+      : t('capsize.causeOverload');
   }
 }
 
@@ -599,19 +705,19 @@ btnRunPolar.addEventListener('click', async () => {
   btnExportPolar.disabled = true;
   const twsList = [4, 6, 8, 10];
   const rows = [];
-  polarProgress.textContent = 'Running...';
+  polarProgress.textContent = t('polar.running');
   // Run heading-by-heading so the tab can repaint between chunks instead of
   // blocking the main thread for the whole (slow) sweep in one go.
   for (const tws of twsList) {
     for (let twa = 40; twa <= 170; twa += 10) {
       const part = computePolar(dims, { twsList: [tws], twaFrom: twa, twaTo: twa, step: 10 });
       rows.push(...part);
-      polarProgress.textContent = `TWS ${tws} m/s, TWA ${twa}°...`;
+      polarProgress.textContent = t('polar.progress', tws, twa);
       // eslint-disable-next-line no-await-in-loop
       await new Promise((r) => setTimeout(r, 0));
     }
   }
-  polarProgress.textContent = `Done — ${rows.length} points.`;
+  polarProgress.textContent = t('polar.done', rows.length);
   lastPolarRows = rows;
   btnRunPolar.disabled = false;
   btnExportPolar.disabled = false;
@@ -654,7 +760,7 @@ function drawPolarView(rows) {
   if (!rows) {
     ctx.fillStyle = '#8aa4bd';
     ctx.font = `${14 * dpr}px system-ui, sans-serif`;
-    ctx.fillText('Run the polar sweep to see the diagram.', cx - 120 * dpr, cy + R + 40 * dpr);
+    ctx.fillText(t('polar.placeholder'), cx - 120 * dpr, cy + R + 40 * dpr);
     return;
   }
 
@@ -681,7 +787,7 @@ function drawPolarView(rows) {
     ctx.fillStyle = TWS_COLORS[tws];
     ctx.fillRect(cx - 90 * dpr, ly - 8 * dpr, 14 * dpr, 4 * dpr);
     ctx.fillStyle = '#c9d9e6';
-    ctx.fillText(`TWS ${tws} m/s`, cx - 70 * dpr, ly);
+    ctx.fillText(t('polar.twsLegend', tws), cx - 70 * dpr, ly);
     ly += 16 * dpr;
   }
 

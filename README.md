@@ -51,6 +51,14 @@ CSVs as string constants) — not a build framework, and it doesn't touch
 core logic. Re-run it after changing anything under `/core`,
 `harness/polar.js`, or `ui/app.js`.
 
+### Language
+
+The UI has an EN/PL toggle button (top-right of the HUD bar, next to
+Pause). It switches all interface text — labels, HUD, hints, alarms,
+polar mode — and remembers your choice (`localStorage`) across reloads;
+it defaults to Polish if the browser's language is Polish, English
+otherwise. Documentation (this file, code comments) stays English-only.
+
 ### Controls
 
 | Action | Control |
