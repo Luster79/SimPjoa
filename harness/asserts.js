@@ -142,23 +142,37 @@ export function runAsserts(config) {
   }
 
   // --- 6. Brail unit checks (moment-drop vs drive-drop ratio) ---
+  // Probe trim fixed per FIX_REQUEST_step1_round2.md R2-2: the original
+  // base (TWA=-70deg, yard=35deg) put the sail deep in a mirrored,
+  // drag-dominated regime (alpha's sailor-AoA magnitude ~87deg, CD~3.1,
+  // CL~-0.13) — barely any lift to cut in the first place, so windward
+  // brail's CL cut and its induced-drag cut nearly cancelled in the drive
+  // total (driveDrop ~ -0.03, an actual increase). TWA=+70deg/yard=25deg
+  // gives a proper lift-dominated trim (sailor's AoA ~28deg, near the
+  // CLmax anchor, CL~1.76) where the windward brail's effect is unambiguous.
   {
     const state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 3, v: 0, r: 0, end: 1, amaLoad: 0,
       abackTimer: 0, overloadTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
-    const base = { windDirFrom: HEADING0 - 70 * DEG, windSpeed: 8, yardAngle: 35 * DEG, rudder: 0, crewPos: 0, shuntRequest: false };
+    const base = { windDirFrom: HEADING0 + 70 * DEG, windSpeed: 8, yardAngle: 25 * DEG, rudder: 0, crewPos: 0, shuntRequest: false };
 
     const f0 = sailForces(state, { ...base, brailLee: 0, brailWind: 0 }, config);
     const fLee = sailForces(state, { ...base, brailLee: 0.6, brailWind: 0 }, config);
-    const fWind = sailForces(state, { ...base, brailLee: 0, brailWind: 0.6 }, config);
+    const fWind = sailForces(state, { ...base, brailLee: 0, brailWind: 1.0 }, config);
 
     const driveDropLee = 1 - Math.abs(fLee.Fx) / Math.abs(f0.Fx);
     const momentDropLee = 1 - Math.abs(fLee.heelMoment) / Math.abs(f0.heelMoment);
     check('leeward brail depowers without needing yard changes', driveDropLee > 0.1, `driveDrop=${driveDropLee.toFixed(2)}`);
 
+    // Signed drive drop (no abs-ratio guard): a brail that INCREASES drive
+    // (Fx moves toward/past zero, or flips sign) must fail outright, not
+    // get laundered into a pass by Math.max(driveDrop, 1e-6) turning a
+    // near-zero or negative denominator into an astronomical ratio.
     const driveDropWind = 1 - Math.abs(fWind.Fx) / Math.abs(f0.Fx);
     const momentDropWind = 1 - Math.abs(fWind.heelMoment) / Math.abs(f0.heelMoment);
+    check('windward brail at full effect genuinely cuts drive (not just moment)',
+      driveDropWind > -0.05, `driveDrop=${driveDropWind.toFixed(2)}`);
     check('windward brail cuts heel moment more than drive (ratio > 1)',
-      momentDropWind / Math.max(driveDropWind, 1e-6) > 1,
+      driveDropWind > -0.05 && momentDropWind / driveDropWind > 1,
       `momentDrop=${momentDropWind.toFixed(2)} driveDrop=${driveDropWind.toFixed(2)}`);
   }
 
@@ -204,13 +218,20 @@ export function runAsserts(config) {
   }
 
   // --- 8. Over-sheeting a close course: heel/leeway up, not speed ---
-  // Yard angles re-derived after CRITICAL-2 (FIX_REQUEST_step1_review.md):
-  // with the sign of alpha fixed, the yard sweep at TWA=50/TWS=8/crewPos=0
-  // now peaks cleanly at yard~16deg (a genuine close-hauled trim, matching
-  // the architecture doc's "small angles close-hauled" pattern) and falls
-  // off to both sides. "Well trimmed" is that optimum; "over-sheeted" is a
-  // yard pulled in tighter than optimal (smaller angle) — the traditional
-  // meaning of the term — not just "a different angle".
+  // Yard angles re-derived again after FIX_REQUEST_step1_round2.md R2-1: the
+  // weaker hull.sideForceCoeff (needed so leeway/pointing is honestly hard,
+  // not free via crew ballast) also weakened the hull's yaw-restoring
+  // moment, and the fixed-gain autopilot now broaches — heading peels away
+  // tens of degrees from the target — at ANY yard below ~33deg on this
+  // course, well before reaching a genuine "over-sheeted but still sailing
+  // the intended TWA" trim. A broached boat's hypot(u,v) is mostly sideways
+  // slip, not speed, so comparing raw speed across the broach cliff is
+  // meaningless (confirmed: yard=16 vs yard=8 both broach to a ~28deg
+  // heading with nearly identical numbers once R2-1 physics landed). Both
+  // probe yards below are chosen from the heading-HELD side of that cliff
+  // (crewPos=0.3 moves the cliff to ~33deg here) — yard=36 is the genuine
+  // peak on that side, yard=33 is the tightest trim that still holds
+  // course, i.e. genuinely "over-sheeted" rather than "broached".
   {
     const twaDeg = 50;
     const windDirFrom = HEADING0 + twaDeg * DEG;
@@ -218,21 +239,70 @@ export function runAsserts(config) {
       let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 1, v: 0, r: 0, end: 1, amaLoad: 0,
         abackTimer: 0, overloadTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
       const controls = { windDirFrom, windSpeed: 8, yardAngle: yardDeg * DEG, rudder: 0,
-        brailLee: 0, brailWind: 0, crewPos: 0, shuntRequest: false };
+        brailLee: 0, brailWind: 0, crewPos: 0.3, shuntRequest: false };
       for (let i = 0; i < Math.round(seconds / config.dt); i++) {
         controls.rudder = headingHoldRudder(state, HEADING0, config);
         state = integrate(state, controls, config, config.dt);
       }
       return state;
     };
-    const wellTrimmed = runFor(16);
-    const overSheeted = runFor(8);
+    const wellTrimmed = runFor(36);
+    const overSheeted = runFor(33);
+    const headingTolerance = 15 * DEG;
+    const bothHeldCourse =
+      Math.abs(wellTrimmed.heading - HEADING0) < headingTolerance &&
+      Math.abs(overSheeted.heading - HEADING0) < headingTolerance;
+    check('over-sheeting probe: both trims still hold the intended course (not broached)', bothHeldCourse,
+      `well heading=${(wellTrimmed.heading / DEG).toFixed(1)} over heading=${(overSheeted.heading / DEG).toFixed(1)}`);
     const speedWell = Math.hypot(wellTrimmed.u, wellTrimmed.v);
     const speedOver = Math.hypot(overSheeted.u, overSheeted.v);
     check('over-sheeting a close course reduces speed vs a well-trimmed yard', speedOver < speedWell,
       `well=${speedWell.toFixed(2)} over=${speedOver.toFixed(2)}`);
     check('over-sheeting a close course raises ama load vs well-trimmed', overSheeted.amaLoad > wellTrimmed.amaLoad,
       `well=${wellTrimmed.amaLoad.toFixed(2)} over=${overSheeted.amaLoad.toFixed(2)}`);
+  }
+
+  // --- 9. Readout hygiene: alphaSailor and amaLoadDisplay (R2-3) ---
+  {
+    // alphaSailor must stay an acute angle of attack across a full yard
+    // sweep on a beam reach, even though the raw `alpha` it's derived from
+    // routinely reads ~140-170deg on the very same courses.
+    const state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 2, v: 0, r: 0, end: 1, amaLoad: 0,
+      abackTimer: 0, overloadTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
+    const controls = { windDirFrom: HEADING0 + 90 * DEG, windSpeed: 6, rudder: 0,
+      brailLee: 0, brailWind: 0, crewPos: 0, shuntRequest: false };
+    let allInRange = true, worst = 0;
+    for (let yard = 4; yard <= 88; yard += 4) {
+      const f = sailForces(state, { ...controls, yardAngle: yard * DEG }, config);
+      if (!(f.alphaSailor >= 0 && f.alphaSailor <= Math.PI / 2 + 1e-9)) allInRange = false;
+      worst = Math.max(worst, f.alphaSailor);
+    }
+    check('alphaSailor stays within [0,90]deg across a yard sweep on a beam reach', allInRange,
+      `max alphaSailor=${(worst / DEG).toFixed(1)}deg`);
+
+    // amaLoadDisplay must be capped even when the raw amaLoad is far past
+    // it (near-zero restoring capacity, see stability.js computeAmaLoad) —
+    // and that capping must NOT leak into the capsize timer, which has to
+    // keep firing off the raw value. Driven directly from computeAmaLoad
+    // for a controlled, reproducible raw value (a deliberately extreme
+    // heelMoment, well past any realistic gust) rather than depending on a
+    // full sailForces() call to happen to produce one.
+    const heelMoment = -20000;
+    const rawLoad = computeAmaLoad(heelMoment, -0.3, config);
+    const cappedLoad = Math.min(rawLoad, config.stability.amaLoadDisplayCap);
+    check('amaLoadDisplay caps an extreme raw amaLoad', rawLoad > config.stability.amaLoadDisplayCap && cappedLoad === config.stability.amaLoadDisplayCap,
+      `raw=${rawLoad.toFixed(1)} display=${cappedLoad.toFixed(1)} cap=${config.stability.amaLoadDisplayCap}`);
+
+    let timerState = { abackTimer: 0, overloadTimer: 0, capsized: false };
+    let capsizeTime = null;
+    const dt = config.dt;
+    for (let i = 0; i < Math.round(5 / dt) && capsizeTime === null; i++) {
+      timerState = updateAback(timerState, 0, rawLoad, dt, config); // raw value, not the capped display one
+      if (timerState.capsized) capsizeTime = (i + 1) * dt;
+    }
+    check('overload capsize timer still fires from the raw (uncapped) amaLoad',
+      capsizeTime !== null && capsizeTime >= 1.5 && capsizeTime <= 3.5,
+      `capsizeTime=${capsizeTime === null ? 'never' : capsizeTime.toFixed(2)}s`);
   }
 
   return results;

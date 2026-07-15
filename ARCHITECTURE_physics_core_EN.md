@@ -1,6 +1,6 @@
 # PROMPT SUPPLEMENT: Physics core architecture (Step 1 — headless)
 
-*Last reviewed: 2026-07-14*
+*Last reviewed: 2026-07-15*
 
 This document supplements PROMPT_proa_simulator_EN.md. In Step 1,
 implement ONLY the physics core and the test harness — no UI whatsoever.
@@ -84,17 +84,21 @@ cross-check at startup as required by the main prompt. Fixed schema version: a
 
 ### aero.js
     apparentWind(state, controls) -> { vx, vy, speed, angleToBoat }
-    sailCoefficients(alpha, controls, config) -> { CL, CD }
+    sailCoefficients(alpha, controls, config) -> { CL, CD, alphaSailor }
       // Polhamus from table + camber and brail multipliers per the prompt
     sailForces(state, controls, config)
-      -> { Fx, Fy, heelMoment, yawMoment, alpha, aw }
+      -> { Fx, Fy, heelMoment, yawMoment, alpha, alphaSailor, aw }
       // Fx, Fy in the boat frame; heelMoment already reduced by brailWind;
-      // yawMoment from CE position (tack position changes in shunt phases)
+      // yawMoment from CE position (tack position changes in shunt phases);
+      // alpha is the raw, internal chord-flow angle (not acute on normal
+      // courses); alphaSailor [0, pi/2] is the UI-facing angle of attack
 
 ### hydro.js
     hullResistance(u, config) -> Fx        // friction + wave penalty Fr>0.4
-    hullSideForce(u, v, config) -> { Fy, yawMoment }  // low-AR foil,
-                                            // saturation ~15 deg leeway
+    hullSideForce(u, v, config) -> { Fx, Fy, yawMoment }  // low-AR foil,
+                                            // saturation ~15 deg leeway, then
+                                            // degrades (mushing); Fx is the
+                                            // induced drag cost of Fy
     amaDrag(u, amaLoad, crewPos, config) -> Fx
     yawDamping(r, u, config) -> moment
 
@@ -130,7 +134,12 @@ cross-check at startup as required by the main prompt. Fixed schema version: a
     createSimulator(userConfig?) -> {
       step(controls, dtFrame),   // runs substeps at fixed dt
       getState(), reset(), setConfig(patch),
-      forcesBreakdown()          // last force breakdown — for UI and debugging
+      forcesBreakdown()          // last force breakdown — for UI and debugging.
+                                  // Includes amaLoad (raw, unbounded — feeds
+                                  // the capsize timers) and amaLoadDisplay
+                                  // (capped at config.stability.amaLoadDisplayCap,
+                                  // UI-safe), plus alpha (raw) and alphaSailor
+                                  // ([0, pi/2], UI-safe) — see aero.js.
     }
 
 ## Test harness

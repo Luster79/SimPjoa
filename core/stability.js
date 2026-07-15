@@ -11,6 +11,14 @@
 //   moment. heelMoment > 0 is the reverse, emergency case (e.g. aback): the
 //   ama is being pressed DOWN into the water instead, resisted by its
 //   BUOYANCY — per the prompt's Stability section.
+//   This function returns the RAW value, unbounded — restoringCapacity can
+//   be near its 1 N*m floor (e.g. crew ballast almost exactly cancelling
+//   ama weight/buoyancy), producing values like 2000+ that are meaningless
+//   as a UI percentage but correct as "instant capsize territory" for the
+//   overload timer in updateAback() below, which must see the raw value.
+//   integrator.js's computeForces() additionally exposes amaLoadDisplay, a
+//   copy capped at config.stability.amaLoadDisplayCap, for readouts
+//   (FIX_REQUEST_step1_round2.md R2-3) — do not clamp the value here.
 export function computeAmaLoad(heelMoment, crewPos, config) {
   const { ama, crew, g } = config;
   const halfSpacing = ama.spacing / 2;

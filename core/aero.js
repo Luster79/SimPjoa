@@ -116,11 +116,20 @@ export function sailCoefficients(alpha, controls, config) {
   const CDf = CD2 * (1 - furl) + sail.CD0 * furl;
 
   const sign = alpha >= 0 ? 1 : -1;
-  return { CL: sign * CLf, CD: CDf };
+  // alphaSailor: the acute angle [0, pi/2] a sailor would call "angle of
+  // attack" — the same mirrored magnitude already used for the table
+  // lookup above, exposed here so callers don't have to redo the mirror
+  // (FIX_REQUEST_step1_round2.md R2-3; see sailForces() for the raw,
+  // unmirrored `alpha` this complements).
+  return { CL: sign * CLf, CD: CDf, alphaSailor: alphaAbsRad };
 }
 
 // sailForces(state, controls, config)
-//   -> { Fx, Fy, heelMoment, yawMoment, alpha, aw }   (Fx, Fy in the boat frame)
+//   -> { Fx, Fy, heelMoment, yawMoment, alpha, alphaSailor, aw }   (Fx, Fy in the boat frame)
+//   alpha: raw signed chord-flow angle (-pi, pi], used internally for CL's
+//   sign — NOT the sailor's angle of attack (it reads ~140-170deg on normal
+//   courses, see aero.js header comment). alphaSailor: the acute [0, pi/2]
+//   angle a sailor/UI would call AoA (FIX_REQUEST_step1_round2.md R2-3).
 export function sailForces(state, controls, config) {
   const aw = apparentWind(state, controls);
   const yardAngle = Math.abs(controls.yardAngle); // chord direction convention, see header comment
@@ -132,7 +141,7 @@ export function sailForces(state, controls, config) {
   const awChordYcw = aw.vx * cy - aw.vy * cx; // dot with the chord rotated -90deg
   const alpha = Math.atan2(awChordYcw, awChordX);
 
-  const { CL, CD } = sailCoefficients(alpha, controls, config);
+  const { CL, CD, alphaSailor } = sailCoefficients(alpha, controls, config);
 
   const q = 0.5 * config.rho_air * config.sail.area * aw.speed * aw.speed;
   let Fx = 0, Fy = 0;
@@ -154,7 +163,7 @@ export function sailForces(state, controls, config) {
   const ceX = ceXFraction * (config.hull.length / 2) * state.end;
   const yawMoment = ceX * Fy;
 
-  return { Fx, Fy, heelMoment, yawMoment, alpha, aw, CL, CD };
+  return { Fx, Fy, heelMoment, yawMoment, alpha, alphaSailor, aw, CL, CD };
 }
 
 // tableCL(apexDeg, alphaDeg, config) -> raw Polhamus-table CL (no camber/brails)

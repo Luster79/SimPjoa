@@ -12,9 +12,17 @@ import { shuntStep } from './shunt.js';
 
 // computeForces(state, controls, config) -> total forces/moment + readouts
 // shared with derivatives() and the harness/UI (alpha, aw, amaLoad, ...).
+// amaLoad is the raw physics value (unbounded, drives the overload capsize
+// timer in stability.js — must NOT be clamped); amaLoadDisplay is the same
+// value capped at config.stability.amaLoadDisplayCap for UI readouts, since
+// raw values like 2000 (see stability.js computeAmaLoad — a near-zero
+// restoring capacity denominator) are meaningless as a percentage gauge.
+// alpha is the raw chord-flow angle; alphaSailor is the sailor's AoA. Both
+// pairs are FIX_REQUEST_step1_round2.md R2-3.
 export function computeForces(state, controls, config) {
   const aero = sailForces(state, controls, config);
   const amaLoad = computeAmaLoad(aero.heelMoment, controls.crewPos, config);
+  const amaLoadDisplay = Math.min(amaLoad, config.stability.amaLoadDisplayCap);
 
   const resist = hullResistance(state.u, config);
   const side = hullSideForce(state.u, state.v, config);
@@ -22,17 +30,18 @@ export function computeForces(state, controls, config) {
   const rudder = rudderForce(state, controls, config);
   const damp = yawDamping(state.r, state.u, config);
 
-  const Fx = aero.Fx + resist + drag;
+  const Fx = aero.Fx + resist + side.Fx + drag;
   const Fy = aero.Fy + side.Fy + rudder.Fy;
   const M = aero.yawMoment + side.yawMoment + rudder.yawMoment + damp;
 
   return {
-    Fx, Fy, M, amaLoad,
-    heelMoment: aero.heelMoment, alpha: aero.alpha, aw: aero.aw, CL: aero.CL, CD: aero.CD,
+    Fx, Fy, M, amaLoad, amaLoadDisplay,
+    heelMoment: aero.heelMoment, alpha: aero.alpha, alphaSailor: aero.alphaSailor,
+    aw: aero.aw, CL: aero.CL, CD: aero.CD,
     breakdown: {
       sail: { Fx: aero.Fx, Fy: aero.Fy, yawMoment: aero.yawMoment, heelMoment: aero.heelMoment },
       hullResist: { Fx: resist },
-      hullSide: { Fy: side.Fy, yawMoment: side.yawMoment },
+      hullSide: { Fx: side.Fx, Fy: side.Fy, yawMoment: side.yawMoment },
       amaDrag: { Fx: drag },
       rudder: { Fy: rudder.Fy, yawMoment: rudder.yawMoment },
       yawDamping: { M: damp },

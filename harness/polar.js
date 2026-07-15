@@ -31,15 +31,31 @@ function makeInitialState() {
   };
 }
 
+// Max heading error, at the moment speed is judged "settled", for a trial
+// to count as actually having sailed the requested TWA. A too-tight sheet
+// can overpower the autopilot: u collapses, v takes over, and the boat
+// spins away to a completely different (easier, faster) point of sail —
+// heading drifting tens of degrees off HEADING0 — while its SPEED still
+// satisfies the plain near-constant-for-10s criterion below, since that
+// criterion only ever looks at |u,v|, never at whether the requested course
+// is still being held. Left unchecked this lets bestForHeading silently
+// credit a bad, unholdable close-hauled trim with a nice reaching speed it
+// never earned at that TWA (verified: FIX_REQUEST_step1_round2.md R2-1 —
+// yard=16 at TWA=40 "settles" with u~0.3, v~-1.6, heading drifted from 90
+// to ~15deg, i.e. actually sailing a ~115deg TWA reach, not the requested
+// close-hauled 40deg).
+const HEADING_HOLD_TOLERANCE = 15 * DEG;
+
 // simulateToSteady -> { speed, settled }
 //   A badly-trimmed combination (e.g. yard far past the apparent-wind angle
 //   on a close course) can genuinely fail to reach any equilibrium — the
 //   sail stalls/backwinds, the autopilot fights it, and u/v/heading keep
 //   oscillating for as long as it's given. `settled` records whether the
-//   near-constant-speed criterion was actually met; when it wasn't, the
-//   instantaneous speed at the maxSeconds cutoff is just whatever the
-//   oscillation happened to be doing at that instant, not an achievable
-//   steady speed, and must not be reported as one (see bestForHeading —
+//   near-constant-speed criterion was actually met AND the boat is still
+//   within HEADING_HOLD_TOLERANCE of the requested course; when either
+//   doesn't hold, the instantaneous speed at the maxSeconds cutoff (or at
+//   an off-course "settle") is not an achievable steady speed for the
+//   REQUESTED heading and must not be reported as one (see bestForHeading —
 //   FIX_REQUEST_step1_review.md MEDIUM-2: a previous version returned it
 //   unconditionally, letting a transient spike from an unsettled, unstable
 //   trim masquerade as the polar's best speed for that heading).
@@ -67,7 +83,11 @@ function simulateToSteady(config, twaDeg, tws, yardDeg, crewPos, maxSeconds = 25
       const speed = Math.hypot(state.u, state.v);
       if (Math.abs(speed - lastSampleSpeed) < 0.01) {
         stableSeconds += 1;
-        if (stableSeconds >= settleWindow) { settled = true; break; }
+        if (stableSeconds >= settleWindow) {
+          const headingError = Math.abs(normalizeAngle(state.heading - HEADING0));
+          settled = headingError <= HEADING_HOLD_TOLERANCE;
+          break;
+        }
       } else {
         stableSeconds = 0;
       }

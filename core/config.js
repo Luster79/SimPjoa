@@ -183,8 +183,10 @@ function buildDefaultConfig() {
       Cf: 0.0015,                          // tunable estimate, ITTC-57-like skin friction
       froudeThreshold: 0.4,               // wave resistance penalty kicks in above this Fr
       waveResistanceCoeff: 900,           // tunable — scales the u^4 penalty above threshold
-      sideForceCoeff: 2.5,                // tunable — low-AR hull-as-foil lift-curve factor (folds in the ama's lateral resistance too, since hydro.js has no separate ama side-force term)
+      sideForceCoeff: 0.8,                // tunable — low-AR hull-as-foil lift-curve factor (folds in the ama's lateral resistance too, since hydro.js has no separate ama side-force term). Lowered from 2.5 in round 2 (FIX_REQUEST_step1_round2.md R2-1): a boardless canoe hull is a genuinely weak lateral-force generator (that's the prompt's own framing of why a proa needs the ama/crew technique instead of pointing ability) — 2.5 let the hull balance the sail's side force at near-zero leeway once crew ballast dropped amaDrag, letting the boat "point" unrealistically well close-hauled.
       leewaySaturationDeg: 15,            // side force saturates above this leeway angle
+      leewayMushingCoeff: 6,              // tunable — post-saturation side-force falloff, per radian of excess leeway (FIX_REQUEST_step1_round2.md R2-1)
+      lowSpeedSideDamping: 100,            // tunable — N per (m/s) of sway speed; linear-regime side resistance that keeps a near-stalled boat from drifting freely once sideForceCoeff was tuned low (FIX_REQUEST_step1_round2.md R2-1)
       yawDampingCoeff: 900,               // tunable — N*m per (rad/s), scaled by speed
       clrXFraction: 0.05,                 // tunable — center-of-lateral-resistance offset from CG (aft), fraction of half-length
     },
@@ -196,6 +198,7 @@ function buildDefaultConfig() {
       spacing: p.beam_overall_m,           // 2.5 m (hull-ama spacing, "B")
       wettedSurface: 0.6,                  // m^2 — tunable estimate, fully immersed
       dragCoeff: 0.4,                      // tunable — bluff slender body Cd estimate
+      crewImmersionCoeff: 0.21,            // tunable — fraction of crew weight (relative to ama buoyancy) that presses the ama deeper when crewPos>0 (FIX_REQUEST_step1_round2.md R2-1)
     },
 
     sail: {
@@ -217,6 +220,7 @@ function buildDefaultConfig() {
     stability: {
       abackCapsizeTime: 6,       // s — sustained aback before capsize (acceptance criterion 3)
       overloadCapsizeTime: 2.0,  // s — sustained amaLoad > 1.0 (ama flying) before capsize
+      amaLoadDisplayCap: 3.0,    // UI-safe ceiling for amaLoad readouts (FIX_REQUEST_step1_round2.md R2-3); the raw value stays unclamped for the overload timer above
     },
 
     rudder: {
