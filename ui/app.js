@@ -49,8 +49,9 @@ const TRANSLATIONS = {
     'lbl.brailWind': 'Brail (wind)', 'hint.brailWind': 'W sheets in, X eases',
     'h.steering': 'Steering & trim', 'lbl.rudder': 'Rudder', 'hint.rudder': 'A/D deflect, auto-centers on release',
     'lbl.crewPos': 'Crew pos.', 'hint.crewPos': 'J moves to leeward, L moves to the ama',
+    'lbl.crewPosX': 'Crew fore-aft', 'hint.crewPosX': 'I moves forward, K moves aft',
     'h.shunt': 'Shunt', 'btn.shunt': 'SHUNT (space)',
-    'h.amaLoad': 'Ama load', 'h.reset': 'Reset',
+    'h.amaLoad': 'Ama load', 'hud.heel': 'Heel', 'hint.heelBar': 'Heel (centered = upright)', 'h.reset': 'Reset',
     'h.polarDiagram': 'Polar diagram',
     'hint.polar': "Runs the headless polar sweep against the current config (TWS 4/6/8/10 m/s) and plots it. The boat's live (TWA, speed) point is overlaid once you return to sailing.",
     'btn.runPolar': 'Run polar', 'btn.exportCsv': 'Export CSV', 'btn.backToSailing': 'Back to sailing',
@@ -81,8 +82,9 @@ const TRANSLATIONS = {
     'lbl.brailWind': 'Brajda nawietrzna', 'hint.brailWind': 'W wybiera, X luzuje',
     'h.steering': 'Sterowanie i wyważenie', 'lbl.rudder': 'Ster', 'hint.rudder': 'A/D wychyla ster, centruje się po puszczeniu',
     'lbl.crewPos': 'Poz. załogi', 'hint.crewPos': 'J w stronę zawietrznej, L w stronę amy',
+    'lbl.crewPosX': 'Załoga wzdłuż', 'hint.crewPosX': 'I w stronę dziobu, K w stronę rufy',
     'h.shunt': 'Zwrot', 'btn.shunt': 'ZWROT (spacja)',
-    'h.amaLoad': 'Obciążenie amy', 'h.reset': 'Reset',
+    'h.amaLoad': 'Obciążenie amy', 'hud.heel': 'Przechył', 'hint.heelBar': 'Przechył (środek = pion)', 'h.reset': 'Reset',
     'h.polarDiagram': 'Diagram polarny',
     'hint.polar': 'Uruchamia pomiar polary (bezekranowy silnik fizyki) dla bieżącej konfiguracji (TWS 4/6/8/10 m/s) i rysuje wykres. Po powrocie do żeglugi na wykresie pojawia się bieżący punkt (TWA, prędkość) łódki.',
     'btn.runPolar': 'Uruchom polarę', 'btn.exportCsv': 'Eksportuj CSV', 'btn.backToSailing': 'Powrót do żeglugi',
@@ -149,6 +151,8 @@ const capsizeOverlay = document.getElementById('capsizeOverlay');
 const capsizeCause = document.getElementById('capsizeCause');
 const amaBar = document.querySelector('#amaBar > i');
 const amaBarWrap = document.getElementById('amaBar');
+const heelBarWrap = document.getElementById('heelBar');
+const heelNeedle = document.getElementById('heelNeedle');
 const shuntHint = document.getElementById('shuntHint');
 
 const sliders = {
@@ -159,6 +163,7 @@ const sliders = {
   brailWind: document.getElementById('brailWind'),
   rudder: document.getElementById('rudder'),
   crewPos: document.getElementById('crewPos'),
+  crewPosX: document.getElementById('crewPosX'),
 };
 const outs = {
   windDir: document.getElementById('windDirOut'),
@@ -168,6 +173,7 @@ const outs = {
   brailWind: document.getElementById('brailWindOut'),
   rudder: document.getElementById('rudderOut'),
   crewPos: document.getElementById('crewPosOut'),
+  crewPosX: document.getElementById('crewPosXOut'),
 };
 
 // ---------------------------------------------------------------------
@@ -197,6 +203,7 @@ function syncSlidersFromControls() {
   sliders.brailWind.value = String(Math.round(controls.brailWind * 100));
   sliders.rudder.value = String(controls.rudder);
   sliders.crewPos.value = String(controls.crewPos);
+  sliders.crewPosX.value = String(controls.crewPosX);
   refreshOutputs();
 }
 
@@ -208,6 +215,7 @@ function refreshOutputs() {
   outs.brailWind.textContent = `${Math.round(controls.brailWind * 100)}%`;
   outs.rudder.textContent = controls.rudder.toFixed(2);
   outs.crewPos.textContent = controls.crewPos.toFixed(2);
+  outs.crewPosX.textContent = controls.crewPosX.toFixed(2);
 }
 
 sliders.windDir.addEventListener('input', () => { controls.windDirFrom = Number(sliders.windDir.value) * DEG; refreshOutputs(); });
@@ -217,6 +225,7 @@ sliders.brailLee.addEventListener('input', () => { controls.brailLee = Number(sl
 sliders.brailWind.addEventListener('input', () => { controls.brailWind = Number(sliders.brailWind.value) / 100; refreshOutputs(); });
 sliders.rudder.addEventListener('input', () => { autoRudder = false; controls.rudder = Number(sliders.rudder.value); refreshOutputs(); });
 sliders.crewPos.addEventListener('input', () => { controls.crewPos = Number(sliders.crewPos.value); refreshOutputs(); });
+sliders.crewPosX.addEventListener('input', () => { controls.crewPosX = Number(sliders.crewPosX.value); refreshOutputs(); });
 
 syncSlidersFromControls();
 
@@ -226,7 +235,7 @@ syncSlidersFromControls();
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 const HANDLED_KEYS = new Set(['Space', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',
-  'KeyQ', 'KeyZ', 'KeyW', 'KeyX', 'KeyJ', 'KeyL', 'KeyA', 'KeyD', 'KeyP', 'Period', 'KeyF', 'KeyO', 'KeyR']);
+  'KeyQ', 'KeyZ', 'KeyW', 'KeyX', 'KeyJ', 'KeyL', 'KeyI', 'KeyK', 'KeyA', 'KeyD', 'KeyP', 'Period', 'KeyF', 'KeyO', 'KeyR']);
 
 window.addEventListener('keydown', (e) => {
   if (HANDLED_KEYS.has(e.code)) e.preventDefault();
@@ -260,6 +269,8 @@ function applyContinuousKeys(dt) {
   if (keys.has('KeyX')) controls.brailWind = clamp(controls.brailWind - brailRate * dt, 0, 1);
   if (keys.has('KeyJ')) controls.crewPos = clamp(controls.crewPos - crewRate * dt, dims.crew.posMin, dims.crew.posMax);
   if (keys.has('KeyL')) controls.crewPos = clamp(controls.crewPos + crewRate * dt, dims.crew.posMin, dims.crew.posMax);
+  if (keys.has('KeyI')) controls.crewPosX = clamp(controls.crewPosX + crewRate * dt, dims.crew.posXMin, dims.crew.posXMax);
+  if (keys.has('KeyK')) controls.crewPosX = clamp(controls.crewPosX - crewRate * dt, dims.crew.posXMin, dims.crew.posXMax);
 
   if (autoRudder) {
     if (keys.has('KeyA')) controls.rudder = clamp(controls.rudder - rudderRate * dt, -1, 1);
@@ -401,7 +412,13 @@ function sailPath(yardLen, yardAngleAbs, brailLee, brailWind, end) {
   const camber = clamp(0.28 * (1 - brailLee) + 0.22 * brailWind, 0.02, 0.5);
   const midX = (tackX + clewX) / 2;
   const midY = (0 + clewY) / 2;
-  const nx = -clewY, ny = clewX - tackX; // perpendicular to the chord
+  // Perpendicular to the chord, pointing away from the ama (FIX_REQUEST_round4_roll_dof.md
+  // 2.1): a fixed +90deg rotation of the (end-aware) chord vector is only
+  // correct at end=+1 — at end=-1 it doesn't flip with the chord (the
+  // chord's y-component negates with end, but a raw (-dy,dx) rotation
+  // doesn't), so the belly bulged toward the ama/windward after a shunt.
+  // Multiplying by `end` mirrors it the same way the chord itself mirrors.
+  const nx = -clewY * end, ny = (clewX - tackX) * end;
   const nlen = Math.hypot(nx, ny) || 1;
   const bulge = camber * chordLen;
   const ctrlX = midX + (nx / nlen) * bulge;
@@ -440,28 +457,85 @@ function drawBoat(state, forces, cam) {
     ctx.beginPath(); ctx.moveTo(bx, 0); ctx.lineTo(bx, spacing); ctx.stroke();
   });
 
-  // Ama — physical, fixed to the hull structure, always at physical +y
-  ctx.fillStyle = capsized ? '#4a3a2a' : '#c9a35a';
+  // Ama — physical, fixed to the hull structure, always at physical +y.
+  // Immersion reflects amaLoad's sign (FIX_REQUEST_round4_roll_dof.md
+  // 2.3): thinning/ghosting as it flies clear of the water (phi>0, ama
+  // load approaching/past 1), a darker fill + wider wake ring when
+  // pressed under (phi<0).
+  const amaLoad = forces?.amaLoadDisplay ?? 0;
+  const flying = state.phi >= 0;
+  const loadFrac = clamp(amaLoad, 0, 1.5) / 1.5;
+  ctx.save();
+  if (flying) {
+    ctx.globalAlpha = capsized ? 0.5 : 1 - 0.6 * loadFrac; // thins out as it lifts clear
+    ctx.fillStyle = capsized ? '#4a3a2a' : '#c9a35a';
+  } else {
+    ctx.globalAlpha = capsized ? 0.5 : 1;
+    // Darkens toward a wet/pressed tone as it's forced under.
+    ctx.fillStyle = capsized ? '#4a3a2a' : `rgb(${201 - 90 * loadFrac}, ${163 - 90 * loadFrac}, ${90 - 30 * loadFrac})`;
+  }
+  if (!flying && !capsized && loadFrac > 0.15) {
+    // Wake ring around a pressed ama.
+    ctx.strokeStyle = `rgba(120,180,220,${0.15 + 0.35 * loadFrac})`;
+    ctx.lineWidth = 0.06;
+    ctx.beginPath();
+    ctx.ellipse(0, spacing, amaLen / 2 + 0.15 + 0.3 * loadFrac, beam * 0.6 + 0.1 + 0.2 * loadFrac, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
   ctx.beginPath();
   ctx.ellipse(0, spacing, amaLen / 2, beam * 0.6, 0, 0, Math.PI * 2);
   ctx.fill();
+  ctx.restore();
 
-  // Main hull (slender canoe shape, symmetric — physical Tip A at +x)
+  // Main hull: a SYMMETRIC double-ender (FIX_REQUEST_round4_roll_dof.md
+  // 2.2) — a proa's hull has no fixed bow/stern, both physical tips are
+  // identical; direction is communicated only by the active-bow marker
+  // and the active steering oar below, not by hull shape.
   ctx.fillStyle = capsized ? '#3a3a3a' : '#d8c9a8';
   ctx.beginPath();
   ctx.moveTo(halfL, 0);
-  ctx.quadraticCurveTo(halfL * 0.4, beam / 2, -halfL * 0.85, beam / 2);
-  ctx.quadraticCurveTo(-halfL, 0, -halfL * 0.85, -beam / 2);
-  ctx.quadraticCurveTo(halfL * 0.4, -beam / 2, halfL, 0);
+  ctx.quadraticCurveTo(halfL * 0.5, beam / 2, 0, beam / 2);
+  ctx.quadraticCurveTo(-halfL * 0.5, beam / 2, -halfL, 0);
+  ctx.quadraticCurveTo(-halfL * 0.5, -beam / 2, 0, -beam / 2);
+  ctx.quadraticCurveTo(halfL * 0.5, -beam / 2, halfL, 0);
   ctx.closePath();
   ctx.fill();
 
-  // Crew dot along the beam at crewPos * spacing (full spacing, matching
-  // the physics lever since FIX_REQUEST_round3_worldframe.md R3-2: crewPos=1.0
-  // stands ON THE AMA), offset from hull centerline (0) toward the ama.
+  // Steering oars at both physical tips (2.2 bonus): the ACTIVE one (at
+  // the physical stern, opposite the active bow — physical x = -halfL*end,
+  // matching the rudder force vector below) drawn in use; the IDLE one (at
+  // the physical bow, +halfL*end) raised/greyed. Both swap ends at a shunt
+  // together with the active-bow marker, with no hull rotation.
+  const activeOarX = -halfL * state.end, idleOarX = halfL * state.end;
+  const drawOar = (x, active) => {
+    ctx.save();
+    ctx.globalAlpha = active ? 1 : 0.35;
+    ctx.strokeStyle = active ? '#3a2f22' : '#7a7368';
+    ctx.lineWidth = 0.05;
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x + (x < 0 ? -0.5 : 0.5), 0); ctx.stroke();
+    ctx.fillStyle = active ? '#5a4a38' : '#9a9488';
+    ctx.beginPath();
+    ctx.ellipse(x + (x < 0 ? -0.6 : 0.6), 0, 0.22, 0.09, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  };
+  drawOar(idleOarX, false);
+  drawOar(activeOarX, true);
+
+  // Crew dot: lateral (crewPos, toward the ama, full spacing per
+  // FIX_REQUEST_round3_worldframe.md R3-2) and fore-aft (crewPosX, per
+  // FIX_REQUEST_round4_roll_dof.md 1.5/2.3). crewPos is a physical-frame
+  // concept (toward the ama, fixed side — matches this nested block, no
+  // end factor). crewPosX is an ACTIVE-BOW-relative concept instead
+  // ("forward" means toward the current direction of travel, matching
+  // hydro.js's hullSideForce CLR shift, which uses crewPosX with no end
+  // factor in the active-bow-tracked frame) — since it's being drawn
+  // INSIDE this end-rotating physical block, it needs the compensating
+  // *end so it lands at the correct active-bow-relative screen position.
   const crewY = clamp(controls.crewPos, dims.crew.posMin, dims.crew.posMax) * spacing;
+  const crewX = clamp(controls.crewPosX, dims.crew.posXMin, dims.crew.posXMax) * halfL * 0.6 * state.end;
   ctx.fillStyle = '#ffe08a';
-  ctx.beginPath(); ctx.arc(0, crewY, 0.28, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(crewX, crewY, 0.28, 0, Math.PI * 2); ctx.fill();
 
   ctx.restore();
 
@@ -496,7 +570,11 @@ function drawBoat(state, forces, cam) {
     ctx.beginPath(); ctx.moveTo(tx, 0); ctx.lineTo(tx + 0.6, -0.35 * state.end); ctx.stroke();
     ctx.restore();
   } else {
-    const sp = sailPath(yardLen, Math.abs(controls.yardAngle), controls.brailLee, controls.brailWind, state.end);
+    // Foreshorten the drawn chord by cos(phi) (2.3, optional): subtle at
+    // normal heel angles, ties the picture to the roll physics without
+    // needing its own visual language.
+    const heelYardLen = yardLen * Math.max(0.3, Math.cos(state.phi));
+    const sp = sailPath(heelYardLen, Math.abs(controls.yardAngle), controls.brailLee, controls.brailWind, state.end);
     if (fade > 0.02) {
       ctx.save();
       ctx.globalAlpha = 0.35 + 0.65 * fade;
@@ -592,6 +670,7 @@ const hud = {
   vmg: document.getElementById('hudVmg'),
   leeway: document.getElementById('hudLeeway'),
   amaLoad: document.getElementById('hudAmaLoad'),
+  heel: document.getElementById('hudHeel'),
   shunt: document.getElementById('hudShunt'),
   tws: document.getElementById('hudTws'),
 };
@@ -620,6 +699,7 @@ function updateHud(state, forces) {
   hud.vmg.textContent = (vmg * MS_TO_KN).toFixed(1);
   hud.leeway.textContent = leewayDeg.toFixed(0);
   hud.amaLoad.textContent = (forces.amaLoadDisplay * 100).toFixed(0);
+  hud.heel.textContent = (state.phi / DEG).toFixed(1);
   hud.shunt.textContent = t(`shuntPhase.${state.shunt.phase}`);
   hud.tws.textContent = controls.windSpeed.toFixed(1);
 
@@ -628,6 +708,18 @@ function updateHud(state, forces) {
   amaBarWrap.classList.toggle('warn', forces.amaLoadDisplay > 0.75 && forces.amaLoadDisplay <= 1.0);
   amaBarWrap.classList.toggle('danger', forces.amaLoadDisplay > 1.0);
   amaBar.style.width = `${loadFrac * 100}%`;
+
+  // Heel gauge: artificial-horizon-style, centered = upright, needle
+  // position scaled by phiLiftoffDeg/phiSubmergeDeg (asymmetric range,
+  // matching the roll model's own asymmetric saturation angles), color
+  // synced to the same warn/danger states as the ama-load bar
+  // (FIX_REQUEST_round4_roll_dof.md 2.3).
+  const phiDeg = state.phi / DEG;
+  const heelRangeDeg = phiDeg >= 0 ? dims.stability.phiLiftoffDeg : dims.stability.phiSubmergeDeg;
+  const heelFrac = clamp(phiDeg / (heelRangeDeg * 1.5), -1, 1); // *1.5 so the needle doesn't pin at the edge right at amaLoad==1
+  heelNeedle.style.left = `${50 + heelFrac * 50}%`;
+  heelBarWrap.classList.toggle('warn', forces.amaLoadDisplay > 0.75 && forces.amaLoadDisplay <= 1.0);
+  heelBarWrap.classList.toggle('danger', forces.amaLoadDisplay > 1.0);
 
   const speedAboveLockout = speedMs > dims.shunt.speedLockout;
   shuntHint.textContent = speedAboveLockout

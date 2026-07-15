@@ -165,14 +165,32 @@ export function sailForces(state, controls, config) {
   const fade = shuntForceFade(state.shunt);
   Fx *= fade; Fy *= fade;
 
+  // Roll (4th DOF, FIX_REQUEST_round4_roll_dof.md 1.4): heel foreshortens
+  // the sail's projected area.
+  const phi = state.phi ?? 0;
+  const cosPhi = Math.cos(phi);
+  Fx *= cosPhi; Fy *= cosPhi;
+
   const brailWind = controls.brailWind ?? 0;
   const heelMoment = Fy * config.sail.CEheight * (1 - 0.9 * brailWind);
 
   const ceXFraction = config.sail.ceXFraction ?? 0.15;
   const ceX = ceXFraction * (config.hull.length / 2) * state.end;
-  const yawMoment = ceX * Fy;
 
-  return { Fx, Fy, heelMoment, yawMoment, alpha, alphaSailor, aw, CL, CD };
+  // Heel-course coupling (pure geometry, FIX_REQUEST_round4_roll_dof.md
+  // 1.4): heeling tips the mast, offsetting the CE laterally by
+  // CEheight*sin(phi) toward leeward (i.e. the -end side, away from the
+  // ama — see state.js/ARCHITECTURE conventions) for phi>0. A forward
+  // (drive) force Fx applied at a lateral offset y produces yaw moment
+  // -y*Fx (standard r x F, no x-offset for this term); substituting
+  // y = -end*CEheight*sin(phi) gives the end*CEheight*sin(phi)*Fx below.
+  // config.hull.yawHeelSign (+-1) is a verified-empirically flip knob —
+  // see ARCHITECTURE doc / harness/asserts.js coupling-sign tests (1.6).
+  const yawHeelSign = config.hull.yawHeelSign ?? 1;
+  const yawMomentHeel = yawHeelSign * state.end * config.sail.CEheight * Math.sin(phi) * Fx;
+  const yawMoment = ceX * Fy + yawMomentHeel;
+
+  return { Fx, Fy, heelMoment, yawMoment, yawMomentHeel, alpha, alphaSailor, aw, CL, CD };
 }
 
 // tableCL(apexDeg, alphaDeg, config) -> raw Polhamus-table CL (no camber/brails)

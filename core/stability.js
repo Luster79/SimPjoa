@@ -1,70 +1,106 @@
-// stability.js — simplified heel/roll: ama-load statics and the aback/
-// overload capsize state machine. Full roll dynamics are out of scope (per
-// the prompt); the ama load is a static moment-balance indicator instead.
+// stability.js — roll as a 4th DOF: sail heel moment, ama restoring moment
+// (weight when lifting, buoyancy when pressed), crew moment, linear
+// damping, and the aback/overload capsize state machine.
+// (FIX_REQUEST_round4_roll_dof.md Part 1 — supersedes the earlier static
+// heel/roll model: "Full roll dynamics are out of scope" no longer holds.)
 
-// computeAmaLoad(heelMoment, crewPos, config, end) -> amaLoad
-//   amaLoad = heeling demand / righting capacity. 0 = upright, 1 = ama at
-//   the point of lifting clear of the water, >1 = ama flying (overloaded).
-//   `end` (default +1) is state.end — needed because heelMoment's sign is
-//   expressed in the boat frame (see aero.js), where the ama's side is
-//   `end`, not always +y (FIX_REQUEST_round3_worldframe.md R3-1 erratum).
-//   heelMoment * end < 0 is the normal proa case: the sail's leeward-
-//   pushing side force (see aero.js) lifts the windward ama (the `end`
-//   side) clear of the water, and it's the ama's WEIGHT resisting that lift
-//   that provides the righting moment. heelMoment * end > 0 is the reverse,
-//   emergency case (e.g. aback): the ama is being pressed DOWN into the
-//   water instead, resisted by its BUOYANCY — per the prompt's Stability
-//   section. At end=+1 this reduces to the original `heelMoment < 0` check.
-//   Lever arms are the FULL hull-ama spacing, not half of it: a crew member
-//   at crewPos=1.0 stands ON THE AMA (full spacing away from the hull
-//   centerline roll axis), and the ama's own weight/buoyancy acts at that
-//   same full spacing (FIX_REQUEST_round3_worldframe.md R3-2 erratum — the
-//   original prompt's half-spacing formula undersold both levers by 2x).
-//   This function returns the RAW value, unbounded — restoringCapacity can
-//   be near its 1 N*m floor (e.g. crew ballast almost exactly cancelling
-//   ama weight/buoyancy), producing values like 2000+ that are meaningless
-//   as a UI percentage but correct as "instant capsize territory" for the
-//   overload timer in updateAback() below, which must see the raw value.
-//   integrator.js's computeForces() additionally exposes amaLoadDisplay, a
-//   copy capped at config.stability.amaLoadDisplayCap, for readouts
-//   (FIX_REQUEST_step1_round2.md R2-3) — do not clamp the value here.
-export function computeAmaLoad(heelMoment, crewPos, config, end = 1) {
-  const { ama, crew, g } = config;
+const DEG = Math.PI / 180;
 
-  const ballastMoment = heelMoment * end < 0
-    ? ama.mass * g * ama.spacing
-    : ama.maxBuoyancy * g * ama.spacing;
-  const crewMoment = crew.mass * g * crewPos * ama.spacing;
-  const restoringCapacity = Math.max(ballastMoment + crewMoment, 1);
-
-  return Math.abs(heelMoment) / restoringCapacity;
+// rollRestoreMoment(phi, config) -> N*m, a genuine restoring term (opposes
+// phi: negative for phi>0, positive for phi<0).
+//   phi >= 0 (ama lifting/flying): the ama's own WEIGHT resists further
+//   lift, growing smoothly (ease-out, zero slope at the cap) from 0 at
+//   phi=0 to its full ama.mass*g*ama.spacing lever at phi=phiLiftoffRad
+//   ("ama just clear of the water" — restoring fully mobilised), then
+//   holding flat: past that angle the ama is fully airborne and
+//   contributes no MORE righting torque as phi keeps growing — a runaway
+//   condition, caught by the overload capsize timer via amaLoad below,
+//   not by this curve.
+//   phi < 0 (ama pressed): symmetric, using ama.maxBuoyancy instead of
+//   ama.mass, saturating at phi=-phiSubmergeRad ("ama fully submerged").
+export function rollRestoreMoment(phi, config) {
+  const { ama, g, stability } = config;
+  if (phi >= 0) {
+    const liftoffRad = stability.phiLiftoffDeg * DEG;
+    const Mmax = ama.mass * g * ama.spacing;
+    const frac = Math.min(phi / liftoffRad, 1);
+    return -Mmax * frac * (2 - frac);
+  }
+  const submergeRad = stability.phiSubmergeDeg * DEG;
+  const Mmax = ama.maxBuoyancy * g * ama.spacing;
+  const frac = Math.min(-phi / submergeRad, 1);
+  return Mmax * frac * (2 - frac);
 }
 
-// updateAback(state, awAngle, amaLoad, dt, config) -> { abackTimer, overloadTimer, capsized }
-//   awAngle: apparent-wind "blowing towards" angle in the boat frame (see
-//   aero.js: apparentWind().angleToBoat). sin(awAngle) * state.end > 0 means
-//   the wind is blowing towards the ama's side (`end`, not always +y — see
-//   FIX_REQUEST_round3_worldframe.md R3-1 erratum and state.js) — i.e. it
-//   originates from the hull's non-ama side, which means the ama has
-//   crossed to leeward: aback.
-//   Capsize has two independent timer-driven triggers, both configurable
-//   (config.stability.{abackCapsizeTime,overloadCapsizeTime}) rather than
-//   instantaneous, so a brief gust spike doesn't capsize the boat: sustained
-//   aback (per acceptance criterion 3), and sustained ama overload — the
-//   ama held above 100% load (flying clear of the water) for too long, per
-//   FIX_REQUEST_step1_review.md CRITICAL-1. Note the signature extends the
-//   architecture doc's `updateAback(state, awAngle, dt)` with `amaLoad` and
-//   `config`: the overload trigger needs both, and per the review's ground
-//   rules a required signature change must be made explicitly rather than
-//   keeping capsize thresholds as unconfigurable magic constants.
-export function updateAback(state, awAngle, amaLoad, dt, config) {
+// crewRollMoment(phi, crewPos, config) -> N*m. A genuine pendulum torque,
+// NOT a bidirectional "restoring" term: a crew member rigidly standing at
+// lateral offset crewPos*ama.spacing (crewPos>0 = toward the ama) sweeps
+// to world position (offset*cos(phi), offset*sin(phi)) as the platform
+// rolls, and gravity's moment about the roll axis on that swept position
+// is -m*g*offset*cos(phi) — CONSTANT SIGN in phi (cos(phi) doesn't flip
+// sign for realistic roll angles), matching the extension request's
+// literal formula (crew.mass*g*crewPos*ama.spacing*cos(phi)) with a minus
+// applied for standard pivot-torque sign convention (r x F, force
+// straight down). This is why crew ballast is double-edged: for crewPos>0
+// it RESISTS the ama lifting (phi>0, the normal case), but *worsens* the
+// ama being pressed down once phi has already gone negative (aback-like)
+// — real physics (moving crew weight onto the side that's already being
+// forced under makes it worse), confirmed by the squall scenario capsize
+// this exposed until its threshold controller was made phi-aware (see
+// harness/scenarios.js, FIX_REQUEST_round4_roll_dof.md Part 1) instead of
+// chasing amaLoad's magnitude alone regardless of which side it's on.
+// Cross-checked against the coupling-sign tests in harness/asserts.js
+// (1.6): with this sign, crew toward the ama (phi>=0 branch) measurably
+// lowers the settled amaLoad, matching the existing round-2/round-3
+// semantics.
+export function crewRollMoment(phi, crewPos, config) {
+  const { crew, ama, g } = config;
+  return -crew.mass * g * crewPos * ama.spacing * Math.cos(phi);
+}
+
+// rollDampingMoment(p, config) -> N*m, linear damping opposing roll rate.
+export function rollDampingMoment(p, config) {
+  return -config.stability.rollDampingCoeff * p;
+}
+
+// computeAmaLoad(phi, config) -> amaLoad. DERIVED from the roll angle
+// (FIX_REQUEST_round4_roll_dof.md 1.3 — replaces the old static
+// heelMoment/restoringCapacity formula) so the existing contract carries
+// over continuously: 0 = upright, exactly 1.0 when the ama just leaves
+// the water (phi=phiLiftoffRad) or just fully submerges
+// (phi=-phiSubmergeRad) — "restoring fully mobilised" either way — and
+// UNBOUNDED past that (grows linearly with phi), so the overload/aback
+// timers below keep the exact "how far past the edge" semantics they
+// always had (a near-zero denominator is no longer possible: phi is a
+// real integrated state, not a moment/capacity ratio).
+export function computeAmaLoad(phi, config) {
+  const { stability } = config;
+  if (phi >= 0) return phi / (stability.phiLiftoffDeg * DEG);
+  return Math.abs(phi) / (stability.phiSubmergeDeg * DEG);
+}
+
+// updateAback(state, amaLoad, dt, config) -> { abackTimer, overloadTimer, capsized }
+//   Both capsize triggers now read the SAME roll-angle-derived amaLoad,
+//   split by the sign of state.phi: phi>=0 past 1.0 is the overload path
+//   (ama flying — config.stability.overloadCapsizeTime, unchanged 2s
+//   semantics); phi<0 past 1.0 is the aback path (ama pressed/submerged
+//   past buoyancy saturation — config.stability.abackCapsizeTime,
+//   unchanged 6s semantics). This is the "physical mechanism instead of a
+//   bare timer" from FIX_REQUEST_round4_roll_dof.md 1.2/1.6: previously
+//   aback was detected purely from the apparent-wind angle (a proxy for
+//   "this will press the ama down"); a backwinded sail drives heelMoment
+//   the wrong way, which now drives phi negative directly through the
+//   roll ODE, so reading state.phi's sign is strictly more direct than
+//   the old proxy. `awAngle` is dropped from the signature — it was only
+//   ever used for that proxy check.
+export function updateAback(state, amaLoad, dt, config) {
   const { abackCapsizeTime, overloadCapsizeTime } = config.stability;
 
-  const isAback = Math.sin(awAngle) * state.end > 0;
-  const abackTimer = isAback ? state.abackTimer + dt : 0;
-
-  const isOverloaded = amaLoad > 1.0;
+  const isOverloaded = state.phi >= 0 && amaLoad > 1.0;
   const overloadTimer = isOverloaded ? state.overloadTimer + dt : 0;
+
+  const isAback = state.phi < 0 && amaLoad > 1.0;
+  const abackTimer = isAback ? state.abackTimer + dt : 0;
 
   const capsized = state.capsized
     || abackTimer > abackCapsizeTime

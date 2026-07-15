@@ -189,6 +189,9 @@ function buildDefaultConfig() {
       lowSpeedSideDamping: 100,            // tunable — N per (m/s) of sway speed; linear-regime side resistance that keeps a near-stalled boat from drifting freely once sideForceCoeff was tuned low (FIX_REQUEST_step1_round2.md R2-1)
       yawDampingCoeff: 900,               // tunable — N*m per (rad/s), scaled by speed
       clrXFraction: 0.05,                 // tunable — center-of-lateral-resistance offset from CG (aft), fraction of half-length
+      crewForeAftTrimCoeff: 0.15,          // tunable ("k_trim") — fraction of half-length the CLR shifts per unit crewPosX (FIX_REQUEST_round4_roll_dof.md 1.5)
+      crewTrimSign: 1,                     // +-1 — flips the crewPosX->CLR-shift direction; verified empirically against the 1.6 coupling-sign test (forward crew -> luff), see ARCHITECTURE doc
+      yawHeelSign: 1,                      // +-1 — flips the heel->yaw coupling direction (aero.js yawMomentHeel); verified empirically against the 1.6 coupling-sign test (crew toward ama -> bear away), see ARCHITECTURE doc
     },
 
     ama: {
@@ -215,12 +218,29 @@ function buildDefaultConfig() {
       mass: 90,                // kg
       posMin: -0.3,
       posMax: 1.0,
+      posXMin: -1.0,            // fore-aft crew position range (FIX_REQUEST_round4_roll_dof.md 1.5)
+      posXMax: 1.0,
     },
 
     stability: {
       abackCapsizeTime: 6,       // s — sustained aback before capsize (acceptance criterion 3)
       overloadCapsizeTime: 2.0,  // s — sustained amaLoad > 1.0 (ama flying) before capsize
       amaLoadDisplayCap: 3.0,    // UI-safe ceiling for amaLoad readouts (FIX_REQUEST_step1_round2.md R2-3); the raw value stays unclamped for the overload timer above
+      // --- Roll as a 4th DOF (FIX_REQUEST_round4_roll_dof.md Part 1) ---
+      // I_roll: the extension request's own suggested starting estimate
+      // (displacement*(0.4*ama.spacing)^2 = 250*1.0^2 = 250 kg*m^2) gave a
+      // roll period of only ~1.0s at a representative 8deg step, well
+      // under the requested 1.5-4s band — raised (tunable, as the request
+      // itself flags this default) to hit the target: 1500 kg*m^2 gives a
+      // measured period of ~2.6s (empirical step-response probe, 8deg
+      // initial displacement, zero wind).
+      I_roll: 1500,
+      phiLiftoffDeg: 12,          // deg — roll angle at which the ama's weight-restoring moment saturates ("ama just clear of the water", amaLoad == 1.0 exactly here)
+      phiSubmergeDeg: 10,         // deg — roll angle (negative side) at which the ama's buoyancy-restoring moment saturates ("ama fully submerged", amaLoad == 1.0 exactly here)
+      // rollDampingCoeff: paired with I_roll=1500 above, tuned so the same
+      // 8deg step settles (|phi|<0.4deg) in ~3.2 oscillation periods —
+      // within the requested 2-4 period, damped-overshoot band.
+      rollDampingCoeff: 900,
     },
 
     rudder: {
@@ -256,6 +276,12 @@ export function validateConfig(config) {
   if (!(config.hull.length > 0)) errs.push('hull.length must be > 0');
   if (!(config.ama.spacing > 0)) errs.push('ama.spacing must be > 0');
   if (!(config.sail.area > 0)) errs.push('sail.area must be > 0');
+  if (!(config.stability.I_roll > 0)) errs.push('stability.I_roll must be > 0');
+  if (!(config.stability.phiLiftoffDeg > 0)) errs.push('stability.phiLiftoffDeg must be > 0');
+  if (!(config.stability.phiSubmergeDeg > 0)) errs.push('stability.phiSubmergeDeg must be > 0');
+  if (!(config.stability.rollDampingCoeff > 0)) errs.push('stability.rollDampingCoeff must be > 0');
+  inRange(config.crew.posXMin, -1, 0, 'crew.posXMin');
+  inRange(config.crew.posXMax, 0, 1, 'crew.posXMax');
 
   if (errs.length) throw new Error('CONFIG validation failed:\n' + errs.join('\n'));
   return config;

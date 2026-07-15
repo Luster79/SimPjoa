@@ -10,7 +10,7 @@ export function createSimulator(userConfig) {
   let state = createInitialState(config);
   let lastForces = computeForces(state, {
     windDirFrom: 0, windSpeed: 0, yardAngle: 0, rudder: 0,
-    brailLee: 0, brailWind: 0, crewPos: 0, shuntRequest: false,
+    brailLee: 0, brailWind: 0, crewPos: 0, crewPosX: 0, shuntRequest: false,
   }, config);
   let lastShuntRequest = false;
 

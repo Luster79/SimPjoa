@@ -16,7 +16,7 @@ export function hullResistance(u, config) {
   return -Math.sign(u) * (friction + wavePenalty);
 }
 
-// hullSideForce(u, v, config) -> { Fx, Fy, yawMoment }
+// hullSideForce(u, v, crewPosX, config) -> { Fx, Fy, yawMoment }
 //   Fy: low-AR-foil side force, saturating at hull.leewaySaturationDeg and
 //   then DEGRADING (not plateauing) past it — a foil beyond its designed
 //   leeway range stalls and mushes sideways rather than continuing to
@@ -24,7 +24,14 @@ export function hullResistance(u, config) {
 //   Fx: induced drag. A foil's side force is never free: it costs drag
 //   proportional to Fy tilted aft by the RAW (unclamped) leeway angle, so
 //   the penalty keeps growing past saturation even as Fy itself falls off.
-export function hullSideForce(u, v, config) {
+//   crewPosX (fore-aft crew position, -1..1): phenomenological CLR shift,
+//   no pitch DOF (FIX_REQUEST_round4_roll_dof.md 1.5) — weight forward
+//   moves the center of lateral resistance forward by
+//   crewForeAftTrimCoeff*crewPosX*(hull.length/2), leaving the CE
+//   effectively aft of the CLR, which should luff the boat (verified
+//   empirically against the 1.6 coupling-sign test; config.hull.crewTrimSign
+//   is a flip knob if the physical rig runs the other way).
+export function hullSideForce(u, v, crewPosX, config) {
   const { hull, rho_w } = config;
   const satRad = (hull.leewaySaturationDeg * Math.PI) / 180;
   const leewayRaw = Math.atan2(v, Math.abs(u) + 0.05);
@@ -51,7 +58,11 @@ export function hullSideForce(u, v, config) {
 
   // Center of lateral resistance offset from CG (slightly aft, tunable) — gives
   // a modest weather-helm-like turning tendency rather than zero yaw coupling.
-  const clrX = -(hull.clrXFraction ?? 0.1) * (hull.length / 2);
+  // crewTrimSign*crewForeAftTrimCoeff*crewPosX shifts it fore/aft with
+  // fore-aft crew position (FIX_REQUEST_round4_roll_dof.md 1.5).
+  const crewTrimSign = hull.crewTrimSign ?? 1;
+  const clrX = -(hull.clrXFraction ?? 0.1) * (hull.length / 2)
+    + crewTrimSign * (hull.crewForeAftTrimCoeff ?? 0) * crewPosX * (hull.length / 2);
   const yawMoment = clrX * Fy;
 
   return { Fx, Fy, yawMoment };

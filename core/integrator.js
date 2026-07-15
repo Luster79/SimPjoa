@@ -1,13 +1,15 @@
-// integrator.js — assembles per-module forces into total Fx/Fy/M, RK4-
-// integrates the smooth 3DOF ODE state [x, y, heading, u, v, r], then
-// applies the discrete, non-ODE updates once per substep: the shunt state
-// machine (which may itself override u, r, heading, end at the swap
-// instant) and the ama-load / aback-timer / capsize statics.
+// integrator.js — assembles per-module forces into total Fx/Fy/M/Mroll,
+// RK4-integrates the smooth 4DOF ODE state [x, y, heading, u, v, r, phi,
+// p] (roll added FIX_REQUEST_round4_roll_dof.md Part 1), then applies the
+// discrete, non-ODE updates once per substep: the shunt state machine
+// (which may itself override u, v, heading, end at the swap instant —
+// phi, p pass through unchanged, see core/shunt.js) and the ama-load /
+// aback-timer / capsize statics (now derived from phi, see stability.js).
 
 import { sailForces } from './aero.js';
 import { hullResistance, hullSideForce, amaDrag, yawDamping } from './hydro.js';
 import { rudderForce } from './rudder.js';
-import { computeAmaLoad, updateAback } from './stability.js';
+import { computeAmaLoad, updateAback, rollRestoreMoment, crewRollMoment, rollDampingMoment } from './stability.js';
 import { shuntStep } from './shunt.js';
 
 // computeForces(state, controls, config) -> total forces/moment + readouts
@@ -21,11 +23,11 @@ import { shuntStep } from './shunt.js';
 // pairs are FIX_REQUEST_step1_round2.md R2-3.
 export function computeForces(state, controls, config) {
   const aero = sailForces(state, controls, config);
-  const amaLoad = computeAmaLoad(aero.heelMoment, controls.crewPos, config, state.end);
+  const amaLoad = computeAmaLoad(state.phi, config);
   const amaLoadDisplay = Math.min(amaLoad, config.stability.amaLoadDisplayCap);
 
   const resist = hullResistance(state.u, config);
-  const side = hullSideForce(state.u, state.v, config);
+  const side = hullSideForce(state.u, state.v, controls.crewPosX ?? 0, config);
   const drag = amaDrag(state.u, amaLoad, controls.crewPos, config);
   const rudder = rudderForce(state, controls, config);
   const damp = yawDamping(state.r, state.u, config);
@@ -34,8 +36,19 @@ export function computeForces(state, controls, config) {
   const Fy = aero.Fy + side.Fy + rudder.Fy;
   const M = aero.yawMoment + side.yawMoment + rudder.yawMoment + damp;
 
+  // Roll dynamics (4th DOF, FIX_REQUEST_round4_roll_dof.md Part 1):
+  // sail heel (boat-frame heelMoment converted to the physical-frame roll
+  // sign via *end — see state.js: heelMoment*end<0 is the normal,
+  // ama-lifting case, which must contribute POSITIVE Mroll, hence the
+  // negation) + the ama's own restoring moment + crew moment + damping.
+  const Msail = -aero.heelMoment * state.end;
+  const Mrestore = rollRestoreMoment(state.phi, config);
+  const Mcrew = crewRollMoment(state.phi, controls.crewPos, config);
+  const Mdamp = rollDampingMoment(state.p, config);
+  const Mroll = Msail + Mrestore + Mcrew + Mdamp;
+
   return {
-    Fx, Fy, M, amaLoad, amaLoadDisplay,
+    Fx, Fy, M, Mroll, amaLoad, amaLoadDisplay,
     heelMoment: aero.heelMoment, alpha: aero.alpha, alphaSailor: aero.alphaSailor,
     aw: aero.aw, CL: aero.CL, CD: aero.CD,
     breakdown: {
@@ -45,6 +58,7 @@ export function computeForces(state, controls, config) {
       amaDrag: { Fx: drag },
       rudder: { Fy: rudder.Fy, yawMoment: rudder.yawMoment },
       yawDamping: { M: damp },
+      roll: { Msail, Mrestore, Mcrew, Mdamp, Mroll },
     },
   };
 }
@@ -53,6 +67,7 @@ export function computeForces(state, controls, config) {
 export function derivatives(state, forces, config) {
   const m = config.hull.displacement;
   const I = config.hull.yawInertia;
+  const Iroll = config.stability.I_roll;
   return {
     du: forces.Fx / m + state.v * state.r,
     dv: forces.Fy / m - state.u * state.r,
@@ -60,11 +75,13 @@ export function derivatives(state, forces, config) {
     dx: state.u * Math.cos(state.heading) - state.v * Math.sin(state.heading),
     dy: state.u * Math.sin(state.heading) + state.v * Math.cos(state.heading),
     dheading: state.r,
+    dphi: state.p,
+    dp: forces.Mroll / Iroll,
   };
 }
 
 function odeState(state) {
-  return { x: state.x, y: state.y, heading: state.heading, u: state.u, v: state.v, r: state.r };
+  return { x: state.x, y: state.y, heading: state.heading, u: state.u, v: state.v, r: state.r, phi: state.phi, p: state.p };
 }
 
 function addScaled(base, deriv, h) {
@@ -79,7 +96,7 @@ export function integrate(state, controls, config, dt) {
     const full = { ...state, ...s };
     const forces = computeForces(full, controls, config);
     const d = derivatives(full, forces, config);
-    return { x: d.dx, y: d.dy, heading: d.dheading, u: d.du, v: d.dv, r: d.dr };
+    return { x: d.dx, y: d.dy, heading: d.dheading, u: d.du, v: d.dv, r: d.dr, phi: d.dphi, p: d.dp };
   };
 
   const s0 = odeState(state);
@@ -101,7 +118,7 @@ export function integrate(state, controls, config, dt) {
 
   const finalState = { ...state, ...next, t: state.t + dt };
   const forcesAtNew = computeForces(finalState, controls, config);
-  const aback = updateAback(finalState, forcesAtNew.aw.angleToBoat, forcesAtNew.amaLoad, dt, config);
+  const aback = updateAback(finalState, forcesAtNew.amaLoad, dt, config);
 
   return {
     ...finalState,

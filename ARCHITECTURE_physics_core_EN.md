@@ -10,6 +10,15 @@ spun the physical hull 180deg in the world at every shunt. See
 `core/shunt.js`'s header comment and `core/state.js`'s Conventions comment
 for the implementation-level detail this section summarises.
 
+**Round 4 note:** roll (`phi`, `p`) is now a real 4th DOF, integrated by
+the RK4 solver alongside x/y/heading/u/v/r — see the new "Roll dynamics"
+section below and `core/stability.js`. `amaLoad` is now DERIVED from `phi`
+(no longer a static heelMoment/restoringCapacity formula), and the aback
+capsize trigger reads `phi`'s sign directly instead of the apparent-wind
+angle. `computeAmaLoad` and `updateAback` signatures both changed
+accordingly (Function signatures section, stability.js). See
+`FIX_REQUEST_round4_roll_dof.md`.
+
 This document supplements PROMPT_proa_simulator_EN.md. In Step 1,
 implement ONLY the physics core and the test harness — no UI whatsoever.
 The core must be a pure JS module (ESM), runnable in Node >= 18 with no
@@ -65,6 +74,11 @@ changes.
   flip world sides at every shunt. See `FIX_REQUEST_round3_worldframe.md`
   R3-1.)
 - Velocities u (surge), v (sway) in the boat frame; r (yaw rate) rad/s.
+- Roll: `phi` (rad) and `p` (rad/s), the 4th DOF (FIX_REQUEST_round4_roll_dof.md
+  Part 1). Defined about the PHYSICAL hull longitudinal axis (not the
+  shunt-rotating active-bow frame) — positive phi = the AMA SIDE RISING.
+  Because it's a physical-frame quantity, phi and p are left OUT of the
+  shunt swap patch entirely (same treatment as r): unchanged at a swap.
 - Moments: positive = counterclockwise rotation (top-down view).
 - Sail angle of attack and leeway angle: always via atan2, never
   asin/acos.
@@ -78,10 +92,11 @@ changes.
       x, y,             // world position [m]
       heading,          // direction of the active bow [rad]
       u, v, r,          // boat-frame velocities [m/s, m/s, rad/s]
+      phi, p,           // roll angle [rad], roll rate [rad/s] — 4th DOF (round 4)
       end,              // +1 | -1 — which hull end is the bow
-      amaLoad,          // ama load 0..1+ (>1 = ama out of the water)
-      abackTimer,       // duration of the aback state [s]
-      overloadTimer,    // duration amaLoad has been > 1.0 [s]
+      amaLoad,          // ama load 0..1+ (>1 = past liftoff/submersion) — DERIVED from phi (round 4)
+      abackTimer,       // duration of the aback state (phi<0 past submersion) [s]
+      overloadTimer,    // duration of the overload state (phi>=0 past liftoff) [s]
       capsized,         // bool
       shunt: { phase, progress }  // 'none'|'ease'|'transfer'|'swap'|'sheet'
     }
@@ -94,7 +109,8 @@ changes.
       rudder,           // [-1..1] -> scaled to +/-35 deg in rudder.js
       brailLee,         // 0..1 leeward brail
       brailWind,        // 0..1 windward brail
-      crewPos,          // -0.3..1.0 crew position (fraction of B/2)
+      crewPos,          // -0.3..1.0 crew position, lateral (fraction of ama.spacing, toward the ama)
+      crewPosX,         // -1..1 crew position, fore-aft (fraction of half hull length; round 4)
       shuntRequest      // bool (rising edge starts the sequence)
     }
 
@@ -113,22 +129,43 @@ cross-check at startup as required by the main prompt. Fixed schema version: a
     sailCoefficients(alpha, controls, config) -> { CL, CD, alphaSailor }
       // Polhamus from table + camber and brail multipliers per the prompt
     sailForces(state, controls, config)
-      -> { Fx, Fy, heelMoment, yawMoment, alpha, alphaSailor, aw }
+      -> { Fx, Fy, heelMoment, yawMoment, yawMomentHeel, alpha, alphaSailor, aw }
       // Fx, Fy in the boat frame; heelMoment already reduced by brailWind;
-      // yawMoment from CE position (tack position changes in shunt phases);
-      // alpha is the raw, internal chord-flow angle (not acute on normal
-      // courses); alphaSailor [0, pi/2] is the UI-facing angle of attack.
+      // yawMoment from CE position (tack position changes in shunt phases)
+      // PLUS yawMomentHeel (round 4); alpha is the raw, internal chord-flow
+      // angle (not acute on normal courses); alphaSailor [0, pi/2] is the
+      // UI-facing angle of attack.
       // The yard trims to the side opposite the ama (leeward) — the chord
       // angle used to derive alpha is end-aware (`state.end * |yardAngle|`,
       // not always `+|yardAngle|`), so heelMoment's sign mirrors with
       // `end` too; stability.js interprets it via `heelMoment * end`.
+      // Round 4 (FIX_REQUEST_round4_roll_dof.md 1.4): Fx/Fy are scaled by
+      // cos(state.phi) (heel foreshortens the sail's projected area), and
+      // yawMomentHeel = config.hull.yawHeelSign * state.end *
+      // sail.CEheight * sin(phi) * Fx — the heeled mast offsets the CE
+      // laterally, so the drive force Fx now produces a yaw moment too
+      // (pure geometry, no free coefficient beyond the verified sign flip
+      // knob). Empirically verified (not just derived) against the
+      // coupling-sign test in harness/asserts.js: crew toward the ama
+      // measurably bears the boat away on a steady reach with the rudder
+      // locked, matching the extension request's expected direction with
+      // yawHeelSign=+1 — no flip needed.
 
 ### hydro.js
     hullResistance(u, config) -> Fx        // friction + wave penalty Fr>0.4
-    hullSideForce(u, v, config) -> { Fx, Fy, yawMoment }  // low-AR foil,
-                                            // saturation ~15 deg leeway, then
-                                            // degrades (mushing); Fx is the
-                                            // induced drag cost of Fy
+    hullSideForce(u, v, crewPosX, config) -> { Fx, Fy, yawMoment }  // low-AR
+                                            // foil, saturation ~15 deg leeway,
+                                            // then degrades (mushing); Fx is
+                                            // the induced drag cost of Fy.
+                                            // crewPosX (round 4, 1.5) shifts
+                                            // the CLR fore/aft:
+                                            // clrX += hull.crewTrimSign *
+                                            // hull.crewForeAftTrimCoeff *
+                                            // crewPosX * (hull.length/2).
+                                            // Empirically verified: forward
+                                            // crew luffs, aft bears away,
+                                            // with crewTrimSign=+1 — no flip
+                                            // needed (see coupling-sign test).
     amaDrag(u, amaLoad, crewPos, config) -> Fx
     yawDamping(r, u, config) -> moment
 
@@ -136,41 +173,100 @@ cross-check at startup as required by the main prompt. Fixed schema version: a
     rudderForce(state, controls, config) -> { Fy, yawMoment }
       // lever arm = half hull length * state.end; dead at |u| ~ 0
 
-### stability.js
-    computeAmaLoad(heelMoment, crewPos, config, end = 1) -> amaLoad   // statics
-      // heelMoment * end < 0 (normal case, windward ama lifting): restoring
-      // capacity from ama.mass (weight). heelMoment * end > 0 (ama pressed
-      // down, e.g. aback): restoring capacity from ama.maxBuoyancy. `end`
-      // extends the original `computeAmaLoad(heelMoment, crewPos, config)`
-      // signature (defaults to +1 so standalone unit-test calls on a
-      // synthetic heelMoment are unaffected) — see
-      // FIX_REQUEST_round3_worldframe.md R3-1: the sign check has to read
-      // the ama's actual side, not assume +y.
-      // Lever arms are the FULL hull-ama spacing (ama.spacing), not half of
-      // it — a crew member at crewPos=1.0 stands ON THE AMA, at the full
-      // spacing from the roll axis, and the ama's own weight/buoyancy acts
-      // there too (FIX_REQUEST_round3_worldframe.md R3-2 erratum; the
-      // original prompt's half-spacing formula undersold both levers 2x).
-    updateAback(state, awAngle, amaLoad, dt, config) -> { abackTimer, overloadTimer, capsized }
-      // aback: apparent wind from the ama's side (state.end, not always
-      // +y — FIX_REQUEST_round3_worldframe.md R3-1); capsize when
-      // abackTimer exceeds config.stability.abackCapsizeTime.
-      // Independently, capsize when overloadTimer (time amaLoad has stayed
-      // > 1.0) exceeds config.stability.overloadCapsizeTime. Both
-      // thresholds live in CONFIG, not as magic constants (extends the
-      // original `updateAback(state, awAngle, dt)` signature — see
-      // FIX_REQUEST_step1_review.md CRITICAL-1).
+### stability.js — roll as a 4th DOF (FIX_REQUEST_round4_roll_dof.md Part 1;
+### supersedes the round-3 static heelMoment/restoringCapacity model)
+    rollRestoreMoment(phi, config) -> N*m
+      // Genuine restoring term (opposes phi). phi>=0 (ama lifting): ama's
+      // own WEIGHT, ease-out growth from 0 at phi=0 to ama.mass*g*ama.spacing
+      // at phi=phiLiftoffRad ("ama just clear of the water" — restoring
+      // fully mobilised), flat past that (fully airborne, no more righting
+      // torque as phi keeps growing — a runaway condition, caught by the
+      // overload timer, not this curve). phi<0 (ama pressed): symmetric,
+      // ama.maxBuoyancy instead of ama.mass, saturating at
+      // phi=-phiSubmergeRad ("ama fully submerged").
+    crewRollMoment(phi, crewPos, config) -> N*m
+      // A genuine PENDULUM torque, constant sign in phi (NOT a
+      // bidirectional restoring term): -crew.mass*g*crewPos*ama.spacing*
+      // cos(phi), matching the extension request's literal formula. This
+      // is why crew ballast is double-edged: for crewPos>0 it resists the
+      // ama lifting (phi>=0, the normal case) but WORSENS the ama being
+      // pressed down once phi has already gone negative (aback-like) — the
+      // same fixed weight, at the same fixed offset, always pulls that
+      // side down regardless of which way the platform is currently
+      // rolling. harness/scenarios.js's squall controller is phi-aware for
+      // exactly this reason (crew moves OFF the ama the instant phi<0,
+      // rather than chasing amaLoad's magnitude alone).
+    rollDampingMoment(p, config) -> N*m   // -stability.rollDampingCoeff * p (linear)
+    computeAmaLoad(phi, config) -> amaLoad
+      // DERIVED from phi (no longer a function of heelMoment/crewPos/end):
+      // 0=upright, exactly 1.0 at phi=phiLiftoffRad (ama just clear) or
+      // phi=-phiSubmergeRad (ama just fully submerged), UNBOUNDED past
+      // that (grows linearly with phi) so the capsize timers below keep
+      // their "how far past the edge" semantics.
+    updateAback(state, amaLoad, dt, config) -> { abackTimer, overloadTimer, capsized }
+      // Both capsize triggers read the SAME phi-derived amaLoad, split by
+      // sign: state.phi>=0 past 1.0 -> overloadTimer (ama flying,
+      // config.stability.overloadCapsizeTime, unchanged 2s semantics);
+      // state.phi<0 past 1.0 -> abackTimer (ama pressed past buoyancy
+      // saturation, config.stability.abackCapsizeTime, unchanged 6s
+      // semantics). This is the "physical mechanism instead of a bare
+      // timer" the extension request asked for: a backwinded sail drives
+      // heelMoment (and hence phi) negative through the roll ODE, so
+      // reading phi's sign is strictly more direct than the round-3
+      // apparent-wind-angle proxy it replaces — `awAngle` is dropped from
+      // the signature, it was only ever used for that proxy check.
 
 ### shunt.js
     shuntStep(state, controls, config, dt) -> state patch
       // state machine: ease -> transfer -> swap(end*=-1, heading+=PI,
-      // u=-u, v=-v, r unchanged — see Conventions above) -> sheet; locked
-      // when u > threshold
+      // u=-u, v=-v, r/phi/p unchanged — see Conventions above) -> sheet;
+      // locked when u > threshold
 
 ### integrator.js
-    derivatives(state, forces, config) -> { du, dv, dr, ... }
-    integrate(state, controls, config, dt) -> newState   // RK4, dt=1/240
+    derivatives(state, forces, config) -> { du, dv, dr, dphi, dp, ... }
+      // dphi = state.p; dp = forces.Mroll / stability.I_roll (round 4)
+    integrate(state, controls, config, dt) -> newState   // RK4, dt=1/240,
+      // ODE state [x, y, heading, u, v, r, phi, p] (phi/p added round 4)
       // physics dt smaller than a frame; the facade runs N substeps
+
+## Roll dynamics (4th DOF — FIX_REQUEST_round4_roll_dof.md Part 1)
+
+    I_roll * dp/dt = Msail + Mrestore(phi) + Mcrew(phi, crewPos) + Mdamp(p)
+
+- `Msail = -aero.heelMoment * state.end` — converts the boat-frame,
+  end-aware heelMoment into the physical-frame roll sign (positive =
+  lifts the ama), reusing the round-3 `heelMoment * end` convention.
+- `Mrestore`, `Mcrew`, `Mdamp` — see stability.js above.
+- `config.stability.I_roll` (roll inertia, kg*m^2): the extension
+  request's own suggested default (`displacement*(0.4*ama.spacing)^2` =
+  250 kg*m^2) gave a measured roll period of only ~1.0s at a
+  representative 8deg step-response probe — well under the requested
+  1.5-4s band. Raised to 1500 kg*m^2 (tunable, as the request itself
+  flags this default), giving a measured period of ~2.6s.
+- `config.stability.rollDampingCoeff` = 900 N*m per (rad/s), paired with
+  I_roll=1500 so the same 8deg step settles (|phi|<0.4deg) in ~3.2
+  oscillation periods, within the requested 2-4 period damped-overshoot
+  band. Linear damping (`-c*p`), not quadratic — chosen for a
+  classically-tunable locally-linear damped oscillator near equilibrium,
+  since the restoring curve itself is already nonlinear (piecewise
+  ease-out/saturating).
+- `config.stability.phiLiftoffDeg` (12) / `phiSubmergeDeg` (10): the
+  roll angles at which the ama's weight/buoyancy restoring moment
+  saturates — also where `computeAmaLoad` reads exactly 1.0.
+- Sail force scaling and the heel-yaw coupling: see aero.js above.
+- Fore-aft crew CLR shift: see hydro.js above.
+
+`amaLoad` and both capsize timers are now driven entirely by the roll
+state instead of a static per-step formula, so a violent gust can make
+`phi` genuinely overshoot PAST zero into the opposite regime (ama
+lifting -> ama pressed) within a second or two — a real consequence of
+having actual roll inertia and damping instead of an instantaneous
+moment-balance snapshot. Controllers reacting to `amaLoad`'s magnitude
+alone (e.g. a naive "shift crew toward the ama whenever load is high")
+can be caught out by this, since crew ballast's effect is sign-of-phi
+dependent (see crewRollMoment above) — harness/scenarios.js's squall
+controller was retuned to check `state.phi`'s sign for exactly this
+reason; see its header comment for the capsize this exposed and fixed.
 
 ### simulator.js
     createSimulator(userConfig?) -> {
@@ -212,8 +308,9 @@ cross-check at startup as required by the main prompt. Fixed schema version: a
       the boat reaches >80% of pre-shunt speed within 30 s
 
 ### export.js
-    toCSV(run) — columns: t, TWA, AWA, u, v, r, alpha, CL, CD, amaLoad,
-    brailLee, brailWind, crewPos, shunt phase. One file per scenario
+    toCSV(run) — columns: t, TWA, AWA, u, v, r, phi, p, alpha, CL, CD,
+    amaLoad, brailLee, brailWind, crewPos, crewPosX, shunt phase (phi, p,
+    crewPosX added round 4 — roll trace column). One file per scenario
     + polar.csv. This is the input for plotting and coefficient tuning.
 
 ## Definition of done for Step 1

@@ -24,6 +24,14 @@
 // and forced the "ama always at +y" convention that flips the ama's WORLD
 // side at every shunt — see ARCHITECTURE_physics_core_EN.md's Conventions
 // section (rewritten) for the corrected frame definition.
+//
+// Roll (phi, p — FIX_REQUEST_round4_roll_dof.md Part 1) is a PHYSICAL-frame
+// quantity (positive phi = the ama side rising, defined about the physical
+// hull axis, not the shunt-rotating active-bow frame) and is therefore left
+// out of the patch below entirely, same as r: omitting a key from the patch
+// leaves the freshly RK4-integrated value untouched rather than overriding
+// it, which is exactly "unchanged at swap" for a quantity that doesn't
+// depend on which tip is currently labeled bow.
 
 function normalizeAngle(a) {
   return Math.atan2(Math.sin(a), Math.cos(a));

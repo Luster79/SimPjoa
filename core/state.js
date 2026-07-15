@@ -21,6 +21,12 @@
 //   not a hardcoded +y.
 // - Velocities u (surge), v (sway) are in the boat frame; r (yaw rate) is
 //   in rad/s.
+// - Roll: `phi` (rad) and `p` (rad/s) are the 4th DOF
+//   (FIX_REQUEST_round4_roll_dof.md Part 1), defined about the PHYSICAL
+//   hull longitudinal axis — positive phi means the AMA SIDE RISING.
+//   Because this is a physical-frame quantity (unlike heading/u/v/r, which
+//   are active-bow-frame and rotate at a shunt), phi and p are UNCHANGED
+//   at a shunt swap — see core/shunt.js.
 // - Moments: positive = counterclockwise rotation (top-down view).
 // - Sail angle of attack and leeway angle are always computed via atan2,
 //   never asin/acos.
@@ -36,6 +42,8 @@ export function createInitialState(config) {
     u: 0,
     v: 0,
     r: 0,
+    phi: 0,
+    p: 0,
     end: 1,
     amaLoad: 0,
     abackTimer: 0,
@@ -54,6 +62,7 @@ export function createDefaultControls() {
     brailLee: 0,
     brailWind: 0,
     crewPos: 0,
+    crewPosX: 0, // fore-aft crew position, -1..1 (FIX_REQUEST_round4_roll_dof.md 1.5)
     shuntRequest: false,
   };
 }

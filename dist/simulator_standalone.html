@@ -40,6 +40,11 @@
   .bar > i { display: block; height: 100%; background: #2fae6a; transition: width .1s linear, background-color .2s; }
   .bar.warn > i { background: #d8a52a; }
   .bar.danger > i { background: #d84f4f; }
+  .heelBar { position: relative; height: 10px; border-radius: 4px; background: #16222f; margin-top: 4px; }
+  .heelBar .zero { position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: #3a4f66; }
+  .heelBar .needle { position: absolute; top: -2px; width: 3px; height: 14px; border-radius: 2px; background: #2fae6a; transform: translateX(-50%); transition: left .1s linear, background-color .2s; }
+  .heelBar.warn .needle { background: #d8a52a; }
+  .heelBar.danger .needle { background: #d84f4f; }
   .hint { color: #6f8399; font-size: 11px; margin: 2px 0 8px; }
   #polarPanel { display: none; }
   #polarPanel.show { display: block; }
@@ -57,6 +62,7 @@
     <span class="stat">VMG&uarr; <b id="hudVmg">0.0</b> <span data-i18n="unit.kn">kn</span></span>
     <span class="stat"><span data-i18n="hud.leeway">Leeway</span> <b id="hudLeeway">0</b>&deg;</span>
     <span class="stat"><span data-i18n="hud.amaLoad">Ama load</span> <b id="hudAmaLoad">0</b>%</span>
+    <span class="stat"><span data-i18n="hud.heel">Heel</span> <b id="hudHeel">0</b>&deg;</span>
     <span class="stat"><span data-i18n="hud.shunt">Shunt</span> <b id="hudShunt">none</b></span>
     <span class="stat">TWS <b id="hudTws">6.0</b> m/s</span>
     <span class="stat" style="margin-left:auto">
@@ -101,6 +107,8 @@
       <div class="hint" data-i18n="hint.rudder">A/D deflect, auto-centers on release</div>
       <div class="row"><label for="crewPos" data-i18n="lbl.crewPos">Crew pos.</label><input id="crewPos" type="range" min="-0.3" max="1.0" step="0.02" value="0.3"><output id="crewPosOut">0.30</output></div>
       <div class="hint" data-i18n="hint.crewPos">J moves to leeward, L moves to the ama</div>
+      <div class="row"><label for="crewPosX" data-i18n="lbl.crewPosX">Crew fore-aft</label><input id="crewPosX" type="range" min="-1" max="1" step="0.02" value="0"><output id="crewPosXOut">0.00</output></div>
+      <div class="hint" data-i18n="hint.crewPosX">I moves forward, K moves aft</div>
 
       <h2 data-i18n="h.shunt">Shunt</h2>
       <div class="buttons"><button id="btnShunt"><span data-i18n="btn.shunt">SHUNT (space)</span></button></div>
@@ -108,6 +116,8 @@
 
       <h2 data-i18n="h.amaLoad">Ama load</h2>
       <div class="bar" id="amaBar"><i style="width:0%"></i></div>
+      <div class="hint" data-i18n="hint.heelBar">Heel (centered = upright)</div>
+      <div class="heelBar" id="heelBar"><div class="zero"></div><div class="needle" id="heelNeedle" style="left:50%"></div></div>
 
       <h2 data-i18n="h.reset">Reset</h2>
       <div class="buttons"><button id="btnReset"><span data-i18n="btn.reset">Reset (R)</span></button></div>
@@ -175,6 +185,12 @@ function readFileSync(p) {
 //   not a hardcoded +y.
 // - Velocities u (surge), v (sway) are in the boat frame; r (yaw rate) is
 //   in rad/s.
+// - Roll: `phi` (rad) and `p` (rad/s) are the 4th DOF
+//   (FIX_REQUEST_round4_roll_dof.md Part 1), defined about the PHYSICAL
+//   hull longitudinal axis — positive phi means the AMA SIDE RISING.
+//   Because this is a physical-frame quantity (unlike heading/u/v/r, which
+//   are active-bow-frame and rotate at a shunt), phi and p are UNCHANGED
+//   at a shunt swap — see core/shunt.js.
 // - Moments: positive = counterclockwise rotation (top-down view).
 // - Sail angle of attack and leeway angle are always computed via atan2,
 //   never asin/acos.
@@ -190,6 +206,8 @@ function createInitialState(config) {
     u: 0,
     v: 0,
     r: 0,
+    phi: 0,
+    p: 0,
     end: 1,
     amaLoad: 0,
     abackTimer: 0,
@@ -208,6 +226,7 @@ function createDefaultControls() {
     brailLee: 0,
     brailWind: 0,
     crewPos: 0,
+    crewPosX: 0, // fore-aft crew position, -1..1 (FIX_REQUEST_round4_roll_dof.md 1.5)
     shuntRequest: false,
   };
 }
@@ -404,6 +423,9 @@ function buildDefaultConfig() {
       lowSpeedSideDamping: 100,            // tunable — N per (m/s) of sway speed; linear-regime side resistance that keeps a near-stalled boat from drifting freely once sideForceCoeff was tuned low (FIX_REQUEST_step1_round2.md R2-1)
       yawDampingCoeff: 900,               // tunable — N*m per (rad/s), scaled by speed
       clrXFraction: 0.05,                 // tunable — center-of-lateral-resistance offset from CG (aft), fraction of half-length
+      crewForeAftTrimCoeff: 0.15,          // tunable ("k_trim") — fraction of half-length the CLR shifts per unit crewPosX (FIX_REQUEST_round4_roll_dof.md 1.5)
+      crewTrimSign: 1,                     // +-1 — flips the crewPosX->CLR-shift direction; verified empirically against the 1.6 coupling-sign test (forward crew -> luff), see ARCHITECTURE doc
+      yawHeelSign: 1,                      // +-1 — flips the heel->yaw coupling direction (aero.js yawMomentHeel); verified empirically against the 1.6 coupling-sign test (crew toward ama -> bear away), see ARCHITECTURE doc
     },
 
     ama: {
@@ -430,12 +452,29 @@ function buildDefaultConfig() {
       mass: 90,                // kg
       posMin: -0.3,
       posMax: 1.0,
+      posXMin: -1.0,            // fore-aft crew position range (FIX_REQUEST_round4_roll_dof.md 1.5)
+      posXMax: 1.0,
     },
 
     stability: {
       abackCapsizeTime: 6,       // s — sustained aback before capsize (acceptance criterion 3)
       overloadCapsizeTime: 2.0,  // s — sustained amaLoad > 1.0 (ama flying) before capsize
       amaLoadDisplayCap: 3.0,    // UI-safe ceiling for amaLoad readouts (FIX_REQUEST_step1_round2.md R2-3); the raw value stays unclamped for the overload timer above
+      // --- Roll as a 4th DOF (FIX_REQUEST_round4_roll_dof.md Part 1) ---
+      // I_roll: the extension request's own suggested starting estimate
+      // (displacement*(0.4*ama.spacing)^2 = 250*1.0^2 = 250 kg*m^2) gave a
+      // roll period of only ~1.0s at a representative 8deg step, well
+      // under the requested 1.5-4s band — raised (tunable, as the request
+      // itself flags this default) to hit the target: 1500 kg*m^2 gives a
+      // measured period of ~2.6s (empirical step-response probe, 8deg
+      // initial displacement, zero wind).
+      I_roll: 1500,
+      phiLiftoffDeg: 12,          // deg — roll angle at which the ama's weight-restoring moment saturates ("ama just clear of the water", amaLoad == 1.0 exactly here)
+      phiSubmergeDeg: 10,         // deg — roll angle (negative side) at which the ama's buoyancy-restoring moment saturates ("ama fully submerged", amaLoad == 1.0 exactly here)
+      // rollDampingCoeff: paired with I_roll=1500 above, tuned so the same
+      // 8deg step settles (|phi|<0.4deg) in ~3.2 oscillation periods —
+      // within the requested 2-4 period, damped-overshoot band.
+      rollDampingCoeff: 900,
     },
 
     rudder: {
@@ -471,6 +510,12 @@ function validateConfig(config) {
   if (!(config.hull.length > 0)) errs.push('hull.length must be > 0');
   if (!(config.ama.spacing > 0)) errs.push('ama.spacing must be > 0');
   if (!(config.sail.area > 0)) errs.push('sail.area must be > 0');
+  if (!(config.stability.I_roll > 0)) errs.push('stability.I_roll must be > 0');
+  if (!(config.stability.phiLiftoffDeg > 0)) errs.push('stability.phiLiftoffDeg must be > 0');
+  if (!(config.stability.phiSubmergeDeg > 0)) errs.push('stability.phiSubmergeDeg must be > 0');
+  if (!(config.stability.rollDampingCoeff > 0)) errs.push('stability.rollDampingCoeff must be > 0');
+  inRange(config.crew.posXMin, -1, 0, 'crew.posXMin');
+  inRange(config.crew.posXMax, 0, 1, 'crew.posXMax');
 
   if (errs.length) throw new Error('CONFIG validation failed:\n' + errs.join('\n'));
   return config;
@@ -660,14 +705,32 @@ function sailForces(state, controls, config) {
   const fade = shuntForceFade(state.shunt);
   Fx *= fade; Fy *= fade;
 
+  // Roll (4th DOF, FIX_REQUEST_round4_roll_dof.md 1.4): heel foreshortens
+  // the sail's projected area.
+  const phi = state.phi ?? 0;
+  const cosPhi = Math.cos(phi);
+  Fx *= cosPhi; Fy *= cosPhi;
+
   const brailWind = controls.brailWind ?? 0;
   const heelMoment = Fy * config.sail.CEheight * (1 - 0.9 * brailWind);
 
   const ceXFraction = config.sail.ceXFraction ?? 0.15;
   const ceX = ceXFraction * (config.hull.length / 2) * state.end;
-  const yawMoment = ceX * Fy;
 
-  return { Fx, Fy, heelMoment, yawMoment, alpha, alphaSailor, aw, CL, CD };
+  // Heel-course coupling (pure geometry, FIX_REQUEST_round4_roll_dof.md
+  // 1.4): heeling tips the mast, offsetting the CE laterally by
+  // CEheight*sin(phi) toward leeward (i.e. the -end side, away from the
+  // ama — see state.js/ARCHITECTURE conventions) for phi>0. A forward
+  // (drive) force Fx applied at a lateral offset y produces yaw moment
+  // -y*Fx (standard r x F, no x-offset for this term); substituting
+  // y = -end*CEheight*sin(phi) gives the end*CEheight*sin(phi)*Fx below.
+  // config.hull.yawHeelSign (+-1) is a verified-empirically flip knob —
+  // see ARCHITECTURE doc / harness/asserts.js coupling-sign tests (1.6).
+  const yawHeelSign = config.hull.yawHeelSign ?? 1;
+  const yawMomentHeel = yawHeelSign * state.end * config.sail.CEheight * Math.sin(phi) * Fx;
+  const yawMoment = ceX * Fy + yawMomentHeel;
+
+  return { Fx, Fy, heelMoment, yawMoment, yawMomentHeel, alpha, alphaSailor, aw, CL, CD };
 }
 
 // tableCL(apexDeg, alphaDeg, config) -> raw Polhamus-table CL (no camber/brails)
@@ -707,7 +770,7 @@ function hullResistance(u, config) {
   return -Math.sign(u) * (friction + wavePenalty);
 }
 
-// hullSideForce(u, v, config) -> { Fx, Fy, yawMoment }
+// hullSideForce(u, v, crewPosX, config) -> { Fx, Fy, yawMoment }
 //   Fy: low-AR-foil side force, saturating at hull.leewaySaturationDeg and
 //   then DEGRADING (not plateauing) past it — a foil beyond its designed
 //   leeway range stalls and mushes sideways rather than continuing to
@@ -715,7 +778,14 @@ function hullResistance(u, config) {
 //   Fx: induced drag. A foil's side force is never free: it costs drag
 //   proportional to Fy tilted aft by the RAW (unclamped) leeway angle, so
 //   the penalty keeps growing past saturation even as Fy itself falls off.
-function hullSideForce(u, v, config) {
+//   crewPosX (fore-aft crew position, -1..1): phenomenological CLR shift,
+//   no pitch DOF (FIX_REQUEST_round4_roll_dof.md 1.5) — weight forward
+//   moves the center of lateral resistance forward by
+//   crewForeAftTrimCoeff*crewPosX*(hull.length/2), leaving the CE
+//   effectively aft of the CLR, which should luff the boat (verified
+//   empirically against the 1.6 coupling-sign test; config.hull.crewTrimSign
+//   is a flip knob if the physical rig runs the other way).
+function hullSideForce(u, v, crewPosX, config) {
   const { hull, rho_w } = config;
   const satRad = (hull.leewaySaturationDeg * Math.PI) / 180;
   const leewayRaw = Math.atan2(v, Math.abs(u) + 0.05);
@@ -742,7 +812,11 @@ function hullSideForce(u, v, config) {
 
   // Center of lateral resistance offset from CG (slightly aft, tunable) — gives
   // a modest weather-helm-like turning tendency rather than zero yaw coupling.
-  const clrX = -(hull.clrXFraction ?? 0.1) * (hull.length / 2);
+  // crewTrimSign*crewForeAftTrimCoeff*crewPosX shifts it fore/aft with
+  // fore-aft crew position (FIX_REQUEST_round4_roll_dof.md 1.5).
+  const crewTrimSign = hull.crewTrimSign ?? 1;
+  const clrX = -(hull.clrXFraction ?? 0.1) * (hull.length / 2)
+    + crewTrimSign * (hull.crewForeAftTrimCoeff ?? 0) * crewPosX * (hull.length / 2);
   const yawMoment = clrX * Fy;
 
   return { Fx, Fy, yawMoment };
@@ -804,73 +878,109 @@ function rudderForce(state, controls, config) {
 
 
 // ==== core/stability.js ====
-// stability.js — simplified heel/roll: ama-load statics and the aback/
-// overload capsize state machine. Full roll dynamics are out of scope (per
-// the prompt); the ama load is a static moment-balance indicator instead.
+// stability.js — roll as a 4th DOF: sail heel moment, ama restoring moment
+// (weight when lifting, buoyancy when pressed), crew moment, linear
+// damping, and the aback/overload capsize state machine.
+// (FIX_REQUEST_round4_roll_dof.md Part 1 — supersedes the earlier static
+// heel/roll model: "Full roll dynamics are out of scope" no longer holds.)
 
-// computeAmaLoad(heelMoment, crewPos, config, end) -> amaLoad
-//   amaLoad = heeling demand / righting capacity. 0 = upright, 1 = ama at
-//   the point of lifting clear of the water, >1 = ama flying (overloaded).
-//   `end` (default +1) is state.end — needed because heelMoment's sign is
-//   expressed in the boat frame (see aero.js), where the ama's side is
-//   `end`, not always +y (FIX_REQUEST_round3_worldframe.md R3-1 erratum).
-//   heelMoment * end < 0 is the normal proa case: the sail's leeward-
-//   pushing side force (see aero.js) lifts the windward ama (the `end`
-//   side) clear of the water, and it's the ama's WEIGHT resisting that lift
-//   that provides the righting moment. heelMoment * end > 0 is the reverse,
-//   emergency case (e.g. aback): the ama is being pressed DOWN into the
-//   water instead, resisted by its BUOYANCY — per the prompt's Stability
-//   section. At end=+1 this reduces to the original `heelMoment < 0` check.
-//   Lever arms are the FULL hull-ama spacing, not half of it: a crew member
-//   at crewPos=1.0 stands ON THE AMA (full spacing away from the hull
-//   centerline roll axis), and the ama's own weight/buoyancy acts at that
-//   same full spacing (FIX_REQUEST_round3_worldframe.md R3-2 erratum — the
-//   original prompt's half-spacing formula undersold both levers by 2x).
-//   This function returns the RAW value, unbounded — restoringCapacity can
-//   be near its 1 N*m floor (e.g. crew ballast almost exactly cancelling
-//   ama weight/buoyancy), producing values like 2000+ that are meaningless
-//   as a UI percentage but correct as "instant capsize territory" for the
-//   overload timer in updateAback() below, which must see the raw value.
-//   integrator.js's computeForces() additionally exposes amaLoadDisplay, a
-//   copy capped at config.stability.amaLoadDisplayCap, for readouts
-//   (FIX_REQUEST_step1_round2.md R2-3) — do not clamp the value here.
-function computeAmaLoad(heelMoment, crewPos, config, end = 1) {
-  const { ama, crew, g } = config;
+const DEG__b5 = Math.PI / 180;
 
-  const ballastMoment = heelMoment * end < 0
-    ? ama.mass * g * ama.spacing
-    : ama.maxBuoyancy * g * ama.spacing;
-  const crewMoment = crew.mass * g * crewPos * ama.spacing;
-  const restoringCapacity = Math.max(ballastMoment + crewMoment, 1);
-
-  return Math.abs(heelMoment) / restoringCapacity;
+// rollRestoreMoment(phi, config) -> N*m, a genuine restoring term (opposes
+// phi: negative for phi>0, positive for phi<0).
+//   phi >= 0 (ama lifting/flying): the ama's own WEIGHT resists further
+//   lift, growing smoothly (ease-out, zero slope at the cap) from 0 at
+//   phi=0 to its full ama.mass*g*ama.spacing lever at phi=phiLiftoffRad
+//   ("ama just clear of the water" — restoring fully mobilised), then
+//   holding flat: past that angle the ama is fully airborne and
+//   contributes no MORE righting torque as phi keeps growing — a runaway
+//   condition, caught by the overload capsize timer via amaLoad below,
+//   not by this curve.
+//   phi < 0 (ama pressed): symmetric, using ama.maxBuoyancy instead of
+//   ama.mass, saturating at phi=-phiSubmergeRad ("ama fully submerged").
+function rollRestoreMoment(phi, config) {
+  const { ama, g, stability } = config;
+  if (phi >= 0) {
+    const liftoffRad = stability.phiLiftoffDeg * DEG__b5;
+    const Mmax = ama.mass * g * ama.spacing;
+    const frac = Math.min(phi / liftoffRad, 1);
+    return -Mmax * frac * (2 - frac);
+  }
+  const submergeRad = stability.phiSubmergeDeg * DEG__b5;
+  const Mmax = ama.maxBuoyancy * g * ama.spacing;
+  const frac = Math.min(-phi / submergeRad, 1);
+  return Mmax * frac * (2 - frac);
 }
 
-// updateAback(state, awAngle, amaLoad, dt, config) -> { abackTimer, overloadTimer, capsized }
-//   awAngle: apparent-wind "blowing towards" angle in the boat frame (see
-//   aero.js: apparentWind().angleToBoat). sin(awAngle) * state.end > 0 means
-//   the wind is blowing towards the ama's side (`end`, not always +y — see
-//   FIX_REQUEST_round3_worldframe.md R3-1 erratum and state.js) — i.e. it
-//   originates from the hull's non-ama side, which means the ama has
-//   crossed to leeward: aback.
-//   Capsize has two independent timer-driven triggers, both configurable
-//   (config.stability.{abackCapsizeTime,overloadCapsizeTime}) rather than
-//   instantaneous, so a brief gust spike doesn't capsize the boat: sustained
-//   aback (per acceptance criterion 3), and sustained ama overload — the
-//   ama held above 100% load (flying clear of the water) for too long, per
-//   FIX_REQUEST_step1_review.md CRITICAL-1. Note the signature extends the
-//   architecture doc's `updateAback(state, awAngle, dt)` with `amaLoad` and
-//   `config`: the overload trigger needs both, and per the review's ground
-//   rules a required signature change must be made explicitly rather than
-//   keeping capsize thresholds as unconfigurable magic constants.
-function updateAback(state, awAngle, amaLoad, dt, config) {
+// crewRollMoment(phi, crewPos, config) -> N*m. A genuine pendulum torque,
+// NOT a bidirectional "restoring" term: a crew member rigidly standing at
+// lateral offset crewPos*ama.spacing (crewPos>0 = toward the ama) sweeps
+// to world position (offset*cos(phi), offset*sin(phi)) as the platform
+// rolls, and gravity's moment about the roll axis on that swept position
+// is -m*g*offset*cos(phi) — CONSTANT SIGN in phi (cos(phi) doesn't flip
+// sign for realistic roll angles), matching the extension request's
+// literal formula (crew.mass*g*crewPos*ama.spacing*cos(phi)) with a minus
+// applied for standard pivot-torque sign convention (r x F, force
+// straight down). This is why crew ballast is double-edged: for crewPos>0
+// it RESISTS the ama lifting (phi>0, the normal case), but *worsens* the
+// ama being pressed down once phi has already gone negative (aback-like)
+// — real physics (moving crew weight onto the side that's already being
+// forced under makes it worse), confirmed by the squall scenario capsize
+// this exposed until its threshold controller was made phi-aware (see
+// harness/scenarios.js, FIX_REQUEST_round4_roll_dof.md Part 1) instead of
+// chasing amaLoad's magnitude alone regardless of which side it's on.
+// Cross-checked against the coupling-sign tests in harness/asserts.js
+// (1.6): with this sign, crew toward the ama (phi>=0 branch) measurably
+// lowers the settled amaLoad, matching the existing round-2/round-3
+// semantics.
+function crewRollMoment(phi, crewPos, config) {
+  const { crew, ama, g } = config;
+  return -crew.mass * g * crewPos * ama.spacing * Math.cos(phi);
+}
+
+// rollDampingMoment(p, config) -> N*m, linear damping opposing roll rate.
+function rollDampingMoment(p, config) {
+  return -config.stability.rollDampingCoeff * p;
+}
+
+// computeAmaLoad(phi, config) -> amaLoad. DERIVED from the roll angle
+// (FIX_REQUEST_round4_roll_dof.md 1.3 — replaces the old static
+// heelMoment/restoringCapacity formula) so the existing contract carries
+// over continuously: 0 = upright, exactly 1.0 when the ama just leaves
+// the water (phi=phiLiftoffRad) or just fully submerges
+// (phi=-phiSubmergeRad) — "restoring fully mobilised" either way — and
+// UNBOUNDED past that (grows linearly with phi), so the overload/aback
+// timers below keep the exact "how far past the edge" semantics they
+// always had (a near-zero denominator is no longer possible: phi is a
+// real integrated state, not a moment/capacity ratio).
+function computeAmaLoad(phi, config) {
+  const { stability } = config;
+  if (phi >= 0) return phi / (stability.phiLiftoffDeg * DEG__b5);
+  return Math.abs(phi) / (stability.phiSubmergeDeg * DEG__b5);
+}
+
+// updateAback(state, amaLoad, dt, config) -> { abackTimer, overloadTimer, capsized }
+//   Both capsize triggers now read the SAME roll-angle-derived amaLoad,
+//   split by the sign of state.phi: phi>=0 past 1.0 is the overload path
+//   (ama flying — config.stability.overloadCapsizeTime, unchanged 2s
+//   semantics); phi<0 past 1.0 is the aback path (ama pressed/submerged
+//   past buoyancy saturation — config.stability.abackCapsizeTime,
+//   unchanged 6s semantics). This is the "physical mechanism instead of a
+//   bare timer" from FIX_REQUEST_round4_roll_dof.md 1.2/1.6: previously
+//   aback was detected purely from the apparent-wind angle (a proxy for
+//   "this will press the ama down"); a backwinded sail drives heelMoment
+//   the wrong way, which now drives phi negative directly through the
+//   roll ODE, so reading state.phi's sign is strictly more direct than
+//   the old proxy. `awAngle` is dropped from the signature — it was only
+//   ever used for that proxy check.
+function updateAback(state, amaLoad, dt, config) {
   const { abackCapsizeTime, overloadCapsizeTime } = config.stability;
 
-  const isAback = Math.sin(awAngle) * state.end > 0;
-  const abackTimer = isAback ? state.abackTimer + dt : 0;
-
-  const isOverloaded = amaLoad > 1.0;
+  const isOverloaded = state.phi >= 0 && amaLoad > 1.0;
   const overloadTimer = isOverloaded ? state.overloadTimer + dt : 0;
+
+  const isAback = state.phi < 0 && amaLoad > 1.0;
+  const abackTimer = isAback ? state.abackTimer + dt : 0;
 
   const capsized = state.capsized
     || abackTimer > abackCapsizeTime
@@ -907,6 +1017,14 @@ function updateAback(state, awAngle, amaLoad, dt, config) {
 // and forced the "ama always at +y" convention that flips the ama's WORLD
 // side at every shunt — see ARCHITECTURE_physics_core_EN.md's Conventions
 // section (rewritten) for the corrected frame definition.
+//
+// Roll (phi, p — FIX_REQUEST_round4_roll_dof.md Part 1) is a PHYSICAL-frame
+// quantity (positive phi = the ama side rising, defined about the physical
+// hull axis, not the shunt-rotating active-bow frame) and is therefore left
+// out of the patch below entirely, same as r: omitting a key from the patch
+// leaves the freshly RK4-integrated value untouched rather than overriding
+// it, which is exactly "unchanged at swap" for a quantity that doesn't
+// depend on which tip is currently labeled bow.
 
 function normalizeAngle(a) {
   return Math.atan2(Math.sin(a), Math.cos(a));
@@ -954,11 +1072,13 @@ function shuntStep(state, controls, config, dt) {
 
 
 // ==== core/integrator.js ====
-// integrator.js — assembles per-module forces into total Fx/Fy/M, RK4-
-// integrates the smooth 3DOF ODE state [x, y, heading, u, v, r], then
-// applies the discrete, non-ODE updates once per substep: the shunt state
-// machine (which may itself override u, r, heading, end at the swap
-// instant) and the ama-load / aback-timer / capsize statics.
+// integrator.js — assembles per-module forces into total Fx/Fy/M/Mroll,
+// RK4-integrates the smooth 4DOF ODE state [x, y, heading, u, v, r, phi,
+// p] (roll added FIX_REQUEST_round4_roll_dof.md Part 1), then applies the
+// discrete, non-ODE updates once per substep: the shunt state machine
+// (which may itself override u, v, heading, end at the swap instant —
+// phi, p pass through unchanged, see core/shunt.js) and the ama-load /
+// aback-timer / capsize statics (now derived from phi, see stability.js).
 
 
 
@@ -976,11 +1096,11 @@ function shuntStep(state, controls, config, dt) {
 // pairs are FIX_REQUEST_step1_round2.md R2-3.
 function computeForces(state, controls, config) {
   const aero = sailForces(state, controls, config);
-  const amaLoad = computeAmaLoad(aero.heelMoment, controls.crewPos, config, state.end);
+  const amaLoad = computeAmaLoad(state.phi, config);
   const amaLoadDisplay = Math.min(amaLoad, config.stability.amaLoadDisplayCap);
 
   const resist = hullResistance(state.u, config);
-  const side = hullSideForce(state.u, state.v, config);
+  const side = hullSideForce(state.u, state.v, controls.crewPosX ?? 0, config);
   const drag = amaDrag(state.u, amaLoad, controls.crewPos, config);
   const rudder = rudderForce(state, controls, config);
   const damp = yawDamping(state.r, state.u, config);
@@ -989,8 +1109,19 @@ function computeForces(state, controls, config) {
   const Fy = aero.Fy + side.Fy + rudder.Fy;
   const M = aero.yawMoment + side.yawMoment + rudder.yawMoment + damp;
 
+  // Roll dynamics (4th DOF, FIX_REQUEST_round4_roll_dof.md Part 1):
+  // sail heel (boat-frame heelMoment converted to the physical-frame roll
+  // sign via *end — see state.js: heelMoment*end<0 is the normal,
+  // ama-lifting case, which must contribute POSITIVE Mroll, hence the
+  // negation) + the ama's own restoring moment + crew moment + damping.
+  const Msail = -aero.heelMoment * state.end;
+  const Mrestore = rollRestoreMoment(state.phi, config);
+  const Mcrew = crewRollMoment(state.phi, controls.crewPos, config);
+  const Mdamp = rollDampingMoment(state.p, config);
+  const Mroll = Msail + Mrestore + Mcrew + Mdamp;
+
   return {
-    Fx, Fy, M, amaLoad, amaLoadDisplay,
+    Fx, Fy, M, Mroll, amaLoad, amaLoadDisplay,
     heelMoment: aero.heelMoment, alpha: aero.alpha, alphaSailor: aero.alphaSailor,
     aw: aero.aw, CL: aero.CL, CD: aero.CD,
     breakdown: {
@@ -1000,6 +1131,7 @@ function computeForces(state, controls, config) {
       amaDrag: { Fx: drag },
       rudder: { Fy: rudder.Fy, yawMoment: rudder.yawMoment },
       yawDamping: { M: damp },
+      roll: { Msail, Mrestore, Mcrew, Mdamp, Mroll },
     },
   };
 }
@@ -1008,6 +1140,7 @@ function computeForces(state, controls, config) {
 function derivatives(state, forces, config) {
   const m = config.hull.displacement;
   const I = config.hull.yawInertia;
+  const Iroll = config.stability.I_roll;
   return {
     du: forces.Fx / m + state.v * state.r,
     dv: forces.Fy / m - state.u * state.r,
@@ -1015,11 +1148,13 @@ function derivatives(state, forces, config) {
     dx: state.u * Math.cos(state.heading) - state.v * Math.sin(state.heading),
     dy: state.u * Math.sin(state.heading) + state.v * Math.cos(state.heading),
     dheading: state.r,
+    dphi: state.p,
+    dp: forces.Mroll / Iroll,
   };
 }
 
 function odeState(state) {
-  return { x: state.x, y: state.y, heading: state.heading, u: state.u, v: state.v, r: state.r };
+  return { x: state.x, y: state.y, heading: state.heading, u: state.u, v: state.v, r: state.r, phi: state.phi, p: state.p };
 }
 
 function addScaled(base, deriv, h) {
@@ -1034,7 +1169,7 @@ function integrate(state, controls, config, dt) {
     const full = { ...state, ...s };
     const forces = computeForces(full, controls, config);
     const d = derivatives(full, forces, config);
-    return { x: d.dx, y: d.dy, heading: d.dheading, u: d.du, v: d.dv, r: d.dr };
+    return { x: d.dx, y: d.dy, heading: d.dheading, u: d.du, v: d.dv, r: d.dr, phi: d.dphi, p: d.dp };
   };
 
   const s0 = odeState(state);
@@ -1056,7 +1191,7 @@ function integrate(state, controls, config, dt) {
 
   const finalState = { ...state, ...next, t: state.t + dt };
   const forcesAtNew = computeForces(finalState, controls, config);
-  const aback = updateAback(finalState, forcesAtNew.aw.angleToBoat, forcesAtNew.amaLoad, dt, config);
+  const aback = updateAback(finalState, forcesAtNew.amaLoad, dt, config);
 
   return {
     ...finalState,
@@ -1080,7 +1215,7 @@ function createSimulator(userConfig) {
   let state = createInitialState(config);
   let lastForces = computeForces(state, {
     windDirFrom: 0, windSpeed: 0, yardAngle: 0, rudder: 0,
-    brailLee: 0, brailWind: 0, crewPos: 0, shuntRequest: false,
+    brailLee: 0, brailWind: 0, crewPos: 0, crewPosX: 0, shuntRequest: false,
   }, config);
   let lastShuntRequest = false;
 
@@ -1148,7 +1283,7 @@ function makeInitialState() {
   // A little initial way avoids that startup transient dominating the
   // settle, similar to real boats needing steerageway.
   return {
-    t: 0, x: 0, y: 0, heading: HEADING0, u: 1.0, v: 0, r: 0, end: 1,
+    t: 0, x: 0, y: 0, heading: HEADING0, u: 1.0, v: 0, r: 0, phi: 0, p: 0, end: 1,
     amaLoad: 0, abackTimer: 0, overloadTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 },
   };
 }
@@ -1185,7 +1320,7 @@ function simulateToSteady(config, twaDeg, tws, yardDeg, crewPos, maxSeconds = 25
   const windDirFrom = HEADING0 + twaDeg * DEG__b9;
   const controls = {
     windDirFrom, windSpeed: tws, yardAngle: yardDeg * DEG__b9, rudder: 0,
-    brailLee: 0, brailWind: 0, crewPos, shuntRequest: false,
+    brailLee: 0, brailWind: 0, crewPos, crewPosX: 0, shuntRequest: false,
   };
 
   let state = makeInitialState();
@@ -1307,8 +1442,9 @@ const TRANSLATIONS = {
     'lbl.brailWind': 'Brail (wind)', 'hint.brailWind': 'W sheets in, X eases',
     'h.steering': 'Steering & trim', 'lbl.rudder': 'Rudder', 'hint.rudder': 'A/D deflect, auto-centers on release',
     'lbl.crewPos': 'Crew pos.', 'hint.crewPos': 'J moves to leeward, L moves to the ama',
+    'lbl.crewPosX': 'Crew fore-aft', 'hint.crewPosX': 'I moves forward, K moves aft',
     'h.shunt': 'Shunt', 'btn.shunt': 'SHUNT (space)',
-    'h.amaLoad': 'Ama load', 'h.reset': 'Reset',
+    'h.amaLoad': 'Ama load', 'hud.heel': 'Heel', 'hint.heelBar': 'Heel (centered = upright)', 'h.reset': 'Reset',
     'h.polarDiagram': 'Polar diagram',
     'hint.polar': "Runs the headless polar sweep against the current config (TWS 4/6/8/10 m/s) and plots it. The boat's live (TWA, speed) point is overlaid once you return to sailing.",
     'btn.runPolar': 'Run polar', 'btn.exportCsv': 'Export CSV', 'btn.backToSailing': 'Back to sailing',
@@ -1339,8 +1475,9 @@ const TRANSLATIONS = {
     'lbl.brailWind': 'Brajda nawietrzna', 'hint.brailWind': 'W wybiera, X luzuje',
     'h.steering': 'Sterowanie i wyważenie', 'lbl.rudder': 'Ster', 'hint.rudder': 'A/D wychyla ster, centruje się po puszczeniu',
     'lbl.crewPos': 'Poz. załogi', 'hint.crewPos': 'J w stronę zawietrznej, L w stronę amy',
+    'lbl.crewPosX': 'Załoga wzdłuż', 'hint.crewPosX': 'I w stronę dziobu, K w stronę rufy',
     'h.shunt': 'Zwrot', 'btn.shunt': 'ZWROT (spacja)',
-    'h.amaLoad': 'Obciążenie amy', 'h.reset': 'Reset',
+    'h.amaLoad': 'Obciążenie amy', 'hud.heel': 'Przechył', 'hint.heelBar': 'Przechył (środek = pion)', 'h.reset': 'Reset',
     'h.polarDiagram': 'Diagram polarny',
     'hint.polar': 'Uruchamia pomiar polary (bezekranowy silnik fizyki) dla bieżącej konfiguracji (TWS 4/6/8/10 m/s) i rysuje wykres. Po powrocie do żeglugi na wykresie pojawia się bieżący punkt (TWA, prędkość) łódki.',
     'btn.runPolar': 'Uruchom polarę', 'btn.exportCsv': 'Eksportuj CSV', 'btn.backToSailing': 'Powrót do żeglugi',
@@ -1407,6 +1544,8 @@ const capsizeOverlay = document.getElementById('capsizeOverlay');
 const capsizeCause = document.getElementById('capsizeCause');
 const amaBar = document.querySelector('#amaBar > i');
 const amaBarWrap = document.getElementById('amaBar');
+const heelBarWrap = document.getElementById('heelBar');
+const heelNeedle = document.getElementById('heelNeedle');
 const shuntHint = document.getElementById('shuntHint');
 
 const sliders = {
@@ -1417,6 +1556,7 @@ const sliders = {
   brailWind: document.getElementById('brailWind'),
   rudder: document.getElementById('rudder'),
   crewPos: document.getElementById('crewPos'),
+  crewPosX: document.getElementById('crewPosX'),
 };
 const outs = {
   windDir: document.getElementById('windDirOut'),
@@ -1426,6 +1566,7 @@ const outs = {
   brailWind: document.getElementById('brailWindOut'),
   rudder: document.getElementById('rudderOut'),
   crewPos: document.getElementById('crewPosOut'),
+  crewPosX: document.getElementById('crewPosXOut'),
 };
 
 // ---------------------------------------------------------------------
@@ -1455,6 +1596,7 @@ function syncSlidersFromControls() {
   sliders.brailWind.value = String(Math.round(controls.brailWind * 100));
   sliders.rudder.value = String(controls.rudder);
   sliders.crewPos.value = String(controls.crewPos);
+  sliders.crewPosX.value = String(controls.crewPosX);
   refreshOutputs();
 }
 
@@ -1466,6 +1608,7 @@ function refreshOutputs() {
   outs.brailWind.textContent = `${Math.round(controls.brailWind * 100)}%`;
   outs.rudder.textContent = controls.rudder.toFixed(2);
   outs.crewPos.textContent = controls.crewPos.toFixed(2);
+  outs.crewPosX.textContent = controls.crewPosX.toFixed(2);
 }
 
 sliders.windDir.addEventListener('input', () => { controls.windDirFrom = Number(sliders.windDir.value) * DEG__b10; refreshOutputs(); });
@@ -1475,6 +1618,7 @@ sliders.brailLee.addEventListener('input', () => { controls.brailLee = Number(sl
 sliders.brailWind.addEventListener('input', () => { controls.brailWind = Number(sliders.brailWind.value) / 100; refreshOutputs(); });
 sliders.rudder.addEventListener('input', () => { autoRudder = false; controls.rudder = Number(sliders.rudder.value); refreshOutputs(); });
 sliders.crewPos.addEventListener('input', () => { controls.crewPos = Number(sliders.crewPos.value); refreshOutputs(); });
+sliders.crewPosX.addEventListener('input', () => { controls.crewPosX = Number(sliders.crewPosX.value); refreshOutputs(); });
 
 syncSlidersFromControls();
 
@@ -1484,7 +1628,7 @@ syncSlidersFromControls();
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 const HANDLED_KEYS = new Set(['Space', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',
-  'KeyQ', 'KeyZ', 'KeyW', 'KeyX', 'KeyJ', 'KeyL', 'KeyA', 'KeyD', 'KeyP', 'Period', 'KeyF', 'KeyO', 'KeyR']);
+  'KeyQ', 'KeyZ', 'KeyW', 'KeyX', 'KeyJ', 'KeyL', 'KeyI', 'KeyK', 'KeyA', 'KeyD', 'KeyP', 'Period', 'KeyF', 'KeyO', 'KeyR']);
 
 window.addEventListener('keydown', (e) => {
   if (HANDLED_KEYS.has(e.code)) e.preventDefault();
@@ -1518,6 +1662,8 @@ function applyContinuousKeys(dt) {
   if (keys.has('KeyX')) controls.brailWind = clamp(controls.brailWind - brailRate * dt, 0, 1);
   if (keys.has('KeyJ')) controls.crewPos = clamp(controls.crewPos - crewRate * dt, dims.crew.posMin, dims.crew.posMax);
   if (keys.has('KeyL')) controls.crewPos = clamp(controls.crewPos + crewRate * dt, dims.crew.posMin, dims.crew.posMax);
+  if (keys.has('KeyI')) controls.crewPosX = clamp(controls.crewPosX + crewRate * dt, dims.crew.posXMin, dims.crew.posXMax);
+  if (keys.has('KeyK')) controls.crewPosX = clamp(controls.crewPosX - crewRate * dt, dims.crew.posXMin, dims.crew.posXMax);
 
   if (autoRudder) {
     if (keys.has('KeyA')) controls.rudder = clamp(controls.rudder - rudderRate * dt, -1, 1);
@@ -1659,7 +1805,13 @@ function sailPath(yardLen, yardAngleAbs, brailLee, brailWind, end) {
   const camber = clamp(0.28 * (1 - brailLee) + 0.22 * brailWind, 0.02, 0.5);
   const midX = (tackX + clewX) / 2;
   const midY = (0 + clewY) / 2;
-  const nx = -clewY, ny = clewX - tackX; // perpendicular to the chord
+  // Perpendicular to the chord, pointing away from the ama (FIX_REQUEST_round4_roll_dof.md
+  // 2.1): a fixed +90deg rotation of the (end-aware) chord vector is only
+  // correct at end=+1 — at end=-1 it doesn't flip with the chord (the
+  // chord's y-component negates with end, but a raw (-dy,dx) rotation
+  // doesn't), so the belly bulged toward the ama/windward after a shunt.
+  // Multiplying by `end` mirrors it the same way the chord itself mirrors.
+  const nx = -clewY * end, ny = (clewX - tackX) * end;
   const nlen = Math.hypot(nx, ny) || 1;
   const bulge = camber * chordLen;
   const ctrlX = midX + (nx / nlen) * bulge;
@@ -1698,28 +1850,85 @@ function drawBoat(state, forces, cam) {
     ctx.beginPath(); ctx.moveTo(bx, 0); ctx.lineTo(bx, spacing); ctx.stroke();
   });
 
-  // Ama — physical, fixed to the hull structure, always at physical +y
-  ctx.fillStyle = capsized ? '#4a3a2a' : '#c9a35a';
+  // Ama — physical, fixed to the hull structure, always at physical +y.
+  // Immersion reflects amaLoad's sign (FIX_REQUEST_round4_roll_dof.md
+  // 2.3): thinning/ghosting as it flies clear of the water (phi>0, ama
+  // load approaching/past 1), a darker fill + wider wake ring when
+  // pressed under (phi<0).
+  const amaLoad = forces?.amaLoadDisplay ?? 0;
+  const flying = state.phi >= 0;
+  const loadFrac = clamp(amaLoad, 0, 1.5) / 1.5;
+  ctx.save();
+  if (flying) {
+    ctx.globalAlpha = capsized ? 0.5 : 1 - 0.6 * loadFrac; // thins out as it lifts clear
+    ctx.fillStyle = capsized ? '#4a3a2a' : '#c9a35a';
+  } else {
+    ctx.globalAlpha = capsized ? 0.5 : 1;
+    // Darkens toward a wet/pressed tone as it's forced under.
+    ctx.fillStyle = capsized ? '#4a3a2a' : `rgb(${201 - 90 * loadFrac}, ${163 - 90 * loadFrac}, ${90 - 30 * loadFrac})`;
+  }
+  if (!flying && !capsized && loadFrac > 0.15) {
+    // Wake ring around a pressed ama.
+    ctx.strokeStyle = `rgba(120,180,220,${0.15 + 0.35 * loadFrac})`;
+    ctx.lineWidth = 0.06;
+    ctx.beginPath();
+    ctx.ellipse(0, spacing, amaLen / 2 + 0.15 + 0.3 * loadFrac, beam * 0.6 + 0.1 + 0.2 * loadFrac, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
   ctx.beginPath();
   ctx.ellipse(0, spacing, amaLen / 2, beam * 0.6, 0, 0, Math.PI * 2);
   ctx.fill();
+  ctx.restore();
 
-  // Main hull (slender canoe shape, symmetric — physical Tip A at +x)
+  // Main hull: a SYMMETRIC double-ender (FIX_REQUEST_round4_roll_dof.md
+  // 2.2) — a proa's hull has no fixed bow/stern, both physical tips are
+  // identical; direction is communicated only by the active-bow marker
+  // and the active steering oar below, not by hull shape.
   ctx.fillStyle = capsized ? '#3a3a3a' : '#d8c9a8';
   ctx.beginPath();
   ctx.moveTo(halfL, 0);
-  ctx.quadraticCurveTo(halfL * 0.4, beam / 2, -halfL * 0.85, beam / 2);
-  ctx.quadraticCurveTo(-halfL, 0, -halfL * 0.85, -beam / 2);
-  ctx.quadraticCurveTo(halfL * 0.4, -beam / 2, halfL, 0);
+  ctx.quadraticCurveTo(halfL * 0.5, beam / 2, 0, beam / 2);
+  ctx.quadraticCurveTo(-halfL * 0.5, beam / 2, -halfL, 0);
+  ctx.quadraticCurveTo(-halfL * 0.5, -beam / 2, 0, -beam / 2);
+  ctx.quadraticCurveTo(halfL * 0.5, -beam / 2, halfL, 0);
   ctx.closePath();
   ctx.fill();
 
-  // Crew dot along the beam at crewPos * spacing (full spacing, matching
-  // the physics lever since FIX_REQUEST_round3_worldframe.md R3-2: crewPos=1.0
-  // stands ON THE AMA), offset from hull centerline (0) toward the ama.
+  // Steering oars at both physical tips (2.2 bonus): the ACTIVE one (at
+  // the physical stern, opposite the active bow — physical x = -halfL*end,
+  // matching the rudder force vector below) drawn in use; the IDLE one (at
+  // the physical bow, +halfL*end) raised/greyed. Both swap ends at a shunt
+  // together with the active-bow marker, with no hull rotation.
+  const activeOarX = -halfL * state.end, idleOarX = halfL * state.end;
+  const drawOar = (x, active) => {
+    ctx.save();
+    ctx.globalAlpha = active ? 1 : 0.35;
+    ctx.strokeStyle = active ? '#3a2f22' : '#7a7368';
+    ctx.lineWidth = 0.05;
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x + (x < 0 ? -0.5 : 0.5), 0); ctx.stroke();
+    ctx.fillStyle = active ? '#5a4a38' : '#9a9488';
+    ctx.beginPath();
+    ctx.ellipse(x + (x < 0 ? -0.6 : 0.6), 0, 0.22, 0.09, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  };
+  drawOar(idleOarX, false);
+  drawOar(activeOarX, true);
+
+  // Crew dot: lateral (crewPos, toward the ama, full spacing per
+  // FIX_REQUEST_round3_worldframe.md R3-2) and fore-aft (crewPosX, per
+  // FIX_REQUEST_round4_roll_dof.md 1.5/2.3). crewPos is a physical-frame
+  // concept (toward the ama, fixed side — matches this nested block, no
+  // end factor). crewPosX is an ACTIVE-BOW-relative concept instead
+  // ("forward" means toward the current direction of travel, matching
+  // hydro.js's hullSideForce CLR shift, which uses crewPosX with no end
+  // factor in the active-bow-tracked frame) — since it's being drawn
+  // INSIDE this end-rotating physical block, it needs the compensating
+  // *end so it lands at the correct active-bow-relative screen position.
   const crewY = clamp(controls.crewPos, dims.crew.posMin, dims.crew.posMax) * spacing;
+  const crewX = clamp(controls.crewPosX, dims.crew.posXMin, dims.crew.posXMax) * halfL * 0.6 * state.end;
   ctx.fillStyle = '#ffe08a';
-  ctx.beginPath(); ctx.arc(0, crewY, 0.28, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(crewX, crewY, 0.28, 0, Math.PI * 2); ctx.fill();
 
   ctx.restore();
 
@@ -1754,7 +1963,11 @@ function drawBoat(state, forces, cam) {
     ctx.beginPath(); ctx.moveTo(tx, 0); ctx.lineTo(tx + 0.6, -0.35 * state.end); ctx.stroke();
     ctx.restore();
   } else {
-    const sp = sailPath(yardLen, Math.abs(controls.yardAngle), controls.brailLee, controls.brailWind, state.end);
+    // Foreshorten the drawn chord by cos(phi) (2.3, optional): subtle at
+    // normal heel angles, ties the picture to the roll physics without
+    // needing its own visual language.
+    const heelYardLen = yardLen * Math.max(0.3, Math.cos(state.phi));
+    const sp = sailPath(heelYardLen, Math.abs(controls.yardAngle), controls.brailLee, controls.brailWind, state.end);
     if (fade > 0.02) {
       ctx.save();
       ctx.globalAlpha = 0.35 + 0.65 * fade;
@@ -1850,6 +2063,7 @@ const hud = {
   vmg: document.getElementById('hudVmg'),
   leeway: document.getElementById('hudLeeway'),
   amaLoad: document.getElementById('hudAmaLoad'),
+  heel: document.getElementById('hudHeel'),
   shunt: document.getElementById('hudShunt'),
   tws: document.getElementById('hudTws'),
 };
@@ -1878,6 +2092,7 @@ function updateHud(state, forces) {
   hud.vmg.textContent = (vmg * MS_TO_KN).toFixed(1);
   hud.leeway.textContent = leewayDeg.toFixed(0);
   hud.amaLoad.textContent = (forces.amaLoadDisplay * 100).toFixed(0);
+  hud.heel.textContent = (state.phi / DEG__b10).toFixed(1);
   hud.shunt.textContent = t(`shuntPhase.${state.shunt.phase}`);
   hud.tws.textContent = controls.windSpeed.toFixed(1);
 
@@ -1886,6 +2101,18 @@ function updateHud(state, forces) {
   amaBarWrap.classList.toggle('warn', forces.amaLoadDisplay > 0.75 && forces.amaLoadDisplay <= 1.0);
   amaBarWrap.classList.toggle('danger', forces.amaLoadDisplay > 1.0);
   amaBar.style.width = `${loadFrac * 100}%`;
+
+  // Heel gauge: artificial-horizon-style, centered = upright, needle
+  // position scaled by phiLiftoffDeg/phiSubmergeDeg (asymmetric range,
+  // matching the roll model's own asymmetric saturation angles), color
+  // synced to the same warn/danger states as the ama-load bar
+  // (FIX_REQUEST_round4_roll_dof.md 2.3).
+  const phiDeg = state.phi / DEG__b10;
+  const heelRangeDeg = phiDeg >= 0 ? dims.stability.phiLiftoffDeg : dims.stability.phiSubmergeDeg;
+  const heelFrac = clamp(phiDeg / (heelRangeDeg * 1.5), -1, 1); // *1.5 so the needle doesn't pin at the edge right at amaLoad==1
+  heelNeedle.style.left = `${50 + heelFrac * 50}%`;
+  heelBarWrap.classList.toggle('warn', forces.amaLoadDisplay > 0.75 && forces.amaLoadDisplay <= 1.0);
+  heelBarWrap.classList.toggle('danger', forces.amaLoadDisplay > 1.0);
 
   const speedAboveLockout = speedMs > dims.shunt.speedLockout;
   shuntHint.textContent = speedAboveLockout

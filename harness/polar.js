@@ -26,7 +26,7 @@ function makeInitialState() {
   // A little initial way avoids that startup transient dominating the
   // settle, similar to real boats needing steerageway.
   return {
-    t: 0, x: 0, y: 0, heading: HEADING0, u: 1.0, v: 0, r: 0, end: 1,
+    t: 0, x: 0, y: 0, heading: HEADING0, u: 1.0, v: 0, r: 0, phi: 0, p: 0, end: 1,
     amaLoad: 0, abackTimer: 0, overloadTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 },
   };
 }
@@ -63,7 +63,7 @@ function simulateToSteady(config, twaDeg, tws, yardDeg, crewPos, maxSeconds = 25
   const windDirFrom = HEADING0 + twaDeg * DEG;
   const controls = {
     windDirFrom, windSpeed: tws, yardAngle: yardDeg * DEG, rudder: 0,
-    brailLee: 0, brailWind: 0, crewPos, shuntRequest: false,
+    brailLee: 0, brailWind: 0, crewPos, crewPosX: 0, shuntRequest: false,
   };
 
   let state = makeInitialState();

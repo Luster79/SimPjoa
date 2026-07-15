@@ -10,7 +10,7 @@ const HEADING0 = Math.PI / 2;
 
 function initialState() {
   return {
-    t: 0, x: 0, y: 0, heading: HEADING0, u: 1.0, v: 0, r: 0, end: 1,
+    t: 0, x: 0, y: 0, heading: HEADING0, u: 1.0, v: 0, r: 0, phi: 0, p: 0, end: 1,
     amaLoad: 0, abackTimer: 0, overloadTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 },
   };
 }
@@ -37,6 +37,20 @@ function run(config, seconds, controlsFn) {
 // Yard angle (sheet) is FIXED throughout; only brailLee/brailWind/crewPos
 // respond, via a simple threshold controller on amaLoad. This is the
 // traditional-technique test: stay upright without touching the sheet.
+//
+// Crew controller retuned for FIX_REQUEST_round4_roll_dof.md Part 1: with
+// real roll dynamics, a hard brail response can make phi overshoot PAST
+// zero into the pressed/aback regime (phi<0) — and crewRollMoment's
+// pendulum torque (crew.mass*g*crewPos*ama.spacing*cos(phi), see
+// stability.js) always pulls phi toward NEGATIVE for crewPos>0,
+// regardless of phi's current sign: it resists the ama LIFTING (phi>0,
+// the normal case this controller was written for) but ADDS to the
+// problem once the ama is already being PRESSED (phi<0). The old
+// amaLoad-only threshold controller kept cranking crewPos toward the ama
+// through an overshoot, compounding it into a real capsize (verified:
+// phi ran away to a settled -28deg). Now crew ballast only chases amaLoad
+// while phi>=0; the moment phi crosses negative, crew moves OFF the ama
+// immediately, regardless of amaLoad's magnitude.
 export function scenarioSquall(config) {
   const twaDeg = 50;
   const yardDeg = 25;
@@ -58,14 +72,14 @@ export function scenarioSquall(config) {
     if (state.amaLoad > 1.0) brailLee = Math.min(1, brailLee + 0.6 * config.dt);
     else if (state.amaLoad < 0.6) brailLee = Math.max(0, brailLee - 0.3 * config.dt);
 
-    crewPos = state.amaLoad > 0.6
-      ? Math.min(1.0, crewPos + 0.3 * config.dt)
-      : Math.max(0.1, crewPos - 0.1 * config.dt);
+    crewPos = state.phi >= 0
+      ? (state.amaLoad > 0.6 ? Math.min(1.0, crewPos + 0.3 * config.dt) : Math.max(0.1, crewPos - 0.1 * config.dt))
+      : Math.max(-0.3, crewPos - 0.3 * config.dt);
 
     return {
       windDirFrom, windSpeed: tws, yardAngle: yardDeg * DEG,
       rudder: headingHoldRudder(state, HEADING0, config),
-      brailLee, brailWind, crewPos, shuntRequest: false,
+      brailLee, brailWind, crewPos, crewPosX: 0, shuntRequest: false,
     };
   });
 }
@@ -124,7 +138,7 @@ export function scenarioShunt(config) {
     const controls = {
       windDirFrom, windSpeed: tws, yardAngle: yardDeg * DEG,
       rudder: headingHoldRudder(state, targetHeading, config),
-      brailLee: 0, brailWind: 0, crewPos: 0.2, shuntRequest,
+      brailLee: 0, brailWind: 0, crewPos: 0.2, crewPosX: 0, shuntRequest,
     };
     state = integrate(state, controls, config, dt);
     series.push(annotate(state, controls, config));
@@ -134,16 +148,29 @@ export function scenarioShunt(config) {
 
 // scenarioAback — the boat is forced across the wind line (ama to leeward)
 // and held there; expect the aback timer to grow and capsize to trigger.
+//
+// Wind speed and duration retuned for FIX_REQUEST_round4_roll_dof.md Part
+// 1: aback capsize is no longer a bare wind-angle timer (see stability.js
+// updateAback) — it now requires the roll DOF to actually carry phi past
+// buoyancy saturation and hold it there. Roll is underdamped (period
+// ~2.6s), so a mild aback condition produces an oscillation that swings
+// back above the submersion threshold before 6 continuous seconds
+// accumulate, resetting the timer — a real, physically honest outcome (a
+// boat can survive a brief knockdown), but the old tws=6 was consistently
+// too mild to ever complete a full submersion-timer capsize even given
+// 25s (verified: capsizeT=null through tws=9). tws=10 (yardDeg unchanged)
+// reliably completes it at ~19.4s — duration extended from 12s to 25s to
+// give the spiral room to develop.
 export function scenarioAback(config) {
-  const tws = 6;
+  const tws = 10;
   const yardDeg = 30;
   // Wind sourced from the -y (non-ama) side from the start: aback immediately.
   const windDirFrom = HEADING0 - 80 * DEG;
 
-  return run(config, 12, (state) => ({
+  return run(config, 25, (state) => ({
     windDirFrom, windSpeed: tws, yardAngle: yardDeg * DEG,
     rudder: 0, // no corrective steering: let the aback condition persist
-    brailLee: 0, brailWind: 0, crewPos: 0, shuntRequest: false,
+    brailLee: 0, brailWind: 0, crewPos: 0, crewPosX: 0, shuntRequest: false,
   }));
 }
 
@@ -159,6 +186,6 @@ export function scenarioStop(config) {
     rudder: headingHoldRudder(state, HEADING0, config),
     brailLee: t < rampSeconds ? 0 : 1,
     brailWind: t < rampSeconds ? 0 : 1,
-    crewPos: 0, shuntRequest: false,
+    crewPos: 0, crewPosX: 0, shuntRequest: false,
   }));
 }

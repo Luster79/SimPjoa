@@ -4,7 +4,7 @@
 
 import { tableCL, sailForces } from '../core/aero.js';
 import { integrate, computeForces } from '../core/integrator.js';
-import { computeAmaLoad, updateAback } from '../core/stability.js';
+import { computeAmaLoad, updateAback, rollRestoreMoment, crewRollMoment, rollDampingMoment } from '../core/stability.js';
 import { amaDrag } from '../core/hydro.js';
 import { computePolar, headingHoldRudder } from './polar.js';
 import { scenarioSquall, scenarioShunt, scenarioAback, scenarioStop } from './scenarios.js';
@@ -42,10 +42,10 @@ export function runAsserts(config) {
   // run, which would just end up re-testing that same, expected, low-speed
   // directional instability instead of the sail's near-wind thrust.
   {
-    let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 0, v: 0, r: 0, end: 1, amaLoad: 0,
+    let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 0, v: 0, r: 0, phi: 0, p: 0, end: 1, amaLoad: 0,
       abackTimer: 0, overloadTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
     const controls = { windDirFrom: HEADING0, windSpeed: 6, yardAngle: 5 * DEG, rudder: 0,
-      brailLee: 0, brailWind: 0, crewPos: 0, shuntRequest: false };
+      brailLee: 0, brailWind: 0, crewPos: 0, crewPosX: 0, shuntRequest: false };
     for (let i = 0; i < Math.round(4 / config.dt); i++) {
       controls.rudder = headingHoldRudder(state, HEADING0, config);
       state = integrate(state, controls, config, config.dt);
@@ -86,10 +86,10 @@ export function runAsserts(config) {
 
   // --- 4. Numerical stability + energy damping at zero wind ---
   {
-    let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 2, v: 0.5, r: 0.1, end: 1, amaLoad: 0,
+    let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 2, v: 0.5, r: 0.1, phi: 0, p: 0, end: 1, amaLoad: 0,
       abackTimer: 0, overloadTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
     const controls = { windDirFrom: 0, windSpeed: 0, yardAngle: 30 * DEG, rudder: 0,
-      brailLee: 0, brailWind: 0, crewPos: 0, shuntRequest: false };
+      brailLee: 0, brailWind: 0, crewPos: 0, crewPosX: 0, shuntRequest: false };
     const keInitial = state.u * state.u + state.v * state.v;
     for (let i = 0; i < Math.round(10 / config.dt); i++) state = integrate(state, controls, config, config.dt);
     const keFinal = state.u * state.u + state.v * state.v;
@@ -162,13 +162,15 @@ export function runAsserts(config) {
     const flipIdx = [];
     for (let i = 1; i < shunt.length; i++) if (shunt[i].end !== shunt[i - 1].end) flipIdx.push(i);
 
-    let worstPhysicalHeadingJump = 0, worstAmaAngleJump = 0, worstVelJump = 0;
+    let worstPhysicalHeadingJump = 0, worstAmaAngleJump = 0, worstVelJump = 0, worstPhiJump = 0, worstPJump = 0;
     for (const i of flipIdx) {
       const before = shunt[i - 1], after = shunt[i];
       worstPhysicalHeadingJump = Math.max(worstPhysicalHeadingJump, angDiff(physicalHeading(after), physicalHeading(before)));
       worstAmaAngleJump = Math.max(worstAmaAngleJump, angDiff(amaWorldAngle(after), amaWorldAngle(before)));
       const vb = worldVel(before), va = worldVel(after);
       worstVelJump = Math.max(worstVelJump, Math.hypot(va.vx - vb.vx, va.vy - vb.vy));
+      worstPhiJump = Math.max(worstPhiJump, angDiff(after.phi, before.phi));
+      worstPJump = Math.max(worstPJump, Math.abs(after.p - before.p));
     }
 
     check('shunt: physical hull orientation is continuous at each swap (no PI jump)',
@@ -180,6 +182,14 @@ export function runAsserts(config) {
     check('shunt: world-frame velocity is continuous at each swap (no jump beyond numerical noise)',
       flipIdx.length === 3 && worstVelJump < 0.05,
       `worst jump=${worstVelJump.toFixed(4)} m/s`);
+    // phi/p are physical-frame quantities (FIX_REQUEST_round4_roll_dof.md
+    // Part 1) and must be untouched by the swap, same as r.
+    check('shunt: roll angle (phi) is continuous at each swap',
+      flipIdx.length === 3 && worstPhiJump < 0.01,
+      `worst jump=${(worstPhiJump / DEG).toFixed(3)}deg`);
+    check('shunt: roll rate (p) is continuous at each swap',
+      flipIdx.length === 3 && worstPJump < 0.01,
+      `worst jump=${worstPJump.toFixed(4)} rad/s`);
 
     const maxAbackTimer = Math.max(...shunt.map((s) => s.abackTimer));
     check('shunt: fixed-wind clean shunt never goes aback',
@@ -196,9 +206,9 @@ export function runAsserts(config) {
   // gives a proper lift-dominated trim (sailor's AoA ~28deg, near the
   // CLmax anchor, CL~1.76) where the windward brail's effect is unambiguous.
   {
-    const state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 3, v: 0, r: 0, end: 1, amaLoad: 0,
+    const state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 3, v: 0, r: 0, phi: 0, p: 0, end: 1, amaLoad: 0,
       abackTimer: 0, overloadTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
-    const base = { windDirFrom: HEADING0 + 70 * DEG, windSpeed: 8, yardAngle: 25 * DEG, rudder: 0, crewPos: 0, shuntRequest: false };
+    const base = { windDirFrom: HEADING0 + 70 * DEG, windSpeed: 8, yardAngle: 25 * DEG, rudder: 0, crewPos: 0, crewPosX: 0, shuntRequest: false };
 
     const f0 = sailForces(state, { ...base, brailLee: 0, brailWind: 0 }, config);
     const fLee = sailForces(state, { ...base, brailLee: 0.6, brailWind: 0 }, config);
@@ -222,10 +232,27 @@ export function runAsserts(config) {
   }
 
   // --- 7. Crew ballast unit checks ---
+  // amaLoad is now DERIVED from the dynamic roll state (phi), not a static
+  // heelMoment/restoringCapacity formula (FIX_REQUEST_round4_roll_dof.md
+  // 1.3), so "crew on the ama lowers amaLoad" is now a genuine dynamics
+  // question: settle the roll DOF under a fixed representative heeling
+  // moment for two crewPos values and compare the resulting amaLoad.
   {
-    const heelMoment = -2000; // representative fixed heeling moment
-    const loadAmaCrew = computeAmaLoad(heelMoment, 1.0, config);
-    const loadLeeCrew = computeAmaLoad(heelMoment, -0.3, config);
+    const settleRoll = (Msail, crewPos, seconds = 20) => {
+      let phi = 0, p = 0;
+      const dt = config.dt;
+      for (let i = 0; i < Math.round(seconds / dt); i++) {
+        const Mroll = Msail + rollRestoreMoment(phi, config) + crewRollMoment(phi, crewPos, config) + rollDampingMoment(p, config);
+        p += (Mroll / config.stability.I_roll) * dt;
+        phi += p * dt;
+      }
+      return phi;
+    };
+    const Msail = 2000; // representative fixed heeling moment (positive = drives phi positive, ama lifting)
+    const phiAmaCrew = settleRoll(Msail, 1.0);
+    const phiLeeCrew = settleRoll(Msail, -0.3);
+    const loadAmaCrew = computeAmaLoad(phiAmaCrew, config);
+    const loadLeeCrew = computeAmaLoad(phiLeeCrew, config);
     check('crew on the ama lowers the ama-load indicator vs crew leeward', loadAmaCrew < loadLeeCrew,
       `load(crew=+1.0)=${loadAmaCrew.toFixed(2)} load(crew=-0.3)=${loadLeeCrew.toFixed(2)}`);
 
@@ -236,62 +263,73 @@ export function runAsserts(config) {
   }
 
   // --- 7b. Ama-overload capsize timer semantics (CRITICAL-1) ---
-  // updateAback's overload trigger is driven purely by a supplied amaLoad,
-  // so it's tested directly against a synthetic (non-aback) timer state
-  // rather than through a full sail-force simulation.
+  // updateAback's overload trigger is driven purely by a supplied amaLoad
+  // (now split by the sign of state.phi — FIX_REQUEST_round4_roll_dof.md
+  // 1.2/1.6: phi>=0 is the overload/flying path, phi<0 is the aback/
+  // submerged path), so it's tested directly against a synthetic
+  // (non-aback, phi pinned positive) timer state rather than through a
+  // full sail-force simulation.
   {
-    let timerState = { abackTimer: 0, overloadTimer: 0, capsized: false };
+    let timerState = { abackTimer: 0, overloadTimer: 0, capsized: false, phi: 0.2 };
     let capsizeTime = null;
     const dt = config.dt;
     for (let i = 0; i < Math.round(5 / dt) && capsizeTime === null; i++) {
-      timerState = updateAback(timerState, 0, 1.2, dt, config);
+      timerState = { ...updateAback(timerState, 1.2, dt, config), phi: 0.2 };
       if (timerState.capsized) capsizeTime = (i + 1) * dt;
     }
     check('a boat pinned at amaLoad>1.2 capsizes in ~2s (1.5-3.5s window)',
       capsizeTime !== null && capsizeTime >= 1.5 && capsizeTime <= 3.5,
       `capsizeTime=${capsizeTime === null ? 'never' : capsizeTime.toFixed(2)}s`);
 
-    let spikeState = { abackTimer: 0, overloadTimer: 0, capsized: false };
+    let spikeState = { abackTimer: 0, overloadTimer: 0, capsized: false, phi: 0.2 };
     const spikeSteps = Math.round(1 / dt);
     const totalSteps = Math.round(6 / dt);
     for (let i = 0; i < totalSteps; i++) {
       const load = i < spikeSteps ? 1.1 : 0.5;
-      spikeState = updateAback(spikeState, 0, load, dt, config);
+      spikeState = { ...updateAback(spikeState, load, dt, config), phi: 0.2 };
     }
     check('a brief 1s spike to amaLoad~1.1 followed by unloading does not capsize',
       !spikeState.capsized, `capsized=${spikeState.capsized}`);
+
+    // Mirror check on the aback/pressed (phi<0) path — same timer
+    // mechanism, driven by state.phi's sign instead of the old apparent-
+    // wind-angle proxy (1.2/1.6).
+    let abackTimerState = { abackTimer: 0, overloadTimer: 0, capsized: false, phi: -0.2 };
+    let abackCapsizeTime = null;
+    for (let i = 0; i < Math.round(8 / dt) && abackCapsizeTime === null; i++) {
+      abackTimerState = { ...updateAback(abackTimerState, 1.2, dt, config), phi: -0.2 };
+      if (abackTimerState.capsized) abackCapsizeTime = (i + 1) * dt;
+    }
+    check('a boat pinned aback (phi<0) at amaLoad>1.2 capsizes in ~6s (5.5-7.5s window)',
+      abackCapsizeTime !== null && abackCapsizeTime >= 5.5 && abackCapsizeTime <= 7.5,
+      `capsizeTime=${abackCapsizeTime === null ? 'never' : abackCapsizeTime.toFixed(2)}s`);
   }
 
   // --- 8. Over-sheeting a close course: heel/leeway up, not speed ---
-  // Yard angles re-derived again after FIX_REQUEST_round3_worldframe.md
-  // R3-2: doubling the crew/ama righting levers to the full spacing roughly
-  // halved amaLoad for a given heel moment, which shifted the speed-vs-yard
-  // peak on this course from ~34deg to ~34deg but flattened the curve just
-  // below it enough that the OLD probe pair (well=36, over=33) inverted —
-  // 33deg sits so close to the new peak that its speed (1.428) edged past
-  // 36deg's (1.404), which is now past-peak on the OVER-EASED side, not the
-  // over-sheeted one. The broach cliff (heading peels tens of degrees off
-  // target) also moved, now between yard=27 (broaches) and yard=28 (holds,
-  // crewPos=0.3). Re-probed: yard=34 is the genuine peak on the held-course
-  // side (speed=1.430, amaLoad=0.438), yard=28 is the tightest trim that
-  // still holds course, i.e. genuinely "over-sheeted" (speed=1.278,
-  // amaLoad=0.804) rather than broached.
+  // Yard angles re-derived again after FIX_REQUEST_round4_roll_dof.md Part
+  // 1: cos(phi) sail-force scaling and the new roll dynamics shifted the
+  // speed-vs-yard peak on this course from ~34deg to ~28deg and moved the
+  // broach cliff from between yard=27/28 to between yard=24/26 (crewPos=0.3).
+  // Re-probed: yard=28 is the genuine peak on the held-course side
+  // (speed=1.895, amaLoad=0.227), yard=26 is the tightest trim that still
+  // holds course, i.e. genuinely "over-sheeted" (speed=1.651,
+  // amaLoad=0.451) rather than broached.
   {
     const twaDeg = 50;
     const windDirFrom = HEADING0 + twaDeg * DEG;
     const runFor = (yardDeg, seconds = 20) => {
-      let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 1, v: 0, r: 0, end: 1, amaLoad: 0,
+      let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 1, v: 0, r: 0, phi: 0, p: 0, end: 1, amaLoad: 0,
         abackTimer: 0, overloadTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
       const controls = { windDirFrom, windSpeed: 8, yardAngle: yardDeg * DEG, rudder: 0,
-        brailLee: 0, brailWind: 0, crewPos: 0.3, shuntRequest: false };
+        brailLee: 0, brailWind: 0, crewPos: 0.3, crewPosX: 0, shuntRequest: false };
       for (let i = 0; i < Math.round(seconds / config.dt); i++) {
         controls.rudder = headingHoldRudder(state, HEADING0, config);
         state = integrate(state, controls, config, config.dt);
       }
       return state;
     };
-    const wellTrimmed = runFor(34);
-    const overSheeted = runFor(28);
+    const wellTrimmed = runFor(28);
+    const overSheeted = runFor(26);
     const headingTolerance = 15 * DEG;
     const bothHeldCourse =
       Math.abs(wellTrimmed.heading - HEADING0) < headingTolerance &&
@@ -311,10 +349,10 @@ export function runAsserts(config) {
     // alphaSailor must stay an acute angle of attack across a full yard
     // sweep on a beam reach, even though the raw `alpha` it's derived from
     // routinely reads ~140-170deg on the very same courses.
-    const state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 2, v: 0, r: 0, end: 1, amaLoad: 0,
+    const state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 2, v: 0, r: 0, phi: 0, p: 0, end: 1, amaLoad: 0,
       abackTimer: 0, overloadTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
     const controls = { windDirFrom: HEADING0 + 90 * DEG, windSpeed: 6, rudder: 0,
-      brailLee: 0, brailWind: 0, crewPos: 0, shuntRequest: false };
+      brailLee: 0, brailWind: 0, crewPos: 0, crewPosX: 0, shuntRequest: false };
     let allInRange = true, worst = 0;
     for (let yard = 4; yard <= 88; yard += 4) {
       const f = sailForces(state, { ...controls, yardAngle: yard * DEG }, config);
@@ -325,28 +363,116 @@ export function runAsserts(config) {
       `max alphaSailor=${(worst / DEG).toFixed(1)}deg`);
 
     // amaLoadDisplay must be capped even when the raw amaLoad is far past
-    // it (near-zero restoring capacity, see stability.js computeAmaLoad) —
-    // and that capping must NOT leak into the capsize timer, which has to
-    // keep firing off the raw value. Driven directly from computeAmaLoad
-    // for a controlled, reproducible raw value (a deliberately extreme
-    // heelMoment, well past any realistic gust) rather than depending on a
-    // full sailForces() call to happen to produce one.
-    const heelMoment = -20000;
-    const rawLoad = computeAmaLoad(heelMoment, -0.3, config);
+    // it (amaLoad is unbounded by construction past liftoff/submersion,
+    // see stability.js computeAmaLoad) — and that capping must NOT leak
+    // into the capsize timer, which has to keep firing off the raw value.
+    // Driven directly from computeAmaLoad for a controlled, reproducible
+    // raw value (a deliberately extreme phi, well past any realistic
+    // roll angle) rather than depending on a full sailForces() call to
+    // happen to produce one.
+    const extremePhi = 5; // rad — absurd, deliberately far past phiLiftoffRad
+    const rawLoad = computeAmaLoad(extremePhi, config);
     const cappedLoad = Math.min(rawLoad, config.stability.amaLoadDisplayCap);
     check('amaLoadDisplay caps an extreme raw amaLoad', rawLoad > config.stability.amaLoadDisplayCap && cappedLoad === config.stability.amaLoadDisplayCap,
       `raw=${rawLoad.toFixed(1)} display=${cappedLoad.toFixed(1)} cap=${config.stability.amaLoadDisplayCap}`);
 
-    let timerState = { abackTimer: 0, overloadTimer: 0, capsized: false };
+    let timerState = { abackTimer: 0, overloadTimer: 0, capsized: false, phi: extremePhi };
     let capsizeTime = null;
     const dt = config.dt;
     for (let i = 0; i < Math.round(5 / dt) && capsizeTime === null; i++) {
-      timerState = updateAback(timerState, 0, rawLoad, dt, config); // raw value, not the capped display one
+      timerState = { ...updateAback(timerState, rawLoad, dt, config), phi: extremePhi }; // raw value, not the capped display one
       if (timerState.capsized) capsizeTime = (i + 1) * dt;
     }
     check('overload capsize timer still fires from the raw (uncapped) amaLoad',
       capsizeTime !== null && capsizeTime >= 1.5 && capsizeTime <= 3.5,
       `capsizeTime=${capsizeTime === null ? 'never' : capsizeTime.toFixed(2)}s`);
+  }
+
+  // --- 10. Roll dynamics (4th DOF, FIX_REQUEST_round4_roll_dof.md 1.6) ---
+  {
+    // Zero wind: an initial roll displacement (no sail, no crew moment)
+    // must converge to a static equilibrium near phi=0, not just some
+    // bounded value — restoring + damping with nothing driving it should
+    // settle the platform upright.
+    let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 0, v: 0, r: 0, phi: 15 * DEG, p: 0, end: 1, amaLoad: 0,
+      abackTimer: 0, overloadTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
+    const zeroWindControls = { windDirFrom: 0, windSpeed: 0, yardAngle: 0, rudder: 0,
+      brailLee: 0, brailWind: 0, crewPos: 0, crewPosX: 0, shuntRequest: false };
+    for (let i = 0; i < Math.round(15 / config.dt); i++) state = integrate(state, zeroWindControls, config, config.dt);
+    check('zero wind: phi converges to a static equilibrium (|phi|<5deg)', Math.abs(state.phi / DEG) < 5,
+      `phi=${(state.phi / DEG).toFixed(2)}deg (from 15deg initial)`);
+    check('zero wind: roll rate settles (|p| negligible)', Math.abs(state.p) < 0.01,
+      `p=${state.p.toFixed(4)} rad/s`);
+  }
+
+  {
+    // Step gust on a reach, heading held: phi must overshoot its own
+    // settled value (a genuine damped oscillation, not a monotonic creep)
+    // and then bound/settle rather than run away. TWS=5/yard=25/crewPos=0.3
+    // chosen (empirically) to stay well clear of capsize while still
+    // producing a clear overshoot (maxPhi ~5.4deg vs settled ~3.3deg) —
+    // a stronger gust here genuinely capsizes the boat within the window,
+    // which is a separate, correct behavior already covered by the
+    // overload-timer assertions, not what this test is checking.
+    const twaDeg = 90;
+    const windDirFrom = HEADING0 + twaDeg * DEG;
+    let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 1, v: 0, r: 0, phi: 0, p: 0, end: 1, amaLoad: 0,
+      abackTimer: 0, overloadTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
+    const controls = { windDirFrom, windSpeed: 5, yardAngle: 25 * DEG, rudder: 0,
+      brailLee: 0, brailWind: 0, crewPos: 0.3, crewPosX: 0, shuntRequest: false };
+    let maxPhi = -Infinity;
+    const tailPhi = [];
+    const dt = config.dt;
+    const totalSteps = Math.round(20 / dt), tailStartStep = Math.round(15 / dt);
+    for (let i = 0; i < totalSteps; i++) {
+      controls.rudder = headingHoldRudder(state, HEADING0, config);
+      state = integrate(state, controls, config, dt);
+      maxPhi = Math.max(maxPhi, state.phi);
+      if (i >= tailStartStep) tailPhi.push(state.phi);
+    }
+    const tailVariance = Math.max(...tailPhi) - Math.min(...tailPhi);
+    check('step gust: roll overshoots its settled value (damped oscillation, not a monotonic creep)',
+      !state.capsized && maxPhi > state.phi * 1.05,
+      `maxPhi=${(maxPhi / DEG).toFixed(2)}deg finalPhi=${(state.phi / DEG).toFixed(2)}deg`);
+    check('step gust: roll bounds/settles (low variance in the tail, no capsize)',
+      !state.capsized && tailVariance / DEG < 1,
+      `tailVariance=${(tailVariance / DEG).toFixed(3)}deg capsized=${state.capsized}`);
+  }
+
+  {
+    // Coupling-sign tests, rudder locked at 0 on a steady reach (1.6): the
+    // steady heading must drift in the physically-correct direction as
+    // crew position changes. Parameters (TWA=70, yard=35, TWS=6) chosen to
+    // stay clear of both the broach cliff and capsize across the whole
+    // sweep, verified empirically (see FIX_REQUEST_round4_roll_dof.md
+    // Part 1 investigation notes / ARCHITECTURE doc).
+    const twaDeg = 70;
+    const windDirFrom = HEADING0 + twaDeg * DEG;
+    const runSteady = (crewPos, crewPosX, seconds = 25) => {
+      let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 2, v: 0, r: 0, phi: 0, p: 0, end: 1, amaLoad: 0,
+        abackTimer: 0, overloadTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
+      const controls = { windDirFrom, windSpeed: 6, yardAngle: 35 * DEG, rudder: 0,
+        brailLee: 0, brailWind: 0, crewPos, crewPosX, shuntRequest: false };
+      for (let i = 0; i < Math.round(seconds / config.dt); i++) state = integrate(state, controls, config, config.dt);
+      // Raw (unnormalized) TWA in degrees — heading doesn't wrap in these
+      // short, bounded-drift runs, so this stays monotonic for comparison
+      // without needing angle-wrap handling.
+      return { twa: (windDirFrom - state.heading) / DEG, capsized: state.capsized };
+    };
+
+    const crewIn = runSteady(0.2, 0);
+    const crewMid = runSteady(0.3, 0);
+    const crewOut = runSteady(0.6, 0);
+    check('coupling sign: crew toward the ama bears away vs crew inboard (rudder locked)',
+      !crewIn.capsized && !crewMid.capsized && !crewOut.capsized && crewMid.twa > crewIn.twa && crewOut.twa > crewMid.twa,
+      `TWA(crew=0.2)=${crewIn.twa.toFixed(1)} TWA(crew=0.3)=${crewMid.twa.toFixed(1)} TWA(crew=0.6)=${crewOut.twa.toFixed(1)}`);
+
+    const fwd = runSteady(0.3, 0.5);
+    const mid = runSteady(0.3, 0);
+    const aft = runSteady(0.3, -0.5);
+    check('coupling sign: crewPosX forward luffs, aft bears away (opposite drifts around crewPosX=0)',
+      !fwd.capsized && !mid.capsized && !aft.capsized && fwd.twa < mid.twa && aft.twa > mid.twa,
+      `TWA(fwd=0.5)=${fwd.twa.toFixed(1)} TWA(0)=${mid.twa.toFixed(1)} TWA(aft=-0.5)=${aft.twa.toFixed(1)}`);
   }
 
   return results;

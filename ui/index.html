@@ -49,6 +49,11 @@
   .bar > i { display: block; height: 100%; background: #2fae6a; transition: width .1s linear, background-color .2s; }
   .bar.warn > i { background: #d8a52a; }
   .bar.danger > i { background: #d84f4f; }
+  .heelBar { position: relative; height: 10px; border-radius: 4px; background: #16222f; margin-top: 4px; }
+  .heelBar .zero { position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: #3a4f66; }
+  .heelBar .needle { position: absolute; top: -2px; width: 3px; height: 14px; border-radius: 2px; background: #2fae6a; transform: translateX(-50%); transition: left .1s linear, background-color .2s; }
+  .heelBar.warn .needle { background: #d8a52a; }
+  .heelBar.danger .needle { background: #d84f4f; }
   .hint { color: #6f8399; font-size: 11px; margin: 2px 0 8px; }
   #polarPanel { display: none; }
   #polarPanel.show { display: block; }
@@ -66,6 +71,7 @@
     <span class="stat">VMG&uarr; <b id="hudVmg">0.0</b> <span data-i18n="unit.kn">kn</span></span>
     <span class="stat"><span data-i18n="hud.leeway">Leeway</span> <b id="hudLeeway">0</b>&deg;</span>
     <span class="stat"><span data-i18n="hud.amaLoad">Ama load</span> <b id="hudAmaLoad">0</b>%</span>
+    <span class="stat"><span data-i18n="hud.heel">Heel</span> <b id="hudHeel">0</b>&deg;</span>
     <span class="stat"><span data-i18n="hud.shunt">Shunt</span> <b id="hudShunt">none</b></span>
     <span class="stat">TWS <b id="hudTws">6.0</b> m/s</span>
     <span class="stat" style="margin-left:auto">
@@ -110,6 +116,8 @@
       <div class="hint" data-i18n="hint.rudder">A/D deflect, auto-centers on release</div>
       <div class="row"><label for="crewPos" data-i18n="lbl.crewPos">Crew pos.</label><input id="crewPos" type="range" min="-0.3" max="1.0" step="0.02" value="0.3"><output id="crewPosOut">0.30</output></div>
       <div class="hint" data-i18n="hint.crewPos">J moves to leeward, L moves to the ama</div>
+      <div class="row"><label for="crewPosX" data-i18n="lbl.crewPosX">Crew fore-aft</label><input id="crewPosX" type="range" min="-1" max="1" step="0.02" value="0"><output id="crewPosXOut">0.00</output></div>
+      <div class="hint" data-i18n="hint.crewPosX">I moves forward, K moves aft</div>
 
       <h2 data-i18n="h.shunt">Shunt</h2>
       <div class="buttons"><button id="btnShunt"><span data-i18n="btn.shunt">SHUNT (space)</span></button></div>
@@ -117,6 +125,8 @@
 
       <h2 data-i18n="h.amaLoad">Ama load</h2>
       <div class="bar" id="amaBar"><i style="width:0%"></i></div>
+      <div class="hint" data-i18n="hint.heelBar">Heel (centered = upright)</div>
+      <div class="heelBar" id="heelBar"><div class="zero"></div><div class="needle" id="heelNeedle" style="left:50%"></div></div>
 
       <h2 data-i18n="h.reset">Reset</h2>
       <div class="buttons"><button id="btnReset"><span data-i18n="btn.reset">Reset (R)</span></button></div>
