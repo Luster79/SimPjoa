@@ -2,6 +2,14 @@
 
 *Last reviewed: 2026-07-15*
 
+**Round 3 note:** the Conventions and relevant Function signatures sections
+below were rewritten per `FIX_REQUEST_round3_worldframe.md`'s SPEC ERRATA
+(R3-1, R3-2). The "ama always at boat-frame +y" invariant in the original
+version of this document was wrong — it forced a shunt swap transform that
+spun the physical hull 180deg in the world at every shunt. See
+`core/shunt.js`'s header comment and `core/state.js`'s Conventions comment
+for the implementation-level detail this section summarises.
+
 This document supplements PROMPT_proa_simulator_EN.md. In Step 1,
 implement ONLY the physics core and the test harness — no UI whatsoever.
 The core must be a pure JS module (ESM), runnable in Node >= 18 with no
@@ -33,11 +41,29 @@ changes.
   axis counterclockwise (mathematical convention).
 - Wind direction given as "blowing from" (meteorological) — convert once,
   at input, to a "blowing towards" vector; only vectors inside the core.
-- Boat frame: x axis along the hull towards the ACTIVE bow, y axis
-  towards the ama (ama always at positive y). After a shunt the x axis
-  reverses direction — the state holds `heading` (direction of the active
-  bow in the world frame) and `end` (+1/-1: which physical hull end is
-  currently the bow).
+- Boat frame: x axis along the hull towards the ACTIVE bow, y axis 90deg
+  CCW from x. `heading` is the world-frame direction of the active bow;
+  after a shunt, `heading` jumps by PI (the active bow relabels to the
+  opposite physical tip) and the local frame rotates with it.
+- The ama is bolted to ONE PHYSICAL side of the hull — it does not
+  relocate at a shunt. Its side in the (shunt-rotating) boat frame is
+  `end` (+1/-1): +y when end=+1, -y when end=-1. **The ama is NOT always
+  at +y** — every rule about "the ama side" (aback detection, the yard's
+  leeward trim, heel-moment sign, crew-position mapping) reads `end`, not
+  a hardcoded +y. `end` also records which physical hull end is currently
+  the bow. The PHYSICAL hull orientation (independent of which tip is
+  currently labeled bow) is `heading` when end=+1, `heading+PI` when
+  end=-1 — this is continuous through a shunt (the hull does not
+  physically rotate; only the bow label changes).
+- Shunt swap transform (see core/shunt.js): `end *= -1; heading += PI;
+  u = -u; v = -v; r` unchanged. Under the PI rotation of the local frame
+  this keeps world-frame position, the physical hull's orientation, the
+  ama's world-frame side, and world-frame velocity all continuous. (An
+  earlier version of this transform — `u=-u, r=-r`, v preserved — matched
+  the "ama always at +y" convention above and was wrong on both counts:
+  it left a spurious sway/yaw-rate discontinuity and forced the ama to
+  flip world sides at every shunt. See `FIX_REQUEST_round3_worldframe.md`
+  R3-1.)
 - Velocities u (surge), v (sway) in the boat frame; r (yaw rate) rad/s.
 - Moments: positive = counterclockwise rotation (top-down view).
 - Sail angle of attack and leeway angle: always via atan2, never
@@ -91,7 +117,11 @@ cross-check at startup as required by the main prompt. Fixed schema version: a
       // Fx, Fy in the boat frame; heelMoment already reduced by brailWind;
       // yawMoment from CE position (tack position changes in shunt phases);
       // alpha is the raw, internal chord-flow angle (not acute on normal
-      // courses); alphaSailor [0, pi/2] is the UI-facing angle of attack
+      // courses); alphaSailor [0, pi/2] is the UI-facing angle of attack.
+      // The yard trims to the side opposite the ama (leeward) — the chord
+      // angle used to derive alpha is end-aware (`state.end * |yardAngle|`,
+      // not always `+|yardAngle|`), so heelMoment's sign mirrors with
+      // `end` too; stability.js interprets it via `heelMoment * end`.
 
 ### hydro.js
     hullResistance(u, config) -> Fx        // friction + wave penalty Fr>0.4
@@ -107,23 +137,35 @@ cross-check at startup as required by the main prompt. Fixed schema version: a
       // lever arm = half hull length * state.end; dead at |u| ~ 0
 
 ### stability.js
-    computeAmaLoad(heelMoment, crewPos, config) -> amaLoad   // statics
-      // heelMoment < 0 (normal case, windward ama lifting): restoring
-      // capacity from ama.mass (weight). heelMoment > 0 (ama pressed down,
-      // e.g. aback): restoring capacity from ama.maxBuoyancy.
+    computeAmaLoad(heelMoment, crewPos, config, end = 1) -> amaLoad   // statics
+      // heelMoment * end < 0 (normal case, windward ama lifting): restoring
+      // capacity from ama.mass (weight). heelMoment * end > 0 (ama pressed
+      // down, e.g. aback): restoring capacity from ama.maxBuoyancy. `end`
+      // extends the original `computeAmaLoad(heelMoment, crewPos, config)`
+      // signature (defaults to +1 so standalone unit-test calls on a
+      // synthetic heelMoment are unaffected) — see
+      // FIX_REQUEST_round3_worldframe.md R3-1: the sign check has to read
+      // the ama's actual side, not assume +y.
+      // Lever arms are the FULL hull-ama spacing (ama.spacing), not half of
+      // it — a crew member at crewPos=1.0 stands ON THE AMA, at the full
+      // spacing from the roll axis, and the ama's own weight/buoyancy acts
+      // there too (FIX_REQUEST_round3_worldframe.md R3-2 erratum; the
+      // original prompt's half-spacing formula undersold both levers 2x).
     updateAback(state, awAngle, amaLoad, dt, config) -> { abackTimer, overloadTimer, capsized }
-      // aback: apparent wind from the ama side; capsize when abackTimer
-      // exceeds config.stability.abackCapsizeTime. Independently, capsize
-      // when overloadTimer (time amaLoad has stayed > 1.0) exceeds
-      // config.stability.overloadCapsizeTime. Both thresholds live in
-      // CONFIG, not as magic constants (extends the original
-      // `updateAback(state, awAngle, dt)` signature — see
+      // aback: apparent wind from the ama's side (state.end, not always
+      // +y — FIX_REQUEST_round3_worldframe.md R3-1); capsize when
+      // abackTimer exceeds config.stability.abackCapsizeTime.
+      // Independently, capsize when overloadTimer (time amaLoad has stayed
+      // > 1.0) exceeds config.stability.overloadCapsizeTime. Both
+      // thresholds live in CONFIG, not as magic constants (extends the
+      // original `updateAback(state, awAngle, dt)` signature — see
       // FIX_REQUEST_step1_review.md CRITICAL-1).
 
 ### shunt.js
     shuntStep(state, controls, config, dt) -> state patch
       // state machine: ease -> transfer -> swap(end*=-1, heading+=PI,
-      // u=-u, r=-r, rudder moment signs) -> sheet; locked when u > threshold
+      // u=-u, v=-v, r unchanged — see Conventions above) -> sheet; locked
+      // when u > threshold
 
 ### integrator.js
     derivatives(state, forces, config) -> { du, dv, dr, ... }

@@ -7,11 +7,18 @@
 //   controls boundary; it is converted ONCE, at input, to a "blowing
 //   towards" vector (see aero.js: apparentWind). Only vectors are used
 //   inside the core after that point.
-// - Boat frame: x axis along the hull towards the ACTIVE bow, y axis
-//   towards the ama (ama always at positive y). After a shunt the x axis
-//   reverses direction — state.heading holds the world-frame direction of
-//   the active bow, state.end (+1/-1) holds which physical hull end is
-//   currently the bow.
+// - Boat frame: x axis along the hull towards the ACTIVE bow (state.heading
+//   holds this direction in world-frame terms), y axis 90deg CCW from x.
+//   The ama is bolted to ONE physical side of the hull and does not
+//   relocate at a shunt; its side in THIS frame is state.end (+1/-1: +y
+//   when end=+1, -y when end=-1) — NOT always +y (SPEC ERRATUM,
+//   FIX_REQUEST_round3_worldframe.md R3-1: the "ama always at +y"
+//   invariant in the original architecture doc forced a swap transform
+//   that spun the physical hull 180deg in the world at every shunt; it is
+//   deleted). state.end also holds which physical hull end is currently
+//   the bow. Every rule phrased in terms of "the ama side" — aback
+//   detection, the yard's leeward trim, heel-moment sign — reads `end`,
+//   not a hardcoded +y.
 // - Velocities u (surge), v (sway) are in the boat frame; r (yaw rate) is
 //   in rad/s.
 // - Moments: positive = counterclockwise rotation (top-down view).

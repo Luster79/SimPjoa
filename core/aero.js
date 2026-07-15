@@ -2,19 +2,28 @@
 // CL/CD (table + camber + brails), and resulting boat-frame forces/moments.
 //
 // Angle-of-attack sign convention (derived once here, used throughout):
-//   The yard/boom trims to the leeward (-y) side of the hull, but the chord
-//   DIRECTION VECTOR used to measure alpha is `chordAngle = +|yardAngle|`
-//   (NOT negated) — given the chirality of the awChordX/awChordYcw rotation
-//   below, this is what makes alpha reduce to the sailor's angle of attack
-//   (apparent wind angle minus sheeting angle), signed so that a
-//   well-trimmed course (chord swept less than the apparent wind angle)
-//   gives positive alpha and positive driving force. An earlier version
-//   used `-|yardAngle|`, which silently flipped the sign of CL relative to
-//   the fixed lift-direction convention below (see the L/D decomposition):
-//   since drag direction is fixed by the flow alone, flipping only CL's
-//   sign flips whether lift adds to or fights the drag component of Fx —
-//   that reversal, not a folding artefact, was the actual bug (verified
-//   numerically: FIX_REQUEST_step1_review.md CRITICAL-2).
+//   The yard/boom trims to the side opposite the ama (leeward), but the
+//   chord DIRECTION VECTOR used to measure alpha is
+//   `chordAngle = end * |yardAngle|` (end-aware since
+//   FIX_REQUEST_round3_worldframe.md R3-1 — see state.js: the ama sits at
+//   boat-frame y-side `end`, not always +y, so "leeward" is the -end side
+//   and the chord's sign must track it). At end=+1 this reduces to the
+//   original `+|yardAngle|`, which — given the chirality of the
+//   awChordX/awChordYcw rotation below — is what makes alpha reduce to the
+//   sailor's angle of attack (apparent wind angle minus sheeting angle),
+//   signed so that a well-trimmed course (chord swept less than the
+//   apparent wind angle) gives positive alpha and positive driving force.
+//   An earlier version used `-|yardAngle|` unconditionally, which silently
+//   flipped the sign of CL relative to the fixed lift-direction convention
+//   below (see the L/D decomposition): since drag direction is fixed by the
+//   flow alone, flipping only CL's sign flips whether lift adds to or
+//   fights the drag component of Fx — that reversal, not a folding
+//   artefact, was the actual bug (verified numerically:
+//   FIX_REQUEST_step1_review.md CRITICAL-2). At end=-1 the whole geometry
+//   is a mirror image (ama and chord both reflected through the x axis),
+//   so alpha (and hence CL's sign, and hence Fy/heelMoment's sign) mirrors
+//   too — this is what lets stability.js interpret `heelMoment * end` with
+//   a single, end-invariant sign convention instead of assuming +y.
 //   alpha itself is the RAW atan2 result (no reflection/fold) so it stays a
 //   true signed angle of attack across the full (-180, 180] range; a
 //   genuinely backwinded sail (|alpha| > 90 deg, flow on the leech side —
@@ -132,7 +141,7 @@ export function sailCoefficients(alpha, controls, config) {
 //   angle a sailor/UI would call AoA (FIX_REQUEST_step1_round2.md R2-3).
 export function sailForces(state, controls, config) {
   const aw = apparentWind(state, controls);
-  const yardAngle = Math.abs(controls.yardAngle); // chord direction convention, see header comment
+  const yardAngle = state.end * Math.abs(controls.yardAngle); // chord direction convention, end-aware, see header comment
   const cx = Math.cos(yardAngle), cy = Math.sin(yardAngle);
 
   // Flow components in the chord frame -> signed angle of attack (raw atan2,

@@ -161,11 +161,18 @@ function readFileSync(p) {
 //   controls boundary; it is converted ONCE, at input, to a "blowing
 //   towards" vector (see aero.js: apparentWind). Only vectors are used
 //   inside the core after that point.
-// - Boat frame: x axis along the hull towards the ACTIVE bow, y axis
-//   towards the ama (ama always at positive y). After a shunt the x axis
-//   reverses direction — state.heading holds the world-frame direction of
-//   the active bow, state.end (+1/-1) holds which physical hull end is
-//   currently the bow.
+// - Boat frame: x axis along the hull towards the ACTIVE bow (state.heading
+//   holds this direction in world-frame terms), y axis 90deg CCW from x.
+//   The ama is bolted to ONE physical side of the hull and does not
+//   relocate at a shunt; its side in THIS frame is state.end (+1/-1: +y
+//   when end=+1, -y when end=-1) — NOT always +y (SPEC ERRATUM,
+//   FIX_REQUEST_round3_worldframe.md R3-1: the "ama always at +y"
+//   invariant in the original architecture doc forced a swap transform
+//   that spun the physical hull 180deg in the world at every shunt; it is
+//   deleted). state.end also holds which physical hull end is currently
+//   the bow. Every rule phrased in terms of "the ama side" — aback
+//   detection, the yard's leeward trim, heel-moment sign — reads `end`,
+//   not a hardcoded +y.
 // - Velocities u (surge), v (sway) are in the boat frame; r (yaw rate) is
 //   in rad/s.
 // - Moments: positive = counterclockwise rotation (top-down view).
@@ -406,7 +413,7 @@ function buildDefaultConfig() {
       spacing: p.beam_overall_m,           // 2.5 m (hull-ama spacing, "B")
       wettedSurface: 0.6,                  // m^2 — tunable estimate, fully immersed
       dragCoeff: 0.4,                      // tunable — bluff slender body Cd estimate
-      crewImmersionCoeff: 0.21,            // tunable — fraction of crew weight (relative to ama buoyancy) that presses the ama deeper when crewPos>0 (FIX_REQUEST_step1_round2.md R2-1)
+      crewImmersionCoeff: 0.30,            // tunable — fraction of crew weight (relative to ama buoyancy) that presses the ama deeper when crewPos>0 (FIX_REQUEST_step1_round2.md R2-1). Raised from 0.21 in round 3 (FIX_REQUEST_round3_worldframe.md R3-2): doubling the ama/crew righting levers to the full spacing (see stability.js) roughly halved amaLoad for a given heel moment, which — via this term's amaLoad-driven immersion floor — quietly cut the ama-drag penalty enough to let the TWA=40 close-hauled polar point creep past the "no meaningful progress below ~50deg" acceptance ratio (0.353 vs the 0.35 limit); this restores the same margin (0.338) without touching the threshold or the hull/yaw tunables the over-sheeting broach-cliff probe depends on.
     },
 
     sail: {
@@ -491,19 +498,28 @@ function createConfig(userConfig) {
 // CL/CD (table + camber + brails), and resulting boat-frame forces/moments.
 //
 // Angle-of-attack sign convention (derived once here, used throughout):
-//   The yard/boom trims to the leeward (-y) side of the hull, but the chord
-//   DIRECTION VECTOR used to measure alpha is `chordAngle = +|yardAngle|`
-//   (NOT negated) — given the chirality of the awChordX/awChordYcw rotation
-//   below, this is what makes alpha reduce to the sailor's angle of attack
-//   (apparent wind angle minus sheeting angle), signed so that a
-//   well-trimmed course (chord swept less than the apparent wind angle)
-//   gives positive alpha and positive driving force. An earlier version
-//   used `-|yardAngle|`, which silently flipped the sign of CL relative to
-//   the fixed lift-direction convention below (see the L/D decomposition):
-//   since drag direction is fixed by the flow alone, flipping only CL's
-//   sign flips whether lift adds to or fights the drag component of Fx —
-//   that reversal, not a folding artefact, was the actual bug (verified
-//   numerically: FIX_REQUEST_step1_review.md CRITICAL-2).
+//   The yard/boom trims to the side opposite the ama (leeward), but the
+//   chord DIRECTION VECTOR used to measure alpha is
+//   `chordAngle = end * |yardAngle|` (end-aware since
+//   FIX_REQUEST_round3_worldframe.md R3-1 — see state.js: the ama sits at
+//   boat-frame y-side `end`, not always +y, so "leeward" is the -end side
+//   and the chord's sign must track it). At end=+1 this reduces to the
+//   original `+|yardAngle|`, which — given the chirality of the
+//   awChordX/awChordYcw rotation below — is what makes alpha reduce to the
+//   sailor's angle of attack (apparent wind angle minus sheeting angle),
+//   signed so that a well-trimmed course (chord swept less than the
+//   apparent wind angle) gives positive alpha and positive driving force.
+//   An earlier version used `-|yardAngle|` unconditionally, which silently
+//   flipped the sign of CL relative to the fixed lift-direction convention
+//   below (see the L/D decomposition): since drag direction is fixed by the
+//   flow alone, flipping only CL's sign flips whether lift adds to or
+//   fights the drag component of Fx — that reversal, not a folding
+//   artefact, was the actual bug (verified numerically:
+//   FIX_REQUEST_step1_review.md CRITICAL-2). At end=-1 the whole geometry
+//   is a mirror image (ama and chord both reflected through the x axis),
+//   so alpha (and hence CL's sign, and hence Fy/heelMoment's sign) mirrors
+//   too — this is what lets stability.js interpret `heelMoment * end` with
+//   a single, end-invariant sign convention instead of assuming +y.
 //   alpha itself is the RAW atan2 result (no reflection/fold) so it stays a
 //   true signed angle of attack across the full (-180, 180] range; a
 //   genuinely backwinded sail (|alpha| > 90 deg, flow on the leech side —
@@ -620,7 +636,7 @@ function sailCoefficients(alpha, controls, config) {
 //   angle a sailor/UI would call AoA (FIX_REQUEST_step1_round2.md R2-3).
 function sailForces(state, controls, config) {
   const aw = apparentWind(state, controls);
-  const yardAngle = Math.abs(controls.yardAngle); // chord direction convention, see header comment
+  const yardAngle = state.end * Math.abs(controls.yardAngle); // chord direction convention, end-aware, see header comment
   const cx = Math.cos(yardAngle), cy = Math.sin(yardAngle);
 
   // Flow components in the chord frame -> signed angle of attack (raw atan2,
@@ -792,15 +808,24 @@ function rudderForce(state, controls, config) {
 // overload capsize state machine. Full roll dynamics are out of scope (per
 // the prompt); the ama load is a static moment-balance indicator instead.
 
-// computeAmaLoad(heelMoment, crewPos, config) -> amaLoad
+// computeAmaLoad(heelMoment, crewPos, config, end) -> amaLoad
 //   amaLoad = heeling demand / righting capacity. 0 = upright, 1 = ama at
 //   the point of lifting clear of the water, >1 = ama flying (overloaded).
-//   heelMoment < 0 is the normal proa case: the sail's leeward-pushing side
-//   force (see aero.js) lifts the windward ama (+y) clear of the water, and
-//   it's the ama's WEIGHT resisting that lift that provides the righting
-//   moment. heelMoment > 0 is the reverse, emergency case (e.g. aback): the
-//   ama is being pressed DOWN into the water instead, resisted by its
-//   BUOYANCY — per the prompt's Stability section.
+//   `end` (default +1) is state.end — needed because heelMoment's sign is
+//   expressed in the boat frame (see aero.js), where the ama's side is
+//   `end`, not always +y (FIX_REQUEST_round3_worldframe.md R3-1 erratum).
+//   heelMoment * end < 0 is the normal proa case: the sail's leeward-
+//   pushing side force (see aero.js) lifts the windward ama (the `end`
+//   side) clear of the water, and it's the ama's WEIGHT resisting that lift
+//   that provides the righting moment. heelMoment * end > 0 is the reverse,
+//   emergency case (e.g. aback): the ama is being pressed DOWN into the
+//   water instead, resisted by its BUOYANCY — per the prompt's Stability
+//   section. At end=+1 this reduces to the original `heelMoment < 0` check.
+//   Lever arms are the FULL hull-ama spacing, not half of it: a crew member
+//   at crewPos=1.0 stands ON THE AMA (full spacing away from the hull
+//   centerline roll axis), and the ama's own weight/buoyancy acts at that
+//   same full spacing (FIX_REQUEST_round3_worldframe.md R3-2 erratum — the
+//   original prompt's half-spacing formula undersold both levers by 2x).
 //   This function returns the RAW value, unbounded — restoringCapacity can
 //   be near its 1 N*m floor (e.g. crew ballast almost exactly cancelling
 //   ama weight/buoyancy), producing values like 2000+ that are meaningless
@@ -809,14 +834,13 @@ function rudderForce(state, controls, config) {
 //   integrator.js's computeForces() additionally exposes amaLoadDisplay, a
 //   copy capped at config.stability.amaLoadDisplayCap, for readouts
 //   (FIX_REQUEST_step1_round2.md R2-3) — do not clamp the value here.
-function computeAmaLoad(heelMoment, crewPos, config) {
+function computeAmaLoad(heelMoment, crewPos, config, end = 1) {
   const { ama, crew, g } = config;
-  const halfSpacing = ama.spacing / 2;
 
-  const ballastMoment = heelMoment < 0
-    ? ama.mass * g * halfSpacing
-    : ama.maxBuoyancy * g * halfSpacing;
-  const crewMoment = crew.mass * g * crewPos * halfSpacing;
+  const ballastMoment = heelMoment * end < 0
+    ? ama.mass * g * ama.spacing
+    : ama.maxBuoyancy * g * ama.spacing;
+  const crewMoment = crew.mass * g * crewPos * ama.spacing;
   const restoringCapacity = Math.max(ballastMoment + crewMoment, 1);
 
   return Math.abs(heelMoment) / restoringCapacity;
@@ -824,9 +848,11 @@ function computeAmaLoad(heelMoment, crewPos, config) {
 
 // updateAback(state, awAngle, amaLoad, dt, config) -> { abackTimer, overloadTimer, capsized }
 //   awAngle: apparent-wind "blowing towards" angle in the boat frame (see
-//   aero.js: apparentWind().angleToBoat). sin(awAngle) > 0 means the wind is
-//   blowing towards +y (the ama side) — i.e. it originates from the hull's
-//   -y side, which means the ama (at +y) has crossed to leeward: aback.
+//   aero.js: apparentWind().angleToBoat). sin(awAngle) * state.end > 0 means
+//   the wind is blowing towards the ama's side (`end`, not always +y — see
+//   FIX_REQUEST_round3_worldframe.md R3-1 erratum and state.js) — i.e. it
+//   originates from the hull's non-ama side, which means the ama has
+//   crossed to leeward: aback.
 //   Capsize has two independent timer-driven triggers, both configurable
 //   (config.stability.{abackCapsizeTime,overloadCapsizeTime}) rather than
 //   instantaneous, so a brief gust spike doesn't capsize the boat: sustained
@@ -840,7 +866,7 @@ function computeAmaLoad(heelMoment, crewPos, config) {
 function updateAback(state, awAngle, amaLoad, dt, config) {
   const { abackCapsizeTime, overloadCapsizeTime } = config.stability;
 
-  const isAback = Math.sin(awAngle) > 0;
+  const isAback = Math.sin(awAngle) * state.end > 0;
   const abackTimer = isAback ? state.abackTimer + dt : 0;
 
   const isOverloaded = amaLoad > 1.0;
@@ -865,12 +891,22 @@ function updateAback(state, awAngle, amaLoad, dt, config) {
 // (simulator.js) is responsible for turning a held button/key into that
 // edge, keeping this state machine itself simple and pure.
 //
-// Per the architecture doc, the swap step flips end, heading (+PI), u and r.
-// v is intentionally left unchanged (the boat-frame y axis stays pinned to
-// the physical, unmoving ama side) — this causes a small, deliberate
-// discontinuity in the reconstructed world-frame velocity at the swap
-// instant, acceptable since aero forces are already faded to zero through
-// the transfer/swap phases and the sub-phase lasts a fraction of a second.
+// SPEC ERRATUM applied (FIX_REQUEST_round3_worldframe.md R3-1): the ama is
+// bolted to ONE physical side of the hull — it does not relocate at a
+// shunt. The boat-frame y axis is defined via `heading` (always toward the
+// ACTIVE bow), so when `heading` jumps by PI at the swap, the whole local
+// frame rotates 180 deg in world terms, and the ama's LOCAL side (sign
+// `end`) must rotate WITH it for its WORLD side to stay put — i.e. `end`
+// flips, not "ama always at +y". World-velocity continuity under this PI
+// frame rotation requires u'=-u AND v'=-v (both components reverse, not
+// just u); yaw rate is frame-invariant, r'=r (left out of the patch below
+// on purpose — omitting it leaves the freshly-integrated r untouched rather
+// than overriding it). The previous swap (end*=-1, heading+=PI, u=-u, r=-r,
+// v preserved) matched the architecture doc as originally written, but that
+// doc was wrong: it injected a spurious sway reversal and yaw-rate reversal,
+// and forced the "ama always at +y" convention that flips the ama's WORLD
+// side at every shunt — see ARCHITECTURE_physics_core_EN.md's Conventions
+// section (rewritten) for the corrected frame definition.
 
 function normalizeAngle(a) {
   return Math.atan2(Math.sin(a), Math.cos(a));
@@ -905,7 +941,7 @@ function shuntStep(state, controls, config, dt) {
         end: -state.end,
         heading: normalizeAngle(state.heading + Math.PI),
         u: -state.u,
-        r: -state.r,
+        v: -state.v,
       };
     }
     return { shunt: { phase: 'swap', progress: p } };
@@ -940,7 +976,7 @@ function shuntStep(state, controls, config, dt) {
 // pairs are FIX_REQUEST_step1_round2.md R2-3.
 function computeForces(state, controls, config) {
   const aero = sailForces(state, controls, config);
-  const amaLoad = computeAmaLoad(aero.heelMoment, controls.crewPos, config);
+  const amaLoad = computeAmaLoad(aero.heelMoment, controls.crewPos, config, state.end);
   const amaLoadDisplay = Math.min(amaLoad, config.stability.amaLoadDisplayCap);
 
   const resist = hullResistance(state.u, config);
@@ -1229,14 +1265,22 @@ function computePolar(config, { twsList, twaFrom = 40, twaTo = 170, step = 10 })
 // flip (screenX = centerX + (worldX-camX)*scale, screenY likewise on Y) —
 // deliberately, not a flipped "north-up" map. A per-axis flip would change
 // the coordinate system's handedness, and a single ctx.rotate() cannot
-// correctly re-derive off-centerline local points (e.g. the ama at boat-
-// frame +y) under a flipped outer frame without also mirroring local
-// shapes. Keeping both frames right-handed lets ctx.rotate(state.heading)
-// reproduce the core's own rotation exactly, so every boat-frame vector
-// (aw, force breakdown Fx/Fy) can be drawn as a raw local offset with no
-// extra sign-juggling. There's no compass requirement here (the core's own
-// HEADING0 is an "arbitrary reference heading"), so "north down the
-// screen" is a harmless cosmetic consequence, not a bug.
+// correctly re-derive off-centerline local points under a flipped outer
+// frame without also mirroring local shapes. Keeping both frames right-
+// handed lets ctx.rotate(state.heading) reproduce the core's own rotation
+// exactly, so every boat-frame vector (aw, force breakdown Fx/Fy) can be
+// drawn as a raw local offset with no extra sign-juggling. There's no
+// compass requirement here (the core's own HEADING0 is an "arbitrary
+// reference heading"), so "north down the screen" is a harmless cosmetic
+// consequence, not a bug.
+//
+// drawBoat() nests a SECOND rotation (0 or PI, from state.end) inside the
+// outer one, around the hull-fixed geometry only (crossbeams, ama, hull
+// outline, crew) — the ama is bolted to one physical side of the hull and
+// does not relocate at a shunt (FIX_REQUEST_round3_worldframe.md R3-1), so
+// it is drawn at a fixed physical +y inside that inner frame rather than
+// always at the OUTER frame's +y. Sail, force vectors and the apparent-
+// wind arrow stay in the outer (active-bow) frame, matching the core.
 
 
 
@@ -1593,19 +1637,31 @@ function drawTrueWindArrow() {
 // Sail shape: an arc from the tack (near centerline) to the clew (swept to
 // leeward by yardAngle), curvature/fill communicating brail state. Purely a
 // drawing model — the physics only needs yardAngle and the brail fractions.
-function sailPath(yardLen, yardAngleAbs, brailLee, brailWind) {
-  const tackX = 0.35 * yardLen; // slightly forward of the mast step
-  const clewX = tackX - yardLen * Math.cos(yardAngleAbs);
-  const clewY = -yardLen * Math.sin(yardAngleAbs); // leeward = -y
+// `end` (state.end) picks which side is leeward: the yard trims opposite
+// the ama, i.e. the -end side, not always -y (FIX_REQUEST_round3_worldframe.md
+// R3-1 — this is drawn in the same active-bow frame core/aero.js's chord
+// angle lives in, so it has to mirror the same way aero.js now does).
+function sailPath(yardLen, yardAngleAbs, brailLee, brailWind, end) {
+  const tackX = 0.35 * yardLen; // slightly forward of the mast step, anchored regardless of brail
   const furled = brailLee > 0.97 && brailWind > 0.97;
-  if (furled) return { tackX, clewX: tackX + 0.15, clewY: -0.15, furled: true };
+  if (furled) return { tackX, clewX: tackX + 0.15, clewY: -0.15 * end, furled: true };
+
+  // Brails gather the sail UP TOWARD THE YARD (toward the tack, in this
+  // top-down projection) as they tighten — the visible chord SHORTENS, not
+  // just flattens, ending in the thin furled bundle above once both brails
+  // reach 1 (FIX_REQUEST_round3_worldframe.md R3-3: a "carrot", not a
+  // same-length flatter arc).
+  const maxBrail = Math.max(brailLee, brailWind);
+  const chordLen = yardLen * (1 - 0.6 * maxBrail);
+  const clewX = tackX - chordLen * Math.cos(yardAngleAbs);
+  const clewY = -end * chordLen * Math.sin(yardAngleAbs); // leeward = -end side
   // Camber bulge: leeward brail flattens it, windward brail over-curves it.
   const camber = clamp(0.28 * (1 - brailLee) + 0.22 * brailWind, 0.02, 0.5);
   const midX = (tackX + clewX) / 2;
   const midY = (0 + clewY) / 2;
   const nx = -clewY, ny = clewX - tackX; // perpendicular to the chord
   const nlen = Math.hypot(nx, ny) || 1;
-  const bulge = camber * yardLen;
+  const bulge = camber * chordLen;
   const ctrlX = midX + (nx / nlen) * bulge;
   const ctrlY = midY + (ny / nlen) * bulge;
   return { tackX, clewX, clewY, ctrlX, ctrlY, furled: false };
@@ -1616,13 +1672,24 @@ function drawBoat(state, forces, cam) {
   const px = scale * dpr;
   ctx.save();
   ctx.translate(boatScreen.x, boatScreen.y);
-  ctx.rotate(state.heading);
-  ctx.scale(px, px); // local drawing now in real meters
+  ctx.rotate(state.heading); // active-bow frame: sail, force vectors and the
+  ctx.scale(px, px);         // apparent-wind arrow below are drawn here unchanged
 
   const L = dims.hull.length, halfL = L / 2;
   const beam = dims.hull.beam;
   const spacing = dims.ama.spacing, amaLen = dims.ama.length;
   const capsized = state.capsized;
+
+  // Physical hull (crossbeams, ama, hull outline, crew): drawn in the
+  // PHYSICAL frame, which differs from the active-bow frame above by
+  // exactly 0 or PI (state.end) — an extra local rotation that jumps by PI
+  // at the exact same instant state.heading itself jumps at a shunt, so the
+  // two cancel and the sprite never visually spins (FIX_REQUEST_round3_worldframe.md
+  // R3-5). All coordinates below are physical/hull-fixed and need no
+  // state.end factor of their own — the ama, in particular, is bolted to
+  // one physical side and stays at physical +y always (R3-1).
+  ctx.save();
+  ctx.rotate(state.end === 1 ? 0 : Math.PI);
 
   // Crossbeams (hull centerline to ama)
   ctx.strokeStyle = capsized ? '#5a4030' : '#7a5a3a';
@@ -1631,13 +1698,13 @@ function drawBoat(state, forces, cam) {
     ctx.beginPath(); ctx.moveTo(bx, 0); ctx.lineTo(bx, spacing); ctx.stroke();
   });
 
-  // Ama (always at +y)
+  // Ama — physical, fixed to the hull structure, always at physical +y
   ctx.fillStyle = capsized ? '#4a3a2a' : '#c9a35a';
   ctx.beginPath();
   ctx.ellipse(0, spacing, amaLen / 2, beam * 0.6, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // Main hull (slender canoe shape, active bow at +x)
+  // Main hull (slender canoe shape, symmetric — physical Tip A at +x)
   ctx.fillStyle = capsized ? '#3a3a3a' : '#d8c9a8';
   ctx.beginPath();
   ctx.moveTo(halfL, 0);
@@ -1647,16 +1714,24 @@ function drawBoat(state, forces, cam) {
   ctx.closePath();
   ctx.fill();
 
-  // Active-bow marker
+  // Crew dot along the beam at crewPos * spacing (full spacing, matching
+  // the physics lever since FIX_REQUEST_round3_worldframe.md R3-2: crewPos=1.0
+  // stands ON THE AMA), offset from hull centerline (0) toward the ama.
+  const crewY = clamp(controls.crewPos, dims.crew.posMin, dims.crew.posMax) * spacing;
+  ctx.fillStyle = '#ffe08a';
+  ctx.beginPath(); ctx.arc(0, crewY, 0.28, 0, Math.PI * 2); ctx.fill();
+
+  ctx.restore();
+
+  // Active-bow marker — drawn in the OUTER (active-bow) frame, unchanged:
+  // local +x there is defined as "toward the active bow" by construction,
+  // so this needs no state.end factor. Relative to the now independently-
+  // rotating physical hull sprite above, this is what makes the marker
+  // visibly "jump to the other end" at a shunt instead of the hull spinning.
   ctx.fillStyle = '#ff8a3d';
   ctx.beginPath();
   ctx.moveTo(halfL + 0.35, 0); ctx.lineTo(halfL - 0.15, 0.22); ctx.lineTo(halfL - 0.15, -0.22);
   ctx.closePath(); ctx.fill();
-
-  // Crew dot along the beam at crewPos * (spacing/2), offset from hull centerline (0) toward the ama
-  const crewY = clamp(controls.crewPos, dims.crew.posMin, dims.crew.posMax) * (spacing / 2);
-  ctx.fillStyle = '#ffe08a';
-  ctx.beginPath(); ctx.arc(0, crewY, 0.28, 0, Math.PI * 2); ctx.fill();
 
   // Sail — faded during the ease/transfer/swap shunt phases, tack sliding
   // during 'transfer' (state.shunt.progress interpolates the tack point).
@@ -1676,10 +1751,10 @@ function drawBoat(state, forces, cam) {
     ctx.save();
     ctx.globalAlpha = 0.5;
     ctx.strokeStyle = '#8a8060'; ctx.lineWidth = 0.12;
-    ctx.beginPath(); ctx.moveTo(tx, 0); ctx.lineTo(tx + 0.6, -0.35); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(tx, 0); ctx.lineTo(tx + 0.6, -0.35 * state.end); ctx.stroke();
     ctx.restore();
   } else {
-    const sp = sailPath(yardLen, Math.abs(controls.yardAngle), controls.brailLee, controls.brailWind);
+    const sp = sailPath(yardLen, Math.abs(controls.yardAngle), controls.brailLee, controls.brailWind, state.end);
     if (fade > 0.02) {
       ctx.save();
       ctx.globalAlpha = 0.35 + 0.65 * fade;
@@ -1706,12 +1781,14 @@ function drawBoat(state, forces, cam) {
   }
 
   // Apparent wind arrow at the boat, boat-frame local vector (already
-  // rotates for free with this transform since aw is boat-frame).
+  // rotates for free with this transform since aw is boat-frame). Origin
+  // placed near the ama side (spacing*0.6*end, not always +y — R3-1) purely
+  // for legibility; the vector itself needs no change.
   if (forces && forces.aw && forces.aw.speed > 0.05) {
     const s = 0.35;
     const ax = forces.aw.vx * s, ay = forces.aw.vy * s;
     ctx.save(); ctx.lineWidth = 0.05;
-    drawVectorLocal(0, spacing * 0.6, ax, ay, '#7fd0ff');
+    drawVectorLocal(0, spacing * 0.6 * state.end, ax, ay, '#7fd0ff');
     ctx.restore();
   }
 

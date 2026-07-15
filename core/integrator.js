@@ -21,7 +21,7 @@ import { shuntStep } from './shunt.js';
 // pairs are FIX_REQUEST_step1_round2.md R2-3.
 export function computeForces(state, controls, config) {
   const aero = sailForces(state, controls, config);
-  const amaLoad = computeAmaLoad(aero.heelMoment, controls.crewPos, config);
+  const amaLoad = computeAmaLoad(aero.heelMoment, controls.crewPos, config, state.end);
   const amaLoadDisplay = Math.min(amaLoad, config.stability.amaLoadDisplayCap);
 
   const resist = hullResistance(state.u, config);

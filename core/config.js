@@ -198,7 +198,7 @@ function buildDefaultConfig() {
       spacing: p.beam_overall_m,           // 2.5 m (hull-ama spacing, "B")
       wettedSurface: 0.6,                  // m^2 — tunable estimate, fully immersed
       dragCoeff: 0.4,                      // tunable — bluff slender body Cd estimate
-      crewImmersionCoeff: 0.21,            // tunable — fraction of crew weight (relative to ama buoyancy) that presses the ama deeper when crewPos>0 (FIX_REQUEST_step1_round2.md R2-1)
+      crewImmersionCoeff: 0.30,            // tunable — fraction of crew weight (relative to ama buoyancy) that presses the ama deeper when crewPos>0 (FIX_REQUEST_step1_round2.md R2-1). Raised from 0.21 in round 3 (FIX_REQUEST_round3_worldframe.md R3-2): doubling the ama/crew righting levers to the full spacing (see stability.js) roughly halved amaLoad for a given heel moment, which — via this term's amaLoad-driven immersion floor — quietly cut the ama-drag penalty enough to let the TWA=40 close-hauled polar point creep past the "no meaningful progress below ~50deg" acceptance ratio (0.353 vs the 0.35 limit); this restores the same margin (0.338) without touching the threshold or the hull/yaw tunables the over-sheeting broach-cliff probe depends on.
     },
 
     sail: {

@@ -6,14 +6,22 @@
 // flip (screenX = centerX + (worldX-camX)*scale, screenY likewise on Y) —
 // deliberately, not a flipped "north-up" map. A per-axis flip would change
 // the coordinate system's handedness, and a single ctx.rotate() cannot
-// correctly re-derive off-centerline local points (e.g. the ama at boat-
-// frame +y) under a flipped outer frame without also mirroring local
-// shapes. Keeping both frames right-handed lets ctx.rotate(state.heading)
-// reproduce the core's own rotation exactly, so every boat-frame vector
-// (aw, force breakdown Fx/Fy) can be drawn as a raw local offset with no
-// extra sign-juggling. There's no compass requirement here (the core's own
-// HEADING0 is an "arbitrary reference heading"), so "north down the
-// screen" is a harmless cosmetic consequence, not a bug.
+// correctly re-derive off-centerline local points under a flipped outer
+// frame without also mirroring local shapes. Keeping both frames right-
+// handed lets ctx.rotate(state.heading) reproduce the core's own rotation
+// exactly, so every boat-frame vector (aw, force breakdown Fx/Fy) can be
+// drawn as a raw local offset with no extra sign-juggling. There's no
+// compass requirement here (the core's own HEADING0 is an "arbitrary
+// reference heading"), so "north down the screen" is a harmless cosmetic
+// consequence, not a bug.
+//
+// drawBoat() nests a SECOND rotation (0 or PI, from state.end) inside the
+// outer one, around the hull-fixed geometry only (crossbeams, ama, hull
+// outline, crew) — the ama is bolted to one physical side of the hull and
+// does not relocate at a shunt (FIX_REQUEST_round3_worldframe.md R3-1), so
+// it is drawn at a fixed physical +y inside that inner frame rather than
+// always at the OUTER frame's +y. Sail, force vectors and the apparent-
+// wind arrow stay in the outer (active-bow) frame, matching the core.
 
 import { createSimulator } from '../core/simulator.js';
 import { createConfig } from '../core/config.js';
@@ -371,19 +379,31 @@ function drawTrueWindArrow() {
 // Sail shape: an arc from the tack (near centerline) to the clew (swept to
 // leeward by yardAngle), curvature/fill communicating brail state. Purely a
 // drawing model — the physics only needs yardAngle and the brail fractions.
-function sailPath(yardLen, yardAngleAbs, brailLee, brailWind) {
-  const tackX = 0.35 * yardLen; // slightly forward of the mast step
-  const clewX = tackX - yardLen * Math.cos(yardAngleAbs);
-  const clewY = -yardLen * Math.sin(yardAngleAbs); // leeward = -y
+// `end` (state.end) picks which side is leeward: the yard trims opposite
+// the ama, i.e. the -end side, not always -y (FIX_REQUEST_round3_worldframe.md
+// R3-1 — this is drawn in the same active-bow frame core/aero.js's chord
+// angle lives in, so it has to mirror the same way aero.js now does).
+function sailPath(yardLen, yardAngleAbs, brailLee, brailWind, end) {
+  const tackX = 0.35 * yardLen; // slightly forward of the mast step, anchored regardless of brail
   const furled = brailLee > 0.97 && brailWind > 0.97;
-  if (furled) return { tackX, clewX: tackX + 0.15, clewY: -0.15, furled: true };
+  if (furled) return { tackX, clewX: tackX + 0.15, clewY: -0.15 * end, furled: true };
+
+  // Brails gather the sail UP TOWARD THE YARD (toward the tack, in this
+  // top-down projection) as they tighten — the visible chord SHORTENS, not
+  // just flattens, ending in the thin furled bundle above once both brails
+  // reach 1 (FIX_REQUEST_round3_worldframe.md R3-3: a "carrot", not a
+  // same-length flatter arc).
+  const maxBrail = Math.max(brailLee, brailWind);
+  const chordLen = yardLen * (1 - 0.6 * maxBrail);
+  const clewX = tackX - chordLen * Math.cos(yardAngleAbs);
+  const clewY = -end * chordLen * Math.sin(yardAngleAbs); // leeward = -end side
   // Camber bulge: leeward brail flattens it, windward brail over-curves it.
   const camber = clamp(0.28 * (1 - brailLee) + 0.22 * brailWind, 0.02, 0.5);
   const midX = (tackX + clewX) / 2;
   const midY = (0 + clewY) / 2;
   const nx = -clewY, ny = clewX - tackX; // perpendicular to the chord
   const nlen = Math.hypot(nx, ny) || 1;
-  const bulge = camber * yardLen;
+  const bulge = camber * chordLen;
   const ctrlX = midX + (nx / nlen) * bulge;
   const ctrlY = midY + (ny / nlen) * bulge;
   return { tackX, clewX, clewY, ctrlX, ctrlY, furled: false };
@@ -394,13 +414,24 @@ function drawBoat(state, forces, cam) {
   const px = scale * dpr;
   ctx.save();
   ctx.translate(boatScreen.x, boatScreen.y);
-  ctx.rotate(state.heading);
-  ctx.scale(px, px); // local drawing now in real meters
+  ctx.rotate(state.heading); // active-bow frame: sail, force vectors and the
+  ctx.scale(px, px);         // apparent-wind arrow below are drawn here unchanged
 
   const L = dims.hull.length, halfL = L / 2;
   const beam = dims.hull.beam;
   const spacing = dims.ama.spacing, amaLen = dims.ama.length;
   const capsized = state.capsized;
+
+  // Physical hull (crossbeams, ama, hull outline, crew): drawn in the
+  // PHYSICAL frame, which differs from the active-bow frame above by
+  // exactly 0 or PI (state.end) — an extra local rotation that jumps by PI
+  // at the exact same instant state.heading itself jumps at a shunt, so the
+  // two cancel and the sprite never visually spins (FIX_REQUEST_round3_worldframe.md
+  // R3-5). All coordinates below are physical/hull-fixed and need no
+  // state.end factor of their own — the ama, in particular, is bolted to
+  // one physical side and stays at physical +y always (R3-1).
+  ctx.save();
+  ctx.rotate(state.end === 1 ? 0 : Math.PI);
 
   // Crossbeams (hull centerline to ama)
   ctx.strokeStyle = capsized ? '#5a4030' : '#7a5a3a';
@@ -409,13 +440,13 @@ function drawBoat(state, forces, cam) {
     ctx.beginPath(); ctx.moveTo(bx, 0); ctx.lineTo(bx, spacing); ctx.stroke();
   });
 
-  // Ama (always at +y)
+  // Ama — physical, fixed to the hull structure, always at physical +y
   ctx.fillStyle = capsized ? '#4a3a2a' : '#c9a35a';
   ctx.beginPath();
   ctx.ellipse(0, spacing, amaLen / 2, beam * 0.6, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // Main hull (slender canoe shape, active bow at +x)
+  // Main hull (slender canoe shape, symmetric — physical Tip A at +x)
   ctx.fillStyle = capsized ? '#3a3a3a' : '#d8c9a8';
   ctx.beginPath();
   ctx.moveTo(halfL, 0);
@@ -425,16 +456,24 @@ function drawBoat(state, forces, cam) {
   ctx.closePath();
   ctx.fill();
 
-  // Active-bow marker
+  // Crew dot along the beam at crewPos * spacing (full spacing, matching
+  // the physics lever since FIX_REQUEST_round3_worldframe.md R3-2: crewPos=1.0
+  // stands ON THE AMA), offset from hull centerline (0) toward the ama.
+  const crewY = clamp(controls.crewPos, dims.crew.posMin, dims.crew.posMax) * spacing;
+  ctx.fillStyle = '#ffe08a';
+  ctx.beginPath(); ctx.arc(0, crewY, 0.28, 0, Math.PI * 2); ctx.fill();
+
+  ctx.restore();
+
+  // Active-bow marker — drawn in the OUTER (active-bow) frame, unchanged:
+  // local +x there is defined as "toward the active bow" by construction,
+  // so this needs no state.end factor. Relative to the now independently-
+  // rotating physical hull sprite above, this is what makes the marker
+  // visibly "jump to the other end" at a shunt instead of the hull spinning.
   ctx.fillStyle = '#ff8a3d';
   ctx.beginPath();
   ctx.moveTo(halfL + 0.35, 0); ctx.lineTo(halfL - 0.15, 0.22); ctx.lineTo(halfL - 0.15, -0.22);
   ctx.closePath(); ctx.fill();
-
-  // Crew dot along the beam at crewPos * (spacing/2), offset from hull centerline (0) toward the ama
-  const crewY = clamp(controls.crewPos, dims.crew.posMin, dims.crew.posMax) * (spacing / 2);
-  ctx.fillStyle = '#ffe08a';
-  ctx.beginPath(); ctx.arc(0, crewY, 0.28, 0, Math.PI * 2); ctx.fill();
 
   // Sail — faded during the ease/transfer/swap shunt phases, tack sliding
   // during 'transfer' (state.shunt.progress interpolates the tack point).
@@ -454,10 +493,10 @@ function drawBoat(state, forces, cam) {
     ctx.save();
     ctx.globalAlpha = 0.5;
     ctx.strokeStyle = '#8a8060'; ctx.lineWidth = 0.12;
-    ctx.beginPath(); ctx.moveTo(tx, 0); ctx.lineTo(tx + 0.6, -0.35); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(tx, 0); ctx.lineTo(tx + 0.6, -0.35 * state.end); ctx.stroke();
     ctx.restore();
   } else {
-    const sp = sailPath(yardLen, Math.abs(controls.yardAngle), controls.brailLee, controls.brailWind);
+    const sp = sailPath(yardLen, Math.abs(controls.yardAngle), controls.brailLee, controls.brailWind, state.end);
     if (fade > 0.02) {
       ctx.save();
       ctx.globalAlpha = 0.35 + 0.65 * fade;
@@ -484,12 +523,14 @@ function drawBoat(state, forces, cam) {
   }
 
   // Apparent wind arrow at the boat, boat-frame local vector (already
-  // rotates for free with this transform since aw is boat-frame).
+  // rotates for free with this transform since aw is boat-frame). Origin
+  // placed near the ama side (spacing*0.6*end, not always +y — R3-1) purely
+  // for legibility; the vector itself needs no change.
   if (forces && forces.aw && forces.aw.speed > 0.05) {
     const s = 0.35;
     const ax = forces.aw.vx * s, ay = forces.aw.vy * s;
     ctx.save(); ctx.lineWidth = 0.05;
-    drawVectorLocal(0, spacing * 0.6, ax, ay, '#7fd0ff');
+    drawVectorLocal(0, spacing * 0.6 * state.end, ax, ay, '#7fd0ff');
     ctx.restore();
   }
 

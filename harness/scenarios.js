@@ -74,12 +74,33 @@ export function scenarioSquall(config) {
 // settles to steady speed, fires the shunt, then leaves enough room (well
 // past the 30s-recovery acceptance window) before the next one so
 // measurements never overlap between shunts.
+//
+// The true wind stays FIXED in the world frame for the whole scenario
+// (FIX_REQUEST_round3_worldframe.md R3-1) — this is the whole point of the
+// test: with a genuinely fixed wind, a clean shunt must make way on the
+// RECIPROCAL course without ever going aback. An earlier version re-aimed
+// windDirFrom to the current active-bow heading after every shunt, which
+// rotated the true wind along with the (then-buggy) frame-spin bug instead
+// of exposing it — see FIX_REQUEST_round3_worldframe.md R3-1 diagnosis.
+// The rudder's target heading alternates between HEADING0 and its
+// reciprocal based on `state.end` (not a manually-tracked shunt counter) so
+// the target jumps in lockstep with `state.heading` at the swap instant —
+// the heading error the autopilot sees stays small throughout, instead of
+// briefly commanding a hard, physically-wrong turn during the ease/transfer
+// sub-phases before the relabeling has actually happened.
 export function scenarioShunt(config) {
-  const twaDeg = 100;
+  // TWA must be a true beam reach (90deg): with a fixed wind, reversing
+  // which end is bow transforms TWA as TWA_after = 180deg - TWA_before (see
+  // FIX_REQUEST_round3_worldframe.md R3-1 investigation) — only at exactly
+  // 90deg is that the SAME point of sail on both legs, matching this
+  // scenario's own "steady beam reach" description and letting one fixed
+  // yardDeg serve both legs. An earlier TWA=100deg produced a 100/80deg
+  // asymmetry (a genuinely different, untrimmed-for point of sail after
+  // every odd shunt), which the old wind-re-aiming bug had been masking.
+  const twaDeg = 90;
   const tws = 6;
   const yardDeg = 60;
-  let windDirFrom = HEADING0 + twaDeg * DEG;
-  let targetHeading = HEADING0;
+  const windDirFrom = HEADING0 + twaDeg * DEG;
 
   let state = initialState();
   const dt = config.dt;
@@ -91,13 +112,6 @@ export function scenarioShunt(config) {
   const totalSeconds = 25 + 3 * CYCLE + 10;
   const n = Math.round(totalSeconds / dt);
   for (let i = 0; i < n; i++) {
-    // Re-aim the true wind relative to the CURRENT active-bow heading so
-    // each leg is still a beam-ish reach regardless of which end is bow.
-    if (state.shunt.phase === 'none') {
-      windDirFrom = state.heading + twaDeg * DEG;
-      targetHeading = state.heading;
-    }
-
     cooldown -= dt;
     let shuntRequest = false;
     if (shuntsFired < 3 && state.shunt.phase === 'none' && cooldown <= 0) {
@@ -106,6 +120,7 @@ export function scenarioShunt(config) {
       cooldown = CYCLE;
     }
 
+    const targetHeading = state.end === 1 ? HEADING0 : HEADING0 + Math.PI;
     const controls = {
       windDirFrom, windSpeed: tws, yardAngle: yardDeg * DEG,
       rudder: headingHoldRudder(state, targetHeading, config),

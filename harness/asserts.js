@@ -141,6 +141,51 @@ export function runAsserts(config) {
     check('shunt: boat recovers >80% of pre-shunt speed within 30s', recovered, details.join(', '));
   }
 
+  // --- 5b. World-frame continuity across each shunt (R3-1) ---
+  // The ama is bolted to one physical side of the hull and must not appear
+  // to jump sides or the hull to spin in the WORLD frame at a shunt; world
+  // velocity must be continuous too (see core/shunt.js header comment and
+  // ARCHITECTURE_physics_core_EN.md's Conventions section for the swap
+  // transform this checks). physicalHeading = heading, or heading+PI when
+  // `end` has flipped bow to the other physical tip — this is the direction
+  // of the physical hull itself, independent of which tip is currently
+  // labeled the active bow.
+  {
+    const physicalHeading = (s) => Math.atan2(Math.sin(s.heading + (s.end === 1 ? 0 : Math.PI)), Math.cos(s.heading + (s.end === 1 ? 0 : Math.PI)));
+    const amaWorldAngle = (s) => Math.atan2(Math.sin(physicalHeading(s) + Math.PI / 2), Math.cos(physicalHeading(s) + Math.PI / 2));
+    const worldVel = (s) => ({
+      vx: s.u * Math.cos(s.heading) - s.v * Math.sin(s.heading),
+      vy: s.u * Math.sin(s.heading) + s.v * Math.cos(s.heading),
+    });
+    const angDiff = (a, b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
+
+    const flipIdx = [];
+    for (let i = 1; i < shunt.length; i++) if (shunt[i].end !== shunt[i - 1].end) flipIdx.push(i);
+
+    let worstPhysicalHeadingJump = 0, worstAmaAngleJump = 0, worstVelJump = 0;
+    for (const i of flipIdx) {
+      const before = shunt[i - 1], after = shunt[i];
+      worstPhysicalHeadingJump = Math.max(worstPhysicalHeadingJump, angDiff(physicalHeading(after), physicalHeading(before)));
+      worstAmaAngleJump = Math.max(worstAmaAngleJump, angDiff(amaWorldAngle(after), amaWorldAngle(before)));
+      const vb = worldVel(before), va = worldVel(after);
+      worstVelJump = Math.max(worstVelJump, Math.hypot(va.vx - vb.vx, va.vy - vb.vy));
+    }
+
+    check('shunt: physical hull orientation is continuous at each swap (no PI jump)',
+      flipIdx.length === 3 && worstPhysicalHeadingJump < 0.05,
+      `worst jump=${(worstPhysicalHeadingJump / DEG).toFixed(2)}deg over ${flipIdx.length} swaps`);
+    check('shunt: ama stays on the same WORLD side across each swap',
+      flipIdx.length === 3 && worstAmaAngleJump < 0.05,
+      `worst jump=${(worstAmaAngleJump / DEG).toFixed(2)}deg`);
+    check('shunt: world-frame velocity is continuous at each swap (no jump beyond numerical noise)',
+      flipIdx.length === 3 && worstVelJump < 0.05,
+      `worst jump=${worstVelJump.toFixed(4)} m/s`);
+
+    const maxAbackTimer = Math.max(...shunt.map((s) => s.abackTimer));
+    check('shunt: fixed-wind clean shunt never goes aback',
+      maxAbackTimer < 1.0, `max abackTimer=${maxAbackTimer.toFixed(3)}s`);
+  }
+
   // --- 6. Brail unit checks (moment-drop vs drive-drop ratio) ---
   // Probe trim fixed per FIX_REQUEST_step1_round2.md R2-2: the original
   // base (TWA=-70deg, yard=35deg) put the sail deep in a mirrored,
@@ -218,20 +263,19 @@ export function runAsserts(config) {
   }
 
   // --- 8. Over-sheeting a close course: heel/leeway up, not speed ---
-  // Yard angles re-derived again after FIX_REQUEST_step1_round2.md R2-1: the
-  // weaker hull.sideForceCoeff (needed so leeway/pointing is honestly hard,
-  // not free via crew ballast) also weakened the hull's yaw-restoring
-  // moment, and the fixed-gain autopilot now broaches — heading peels away
-  // tens of degrees from the target — at ANY yard below ~33deg on this
-  // course, well before reaching a genuine "over-sheeted but still sailing
-  // the intended TWA" trim. A broached boat's hypot(u,v) is mostly sideways
-  // slip, not speed, so comparing raw speed across the broach cliff is
-  // meaningless (confirmed: yard=16 vs yard=8 both broach to a ~28deg
-  // heading with nearly identical numbers once R2-1 physics landed). Both
-  // probe yards below are chosen from the heading-HELD side of that cliff
-  // (crewPos=0.3 moves the cliff to ~33deg here) — yard=36 is the genuine
-  // peak on that side, yard=33 is the tightest trim that still holds
-  // course, i.e. genuinely "over-sheeted" rather than "broached".
+  // Yard angles re-derived again after FIX_REQUEST_round3_worldframe.md
+  // R3-2: doubling the crew/ama righting levers to the full spacing roughly
+  // halved amaLoad for a given heel moment, which shifted the speed-vs-yard
+  // peak on this course from ~34deg to ~34deg but flattened the curve just
+  // below it enough that the OLD probe pair (well=36, over=33) inverted —
+  // 33deg sits so close to the new peak that its speed (1.428) edged past
+  // 36deg's (1.404), which is now past-peak on the OVER-EASED side, not the
+  // over-sheeted one. The broach cliff (heading peels tens of degrees off
+  // target) also moved, now between yard=27 (broaches) and yard=28 (holds,
+  // crewPos=0.3). Re-probed: yard=34 is the genuine peak on the held-course
+  // side (speed=1.430, amaLoad=0.438), yard=28 is the tightest trim that
+  // still holds course, i.e. genuinely "over-sheeted" (speed=1.278,
+  // amaLoad=0.804) rather than broached.
   {
     const twaDeg = 50;
     const windDirFrom = HEADING0 + twaDeg * DEG;
@@ -246,8 +290,8 @@ export function runAsserts(config) {
       }
       return state;
     };
-    const wellTrimmed = runFor(36);
-    const overSheeted = runFor(33);
+    const wellTrimmed = runFor(34);
+    const overSheeted = runFor(28);
     const headingTolerance = 15 * DEG;
     const bothHeldCourse =
       Math.abs(wellTrimmed.heading - HEADING0) < headingTolerance &&
