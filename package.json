@@ -1,0 +1,23 @@
+{
+  "name": "simpjoa",
+  "version": "1.0.0",
+  "description": "",
+  "main": "run_tests.js",
+  "scripts": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Luster79/SimPjoa.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/Luster79/SimPjoa/issues"
+  },
+  "homepage": "https://github.com/Luster79/SimPjoa#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "@types/node": "^26.1.1"
+  }
+}
