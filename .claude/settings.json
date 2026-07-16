@@ -1,13 +1,40 @@
 {
   "permissions": {
-    "defaultMode": "acceptEdits",
     "allow": [
       "Bash(node *)",
       "Bash(npm *)",
       "Bash(npx *)",
       "Bash(ls *)",
       "Bash(find *)",
-      "Bash(mkdir *)"
+      "Bash(mkdir *)",
+      "Bash(node .pw_test3_tmp.mjs)",
+      "Bash(node .pw_debug_tmp.mjs)",
+      "Bash(node .pw_debug2_tmp.mjs)",
+      "Bash(node /home/Luster/SimPjoa/.pw_debug2_tmp.mjs)",
+      "Bash(sort -t, -k3 -n -r out/polar.csv)",
+      "Bash(node .pw_debug3_tmp.mjs)",
+      "Bash(node .pw_debug4_tmp.mjs)",
+      "Bash(echo \"grep exit: $?\")",
+      "Bash(node .pw_final_tmp.mjs)",
+      "Bash(node --check /home/Luster/SimPjoa/ui/app.js)",
+      "Bash(node .pw_lang_tmp.mjs)",
+      "Bash(node .pw_finalcheck_tmp.mjs)",
+      "Bash(echo \"no stray temp files: $?\")",
+      "Bash(sed -i 's/for \\(const yard of \\\\[20, 24, 28, 30, 32, 33, 34, 36, 38, 40, 44, 50\\\\]\\)/for \\(const yard of [24, 25, 26, 27, 28, 29]\\)/' probe_oversheet.mjs)",
+      "Bash(node probe_oversheet.mjs)",
+      "Bash(node -e ' *)",
+      "Bash(node -e \"*)",
+      "Bash(node -e \"console.log\\(require.resolve\\('playwright'\\)\\)\")",
+      "Bash(NODE_PATH=/home/Luster/SimPjoa/node_modules node /tmp/claude-1000/-home-Luster-SimPjoa/a5f854e9-1e54-4c68-86e1-7aaf2391de32/scratchpad/verify_ui.mjs)",
+      "Bash(node .pw_verify_ui.mjs)",
+      "Bash(node .pw_verify_ui2.mjs)",
+      "Bash(node /home/Luster/SimPjoa/tools/bundle.js)",
+      "Bash(node .pw_verify_standalone.mjs)",
+      "Bash(awk -F, 'NR==1 || \\($1 ~ /^\\(40|90|130|170\\)$/ && $2==\"6\"\\)' /tmp/claude-1000/-home-Luster-SimPjoa/a5f854e9-1e54-4c68-86e1-7aaf2391de32/scratchpad/standalone_polar.csv)",
+      "Bash(awk -F, 'NR==1 || \\($1 ~ /^\\(40|90|130|170\\)$/ && $2==\"6\"\\)' /home/Luster/SimPjoa/out/polar.csv)",
+      "Bash(cp /tmp/probe_sign.mjs /home/Luster/SimPjoa/probe_sign.mjs)",
+      "Bash(node probe_sign.mjs)",
+      "Bash(rm probe_sign.mjs)"
     ]
   }
 }
