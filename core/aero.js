@@ -4,16 +4,21 @@
 // Angle-of-attack sign convention (derived once here, used throughout):
 //   The yard/boom trims to the side opposite the ama (leeward), but the
 //   chord DIRECTION VECTOR used to measure alpha is
-//   `chordAngle = end * |yardAngle|` (end-aware since
+//   `chordAngle = end * state.delta` (end-aware since
 //   FIX_REQUEST_round3_worldframe.md R3-1 — see state.js: the ama sits at
 //   boat-frame y-side `end`, not always +y, so "leeward" is the -end side
-//   and the chord's sign must track it). At end=+1 this reduces to the
-//   original `+|yardAngle|`, which — given the chirality of the
-//   awChordX/awChordYcw rotation below — is what makes alpha reduce to the
-//   sailor's angle of attack (apparent wind angle minus sheeting angle),
-//   signed so that a well-trimmed course (chord swept less than the
-//   apparent wind angle) gives positive alpha and positive driving force.
-//   An earlier version used `-|yardAngle|` unconditionally, which silently
+//   and the chord's sign must track it). `state.delta` is the yard's
+//   ACTUAL angle — a real piece of state that relaxes toward its
+//   aerodynamic equilibrium under a one-sided sheet constraint (R5-1,
+//   core/sheet.js); the sheet (`controls.sheet`) only ever LIMITS it from
+//   above; forces here are always computed at the current, physical
+//   `state.delta`, never at the commanded sheet limit directly. At end=+1
+//   this reduces to the original `+delta`, which — given the chirality of
+//   the awChordX/awChordYcw rotation below — is what makes alpha reduce to
+//   the sailor's angle of attack (apparent wind angle minus sheeting
+//   angle), signed so that a well-trimmed course (chord swept less than
+//   the apparent wind angle) gives positive alpha and positive driving
+//   force. An earlier version used `-|yardAngle|` unconditionally, which silently
 //   flipped the sign of CL relative to the fixed lift-direction convention
 //   below (see the L/D decomposition): since drag direction is fixed by the
 //   flow alone, flipping only CL's sign flips whether lift adds to or
@@ -33,6 +38,10 @@
 import { polhamusAR, polhamusKp, polhamusKv, polhamusCL } from './config.js';
 
 const DEG = Math.PI / 180;
+// Flogging-drag window (R5-1): how close to a genuine zero-AoA weathervane
+// (alphaAbsDeg -> 0) the extra flutter drag ramps in over — see
+// sailCoefficients().
+const LUFF_WINDOW_DEG = 8;
 
 export function apparentWind(state, controls) {
   const { windDirFrom, windSpeed } = controls;
@@ -107,11 +116,21 @@ export function sailCoefficients(alpha, controls, config) {
   // (see config.js header comment for why this isn't read from the CSV).
   const CDbase = sail.CD0 + sail.s * CLtable * Math.tan(Math.min(alphaAbsRad, 89.9 * DEG));
 
+  // Flogging drag (R5-1, regime b): a real luffing sail flutters, adding
+  // unsteady-flow drag beyond what a static flat plate at the same
+  // (near-zero) AoA would cost. Ramped in only within a narrow window
+  // around alphaAbsDeg=0 — the genuine weathervane/luffing condition —
+  // fading linearly to 0 by LUFF_WINDOW_DEG so normal, loaded trims
+  // (regime a, and regime c's backwinded-but-pressed condition, both of
+  // which read a much larger alphaAbsDeg) are untouched.
+  const luffFrac = Math.max(0, 1 - alphaAbsDeg / LUFF_WINDOW_DEG);
+  const floggingCD = sail.floggingCDFactor * sail.CD0 * luffFrac;
+
   const camberCLf = camberCLFactor(alphaAbsDeg, sail.camber);
   const camberCDf = 1 + 1.0 * sail.camber;
 
   let CL1 = CLtable * camberCLf;
-  let CD1 = CDbase * camberCDf;
+  let CD1 = (CDbase + floggingCD) * camberCDf;
 
   const brailLee = controls.brailLee ?? 0;
   const brailWind = controls.brailWind ?? 0;
@@ -141,8 +160,9 @@ export function sailCoefficients(alpha, controls, config) {
 //   angle a sailor/UI would call AoA (FIX_REQUEST_step1_round2.md R2-3).
 export function sailForces(state, controls, config) {
   const aw = apparentWind(state, controls);
-  const yardAngle = state.end * Math.abs(controls.yardAngle); // chord direction convention, end-aware, see header comment
-  const cx = Math.cos(yardAngle), cy = Math.sin(yardAngle);
+  const delta = Math.abs(state.delta ?? 0); // actual yard angle magnitude, R5-1 — reused below for CE geometry (P1.2)
+  const chordAngle = state.end * delta; // chord direction convention, end-aware, see header comment
+  const cx = Math.cos(chordAngle), cy = Math.sin(chordAngle);
 
   // Flow components in the chord frame -> signed angle of attack (raw atan2,
   // no reflection: see header comment and sailCoefficients()).
@@ -174,8 +194,55 @@ export function sailForces(state, controls, config) {
   const brailWind = controls.brailWind ?? 0;
   const heelMoment = Fy * config.sail.CEheight * (1 - 0.9 * brailWind);
 
-  const ceXFraction = config.sail.ceXFraction ?? 0.15;
-  const ceX = ceXFraction * (config.hull.length / 2) * state.end;
+  // CE geometry (ROUND5_CONSOLIDATED_work_order.md P1.2 — replaces the old
+  // fixed ceXFraction offset with a delta-dependent lever, same physical
+  // scale as before): the tack sits toward the active-bow SIDE of CG —
+  // tackX = tackXFraction*(hull.length/2), no `end` factor needed since the
+  // boat frame's own +x axis is already "toward the active bow" by
+  // construction (state.js Conventions). tackXFraction reuses the exact
+  // value (0.06) the old, now-removed ceXFraction tunable had — this is
+  // that same knob, repositioned to mean "where the mast/tack sits" instead
+  // of "the CE's own fixed position" (zero net new tunables). Numerically
+  // probed against literally placing the tack at the hull's physical tip
+  // (tackX = hull.length/2, ~16x larger): that let x_CE*Fy alone dwarf
+  // every other yaw source in the model (rudder, hull side force, and
+  // P2-1's ama-drag moment alike), which is inconsistent with the rest of
+  // the tuned model and, in particular, defeats P2-2's requirement that the
+  // ama-drag moment be able to dominate at moderate heel — a real mast
+  // step sits near midships on a canoe this size, not at the bow tip.
+  //
+  // The CE slides aft along the yard from the tack as delta swings the
+  // sail out, landing on the leeward (-end) side:
+  //   x_CE = tackX - (chord/2)*cos(delta)
+  //   y_CE = -end * (chord/2)*sin(delta)
+  // Chord scale reuses config.sail.CEheight/2 (zero new tunables): a full
+  // aerodynamic yard span (~5.6m, from the area/apex-angle triangle
+  // relation) was also probed and makes the y_CE*Fx term (Fx itself
+  // changes SIGN across a normal trim sweep, from drive to net aft thrust
+  // near alignment) dominate and REVERSE the qualitative trend x_CE*Fy
+  // alone already gets right, flipping "ease -> luffs to windward" (Pjoa
+  // manual III.3, T3) into its opposite.
+  //
+  // P2-3 (brail-induced CE shift): spilling the sail's rear/upper area
+  // (windward brail) moves the effective CE toward the tack — shrink the
+  // along-yard FORE-AFT distance from the tack proportionally to brailWind
+  // (config.sail.ceBrailShift, default ~0.3: full brailWind moves x_CE
+  // ~30% of the half-chord toward the tack). Only x_CE shifts, not y_CE —
+  // probed both ways (T5, downwind rudder-workload investigation): shrinking
+  // BOTH shrinks the whole lever uniformly and leaves the net yaw-moment
+  // magnitude essentially unchanged (or slightly larger, since x_CE and
+  // y_CE partly cancel through the ceLeverSign flip above), whereas shifting
+  // only x_CE genuinely reduces the yaw moment's magnitude — the "carrot"
+  // (a spilled sail bunched near the tack) damping the boat's yaw
+  // sensitivity downwind, not just relocating it.
+  const chord = config.sail.CEheight / 2;
+  const halfChord = chord / 2;
+  const tackXFraction = config.sail.tackXFraction ?? 0.06;
+  const tackX = tackXFraction * (config.hull.length / 2);
+  const ceBrailShift = config.sail.ceBrailShift ?? 0.3;
+  const halfChordEffX = halfChord * (1 - ceBrailShift * brailWind);
+  const xCE = tackX - halfChordEffX * Math.cos(delta);
+  const yCE = -state.end * halfChord * Math.sin(delta);
 
   // Heel-course coupling (pure geometry, FIX_REQUEST_round4_roll_dof.md
   // 1.4): heeling tips the mast, offsetting the CE laterally by
@@ -185,10 +252,23 @@ export function sailForces(state, controls, config) {
   // -y*Fx (standard r x F, no x-offset for this term); substituting
   // y = -end*CEheight*sin(phi) gives the end*CEheight*sin(phi)*Fx below.
   // config.hull.yawHeelSign (+-1) is a verified-empirically flip knob —
-  // see ARCHITECTURE doc / harness/asserts.js coupling-sign tests (1.6).
+  // see ARCHITECTURE doc / harness/asserts.js coupling-sign tests. This is
+  // a SEPARATE mechanism from the x_CE/y_CE geometry above (mast RAKE
+  // under heel vs. the yard's OWN swing angle) and stays additive with it.
   const yawHeelSign = config.hull.yawHeelSign ?? 1;
   const yawMomentHeel = yawHeelSign * state.end * config.sail.CEheight * Math.sin(phi) * Fx;
-  const yawMoment = ceX * Fy + yawMomentHeel;
+  // ceLeverSign (P1.2/T3 — verified-empirically flip knob, same pattern as
+  // yawHeelSign above): the from-scratch geometric derivation (CE aft of
+  // CG when trimmed-in, forward when eased) gives standard weather/lee-helm
+  // physics — trim-in -> weather helm/luffs, ease -> lee helm/bears away —
+  // which is the OPPOSITE polarity from the Pjoa manual's field-validated
+  // rule III.3/4 ("sheet in bears away, eased luffs", ROUND5_CONSOLIDATED_
+  // work_order.md T3). Flipped to match the manual's documented practice
+  // rather than the unaided derivation, exactly as yawHeelSign was already
+  // fixed empirically elsewhere in this codebase without a from-scratch
+  // proof.
+  const ceLeverSign = config.hull.ceLeverSign ?? -1;
+  const yawMoment = ceLeverSign * (xCE * Fy - yCE * Fx) + yawMomentHeel;
 
   return { Fx, Fy, heelMoment, yawMoment, yawMomentHeel, alpha, alphaSailor, aw, CL, CD };
 }

@@ -68,7 +68,21 @@ export function hullSideForce(u, v, crewPosX, config) {
   return { Fx, Fy, yawMoment };
 }
 
-export function amaDrag(u, amaLoad, crewPos, config) {
+// amaDrag(u, amaLoad, crewPos, end, config) -> { Fx, yawMoment }
+//   yawMoment (ROUND5_CONSOLIDATED_work_order.md P2-1, Pjoa manual III.3:
+//   the ama's drag rotates the canoe around it): the ama's drag force acts
+//   at its lateral position (lever = ama.spacing, boat-frame side = `end`
+//   — the ama is bolted to ONE physical side, see state.js Conventions),
+//   so it produces a yaw moment same as any other off-centerline force —
+//   moment = -y*Fx (standard r x F, y = ama.spacing*end). Signed so
+//   INCREASED ama drag turns the bow TOWARD the ama side with no extra
+//   flip knob needed: e.g. end=+1 (ama at +y), Fx more negative (more
+//   drag) -> moment = -(spacing)*Fx more POSITIVE -> CCW -> the bow (+x)
+//   swings toward +y, the ama's own side. The round-4 crew-immersion term
+//   above already modulates this drag with crewPos, so "crew toward the
+//   ama sinks it, and the extra drag swings the bow toward the ama" (the
+//   manual's rule I) emerges with no new controls.
+export function amaDrag(u, amaLoad, crewPos, end, config) {
   const { ama, crew, rho_w } = config;
   // Even at zero heel the ama still floats partially immersed at rest on
   // its own static buoyancy (it isn't hauled out just because there's no
@@ -93,7 +107,12 @@ export function amaDrag(u, amaLoad, crewPos, config) {
   const immersion = Math.min(heelImmersion + crewImmersion, 1.3);
   const outboardRelief = 1 - 0.15 * (Math.max(0, -crewPos) / 0.3);
   const Seff = ama.wettedSurface * immersion * outboardRelief;
-  return -Math.sign(u) * 0.5 * rho_w * ama.dragCoeff * Seff * u * u;
+  const Fx = -Math.sign(u) * 0.5 * rho_w * ama.dragCoeff * Seff * u * u;
+
+  const yAma = ama.spacing * end;
+  const yawMoment = -yAma * Fx;
+
+  return { Fx, yawMoment };
 }
 
 export function yawDamping(r, u, config) {

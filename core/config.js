@@ -192,6 +192,7 @@ function buildDefaultConfig() {
       crewForeAftTrimCoeff: 0.15,          // tunable ("k_trim") — fraction of half-length the CLR shifts per unit crewPosX (FIX_REQUEST_round4_roll_dof.md 1.5)
       crewTrimSign: 1,                     // +-1 — flips the crewPosX->CLR-shift direction; verified empirically against the 1.6 coupling-sign test (forward crew -> luff), see ARCHITECTURE doc
       yawHeelSign: 1,                      // +-1 — flips the heel->yaw coupling direction (aero.js yawMomentHeel); verified empirically against the 1.6 coupling-sign test (crew toward ama -> bear away), see ARCHITECTURE doc
+      ceLeverSign: -1,                     // +-1 (ROUND5_CONSOLIDATED_work_order.md P1.2/T3) — flips the CE-follows-delta yaw lever (aero.js xCE/yCE term) to match the Pjoa manual's field-validated "sheet in bears away, eased luffs" rather than the from-scratch weather/lee-helm derivation, which comes out the opposite polarity
     },
 
     ama: {
@@ -211,7 +212,17 @@ function buildDefaultConfig() {
       camber: 0.10,                          // base camber (depth/chord), 0-0.20
       CD0: 0.06,
       s: 0.85,                               // tunable partial-suction factor (RUNTIME only)
-      ceXFraction: 0.06,                      // tunable — center-of-effort longitudinal offset, fraction of half-length
+      // --- Sheet constraint (ROUND5_CONSOLIDATED_work_order.md P1) ---
+      yardSwingRateDegPerSec: 90,             // tunable — max slew rate for state.delta relaxing toward its equilibrium (request's own suggested 60-120deg/s band: "a swinging yard, not a teleport")
+      deltaMaxReleaseDeg: 90,                 // the sheet limit is released to this during a shunt's ease/transfer/swap phases, then closes back to the commanded controls.sheet once 'sheet' starts hauling it in (P1.1 point 3)
+      floggingCDFactor: 0.15,                 // tunable — extra parasite drag while luffing (delta held below the sheet limit by the wind, not by the sheet), as a fraction of CD0; request's own suggested 0.1-0.2 band
+      // --- CE geometry (P1.2) --- the old fixed ceXFraction offset is
+      // GONE (the CE now derives from tack position + chord + actual delta,
+      // see aero.js sailForces); tackXFraction below is that SAME knob,
+      // repositioned to mean "where the mast/tack sits" instead of "the
+      // CE's own fixed position" — zero net new tunables.
+      tackXFraction: 0.06,                    // fraction of hull half-length — mast/tack position, active-bow side of CG
+      ceBrailShift: 0.3,                      // tunable (P2-3, the one new tunable this section allows) — fraction of the half-chord the CE shifts toward the tack at brailWind=1 (spilling the sail's rear/upper area), request's own suggested ~0.25-0.35 band
     },
 
     crew: {
@@ -241,6 +252,15 @@ function buildDefaultConfig() {
       // 8deg step settles (|phi|<0.4deg) in ~3.2 oscillation periods —
       // within the requested 2-4 period, damped-overshoot band.
       rollDampingCoeff: 900,
+      // phiCapsizeDeg (EXTENSION_round5_sheet_constraint.md R5-2.1): past
+      // this angle (symmetric on both sides) the ama's restoring arm
+      // reverses into a genuine capsizing arm — see stability.js
+      // rollRestoreMoment. 50deg is 38deg past phiLiftoffDeg (12) and 40deg
+      // past phiSubmergeDeg (10), both within the request's own suggested
+      // "~35-40deg past liftoff" band, and comfortably below the 58deg
+      // runaway heel the round-4 review found holding as a spurious stable
+      // equilibrium (verified fixed — see ARCHITECTURE doc).
+      phiCapsizeDeg: 50,
     },
 
     rudder: {
@@ -282,6 +302,10 @@ export function validateConfig(config) {
   if (!(config.stability.rollDampingCoeff > 0)) errs.push('stability.rollDampingCoeff must be > 0');
   inRange(config.crew.posXMin, -1, 0, 'crew.posXMin');
   inRange(config.crew.posXMax, 0, 1, 'crew.posXMax');
+  if (!(config.stability.phiCapsizeDeg > config.stability.phiLiftoffDeg)) errs.push('stability.phiCapsizeDeg must be > phiLiftoffDeg');
+  if (!(config.stability.phiCapsizeDeg > config.stability.phiSubmergeDeg)) errs.push('stability.phiCapsizeDeg must be > phiSubmergeDeg');
+  if (!(config.sail.yardSwingRateDegPerSec > 0)) errs.push('sail.yardSwingRateDegPerSec must be > 0');
+  if (!(config.sail.deltaMaxReleaseDeg > 0)) errs.push('sail.deltaMaxReleaseDeg must be > 0');
 
   if (errs.length) throw new Error('CONFIG validation failed:\n' + errs.join('\n'));
   return config;

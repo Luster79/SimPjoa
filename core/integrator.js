@@ -11,6 +11,7 @@ import { hullResistance, hullSideForce, amaDrag, yawDamping } from './hydro.js';
 import { rudderForce } from './rudder.js';
 import { computeAmaLoad, updateAback, rollRestoreMoment, crewRollMoment, rollDampingMoment } from './stability.js';
 import { shuntStep } from './shunt.js';
+import { sheetStep, effectiveDeltaMax, isLuffing } from './sheet.js';
 
 // computeForces(state, controls, config) -> total forces/moment + readouts
 // shared with derivatives() and the harness/UI (alpha, aw, amaLoad, ...).
@@ -28,13 +29,13 @@ export function computeForces(state, controls, config) {
 
   const resist = hullResistance(state.u, config);
   const side = hullSideForce(state.u, state.v, controls.crewPosX ?? 0, config);
-  const drag = amaDrag(state.u, amaLoad, controls.crewPos, config);
+  const drag = amaDrag(state.u, amaLoad, controls.crewPos, state.end, config);
   const rudder = rudderForce(state, controls, config);
   const damp = yawDamping(state.r, state.u, config);
 
-  const Fx = aero.Fx + resist + side.Fx + drag;
+  const Fx = aero.Fx + resist + side.Fx + drag.Fx;
   const Fy = aero.Fy + side.Fy + rudder.Fy;
-  const M = aero.yawMoment + side.yawMoment + rudder.yawMoment + damp;
+  const M = aero.yawMoment + side.yawMoment + rudder.yawMoment + damp + drag.yawMoment;
 
   // Roll dynamics (4th DOF, FIX_REQUEST_round4_roll_dof.md Part 1):
   // sail heel (boat-frame heelMoment converted to the physical-frame roll
@@ -47,15 +48,18 @@ export function computeForces(state, controls, config) {
   const Mdamp = rollDampingMoment(state.p, config);
   const Mroll = Msail + Mrestore + Mcrew + Mdamp;
 
+  const deltaMax = effectiveDeltaMax(state, controls, config);
+  const luffing = isLuffing(state, controls, config);
+
   return {
     Fx, Fy, M, Mroll, amaLoad, amaLoadDisplay,
     heelMoment: aero.heelMoment, alpha: aero.alpha, alphaSailor: aero.alphaSailor,
-    aw: aero.aw, CL: aero.CL, CD: aero.CD,
+    aw: aero.aw, CL: aero.CL, CD: aero.CD, deltaMax, luffing,
     breakdown: {
       sail: { Fx: aero.Fx, Fy: aero.Fy, yawMoment: aero.yawMoment, heelMoment: aero.heelMoment },
       hullResist: { Fx: resist },
       hullSide: { Fx: side.Fx, Fy: side.Fy, yawMoment: side.yawMoment },
-      amaDrag: { Fx: drag },
+      amaDrag: { Fx: drag.Fx, yawMoment: drag.yawMoment },
       rudder: { Fy: rudder.Fy, yawMoment: rudder.yawMoment },
       yawDamping: { M: damp },
       roll: { Msail, Mrestore, Mcrew, Mdamp, Mroll },
@@ -91,7 +95,23 @@ function addScaled(base, deriv, h) {
 }
 
 // integrate(state, controls, config, dt) -> newState (RK4, fixed dt)
+//
+// R5-2.2: once capsized, the core freezes -- zeroes u/v/r/p (a short
+// exponential bleed, not an instant jump) and stops accepting control
+// inputs (including the sheet/shunt/rudder) except reset, which is a
+// facade-level concern (simulator.js's reset()), not this function's.
+// This lives HERE, not in the UI-facing simulator.js facade, so every
+// caller of integrate() -- the harness scenarios and the polar sweep
+// included, which call it directly, bypassing the facade entirely -- gets
+// the same "no ghost sailing at some absurd heel" guarantee instead of
+// only the live UI.
 export function integrate(state, controls, config, dt) {
+  if (state.capsized) {
+    const bleed = Math.exp(-dt / 0.3);
+    const decay = (v) => (Math.abs(v) < 1e-4 ? 0 : v * bleed);
+    return { ...state, t: state.t + dt, u: decay(state.u), v: decay(state.v), r: decay(state.r), p: decay(state.p) };
+  }
+
   const evalDeriv = (s) => {
     const full = { ...state, ...s };
     const forces = computeForces(full, controls, config);
@@ -115,6 +135,16 @@ export function integrate(state, controls, config, dt) {
   // integrated velocities/heading so no substep's dynamics get discarded.
   const shuntPatch = shuntStep({ ...state, ...next }, controls, config, dt);
   Object.assign(next, shuntPatch);
+
+  // Sheet constraint (R5-1): delta relaxes toward its equilibrium at a
+  // bounded slew rate, evaluated AFTER the shunt patch so a phase
+  // transition landing on this exact step (e.g. entering 'sheet') is
+  // already reflected in the delta_max it relaxes against. Held constant
+  // across this step's own k1..k4 RK4 evaluations above (same treatment as
+  // the shunt phase/fade), then advanced once per substep here — cheap and
+  // accurate at dt=1/240s.
+  const sheetPatch = sheetStep({ ...state, ...next }, controls, config, dt);
+  Object.assign(next, sheetPatch);
 
   const finalState = { ...state, ...next, t: state.t + dt };
   const forcesAtNew = computeForces(finalState, controls, config);

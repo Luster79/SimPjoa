@@ -27,6 +27,19 @@
 //   Because this is a physical-frame quantity (unlike heading/u/v/r, which
 //   are active-bow-frame and rotate at a shunt), phi and p are UNCHANGED
 //   at a shunt swap — see core/shunt.js.
+// - Sheet constraint (EXTENSION_round5_sheet_constraint.md R5-1): the sail
+//   is controlled by TWO separate things now, not one. `controls.sheet` is
+//   an INPUT — the MAXIMUM yard angle (delta_max) the sailor allows, [0,
+//   ~90deg], eased sheet = larger limit. `state.delta` is the yard's
+//   ACTUAL angle (boat-frame magnitude, >=0), a real piece of STATE that
+//   relaxes toward its equilibrium at a bounded slew rate (core/sheet.js) —
+//   you cannot push on a rope, so the sheet can only ever LIMIT delta from
+//   above, never command it directly. Like phi/p, delta is a physical-yard
+//   quantity, not an active-bow-frame one, but since the yard is not
+//   bolted to a fixed physical side (it swings to whichever side the wind
+//   demands, up to end-aware chordAngle = end*delta — see aero.js), it is
+//   left unchanged at a shunt swap same as phi/p purely because nothing in
+//   the swap transform touches it, not because of a frame argument.
 // - Moments: positive = counterclockwise rotation (top-down view).
 // - Sail angle of attack and leeway angle are always computed via atan2,
 //   never asin/acos.
@@ -44,6 +57,7 @@ export function createInitialState(config) {
     r: 0,
     phi: 0,
     p: 0,
+    delta: 0, // actual yard angle [rad], >=0 — see sheet-constraint comment above
     end: 1,
     amaLoad: 0,
     abackTimer: 0,
@@ -57,7 +71,7 @@ export function createDefaultControls() {
   return {
     windDirFrom: Math.PI, // wind from the south by default (blowing towards north)
     windSpeed: 6,
-    yardAngle: 0,
+    sheet: 0, // MAXIMUM yard angle delta_max [rad], >=0 (R5-1) — NOT the actual yard angle, see state.delta
     rudder: 0,
     brailLee: 0,
     brailWind: 0,

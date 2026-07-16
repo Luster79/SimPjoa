@@ -12,6 +12,10 @@
   #hud { grid-column: 1 / 3; display: flex; flex-wrap: wrap; gap: 4px 18px; padding: 6px 12px; background: #101c2c; border-bottom: 1px solid #23364a; align-items: center; }
   #hud .stat { white-space: nowrap; }
   #hud .stat b { color: #7fd0ff; }
+  .luffing-tag { color: #ffd23f !important; font-size: 11px; letter-spacing: .03em; }
+  .luffing-tag:empty { display: none; }
+  .checkboxRow { display: flex; align-items: center; gap: 6px; margin: 6px 0; color: #9fb4c8; }
+  .checkboxRow input { margin: 0; }
   #stage { position: relative; overflow: hidden; background: #06121f; }
   canvas { display: block; }
   #banner { position: absolute; top: 0; left: 0; right: 0; text-align: center; padding: 10px; font-weight: 700; font-size: 16px; letter-spacing: 0.03em; display: none; }
@@ -63,6 +67,8 @@
     <span class="stat"><span data-i18n="hud.leeway">Leeway</span> <b id="hudLeeway">0</b>&deg;</span>
     <span class="stat"><span data-i18n="hud.amaLoad">Ama load</span> <b id="hudAmaLoad">0</b>%</span>
     <span class="stat"><span data-i18n="hud.heel">Heel</span> <b id="hudHeel">0</b>&deg;</span>
+    <span class="stat"><span data-i18n="hud.sheet">Sheet</span> <b id="hudSheet">0</b>&deg;</span>
+    <span class="stat"><span data-i18n="hud.yard">Yard</span> <b id="hudYard">0</b>&deg; <b id="hudLuffing" class="luffing-tag"></b></span>
     <span class="stat"><span data-i18n="hud.shunt">Shunt</span> <b id="hudShunt">none</b></span>
     <span class="stat">TWS <b id="hudTws">6.0</b> m/s</span>
     <span class="stat" style="margin-left:auto">
@@ -95,7 +101,7 @@
       <div class="row"><label for="windSpeed" data-i18n="lbl.strength">Strength</label><input id="windSpeed" type="range" min="2" max="12" step="0.2" value="6"><output id="windSpeedOut">6.0</output></div>
 
       <h2 data-i18n="h.sail">Sail</h2>
-      <div class="row"><label for="yardAngle" data-i18n="lbl.yardAngle">Yard angle</label><input id="yardAngle" type="range" min="0" max="90" step="1" value="50"><output id="yardAngleOut">50&deg;</output></div>
+      <div class="row"><label for="sheet" data-i18n="lbl.sheet">Sheet (szot)</label><input id="sheet" type="range" min="0" max="90" step="1" value="50"><output id="sheetOut">50&deg;</output></div>
       <div class="hint" data-i18n="hint.yard">&larr;/&rarr; arrow keys ease/sheet</div>
       <div class="row"><label for="brailLee" data-i18n="lbl.brailLee">Brail (lee)</label><input id="brailLee" type="range" min="0" max="100" step="1" value="0"><output id="brailLeeOut">0%</output></div>
       <div class="hint" data-i18n="hint.brailLee">Q sheets in, Z eases</div>
@@ -118,6 +124,9 @@
       <div class="bar" id="amaBar"><i style="width:0%"></i></div>
       <div class="hint" data-i18n="hint.heelBar">Heel (centered = upright)</div>
       <div class="heelBar" id="heelBar"><div class="zero"></div><div class="needle" id="heelNeedle" style="left:50%"></div></div>
+
+      <h2 data-i18n="h.display">Display</h2>
+      <div class="checkboxRow"><input type="checkbox" id="wakeTrail"><label for="wakeTrail" data-i18n="lbl.wakeTrail">Wake trail (kilwater)</label></div>
 
       <h2 data-i18n="h.reset">Reset</h2>
       <div class="buttons"><button id="btnReset"><span data-i18n="btn.reset">Reset (R)</span></button></div>
@@ -191,6 +200,19 @@ function readFileSync(p) {
 //   Because this is a physical-frame quantity (unlike heading/u/v/r, which
 //   are active-bow-frame and rotate at a shunt), phi and p are UNCHANGED
 //   at a shunt swap — see core/shunt.js.
+// - Sheet constraint (EXTENSION_round5_sheet_constraint.md R5-1): the sail
+//   is controlled by TWO separate things now, not one. `controls.sheet` is
+//   an INPUT — the MAXIMUM yard angle (delta_max) the sailor allows, [0,
+//   ~90deg], eased sheet = larger limit. `state.delta` is the yard's
+//   ACTUAL angle (boat-frame magnitude, >=0), a real piece of STATE that
+//   relaxes toward its equilibrium at a bounded slew rate (core/sheet.js) —
+//   you cannot push on a rope, so the sheet can only ever LIMIT delta from
+//   above, never command it directly. Like phi/p, delta is a physical-yard
+//   quantity, not an active-bow-frame one, but since the yard is not
+//   bolted to a fixed physical side (it swings to whichever side the wind
+//   demands, up to end-aware chordAngle = end*delta — see aero.js), it is
+//   left unchanged at a shunt swap same as phi/p purely because nothing in
+//   the swap transform touches it, not because of a frame argument.
 // - Moments: positive = counterclockwise rotation (top-down view).
 // - Sail angle of attack and leeway angle are always computed via atan2,
 //   never asin/acos.
@@ -208,6 +230,7 @@ function createInitialState(config) {
     r: 0,
     phi: 0,
     p: 0,
+    delta: 0, // actual yard angle [rad], >=0 — see sheet-constraint comment above
     end: 1,
     amaLoad: 0,
     abackTimer: 0,
@@ -221,7 +244,7 @@ function createDefaultControls() {
   return {
     windDirFrom: Math.PI, // wind from the south by default (blowing towards north)
     windSpeed: 6,
-    yardAngle: 0,
+    sheet: 0, // MAXIMUM yard angle delta_max [rad], >=0 (R5-1) — NOT the actual yard angle, see state.delta
     rudder: 0,
     brailLee: 0,
     brailWind: 0,
@@ -426,6 +449,7 @@ function buildDefaultConfig() {
       crewForeAftTrimCoeff: 0.15,          // tunable ("k_trim") — fraction of half-length the CLR shifts per unit crewPosX (FIX_REQUEST_round4_roll_dof.md 1.5)
       crewTrimSign: 1,                     // +-1 — flips the crewPosX->CLR-shift direction; verified empirically against the 1.6 coupling-sign test (forward crew -> luff), see ARCHITECTURE doc
       yawHeelSign: 1,                      // +-1 — flips the heel->yaw coupling direction (aero.js yawMomentHeel); verified empirically against the 1.6 coupling-sign test (crew toward ama -> bear away), see ARCHITECTURE doc
+      ceLeverSign: -1,                     // +-1 (ROUND5_CONSOLIDATED_work_order.md P1.2/T3) — flips the CE-follows-delta yaw lever (aero.js xCE/yCE term) to match the Pjoa manual's field-validated "sheet in bears away, eased luffs" rather than the from-scratch weather/lee-helm derivation, which comes out the opposite polarity
     },
 
     ama: {
@@ -445,7 +469,17 @@ function buildDefaultConfig() {
       camber: 0.10,                          // base camber (depth/chord), 0-0.20
       CD0: 0.06,
       s: 0.85,                               // tunable partial-suction factor (RUNTIME only)
-      ceXFraction: 0.06,                      // tunable — center-of-effort longitudinal offset, fraction of half-length
+      // --- Sheet constraint (ROUND5_CONSOLIDATED_work_order.md P1) ---
+      yardSwingRateDegPerSec: 90,             // tunable — max slew rate for state.delta relaxing toward its equilibrium (request's own suggested 60-120deg/s band: "a swinging yard, not a teleport")
+      deltaMaxReleaseDeg: 90,                 // the sheet limit is released to this during a shunt's ease/transfer/swap phases, then closes back to the commanded controls.sheet once 'sheet' starts hauling it in (P1.1 point 3)
+      floggingCDFactor: 0.15,                 // tunable — extra parasite drag while luffing (delta held below the sheet limit by the wind, not by the sheet), as a fraction of CD0; request's own suggested 0.1-0.2 band
+      // --- CE geometry (P1.2) --- the old fixed ceXFraction offset is
+      // GONE (the CE now derives from tack position + chord + actual delta,
+      // see aero.js sailForces); tackXFraction below is that SAME knob,
+      // repositioned to mean "where the mast/tack sits" instead of "the
+      // CE's own fixed position" — zero net new tunables.
+      tackXFraction: 0.06,                    // fraction of hull half-length — mast/tack position, active-bow side of CG
+      ceBrailShift: 0.3,                      // tunable (P2-3, the one new tunable this section allows) — fraction of the half-chord the CE shifts toward the tack at brailWind=1 (spilling the sail's rear/upper area), request's own suggested ~0.25-0.35 band
     },
 
     crew: {
@@ -475,6 +509,15 @@ function buildDefaultConfig() {
       // 8deg step settles (|phi|<0.4deg) in ~3.2 oscillation periods —
       // within the requested 2-4 period, damped-overshoot band.
       rollDampingCoeff: 900,
+      // phiCapsizeDeg (EXTENSION_round5_sheet_constraint.md R5-2.1): past
+      // this angle (symmetric on both sides) the ama's restoring arm
+      // reverses into a genuine capsizing arm — see stability.js
+      // rollRestoreMoment. 50deg is 38deg past phiLiftoffDeg (12) and 40deg
+      // past phiSubmergeDeg (10), both within the request's own suggested
+      // "~35-40deg past liftoff" band, and comfortably below the 58deg
+      // runaway heel the round-4 review found holding as a spurious stable
+      // equilibrium (verified fixed — see ARCHITECTURE doc).
+      phiCapsizeDeg: 50,
     },
 
     rudder: {
@@ -516,6 +559,10 @@ function validateConfig(config) {
   if (!(config.stability.rollDampingCoeff > 0)) errs.push('stability.rollDampingCoeff must be > 0');
   inRange(config.crew.posXMin, -1, 0, 'crew.posXMin');
   inRange(config.crew.posXMax, 0, 1, 'crew.posXMax');
+  if (!(config.stability.phiCapsizeDeg > config.stability.phiLiftoffDeg)) errs.push('stability.phiCapsizeDeg must be > phiLiftoffDeg');
+  if (!(config.stability.phiCapsizeDeg > config.stability.phiSubmergeDeg)) errs.push('stability.phiCapsizeDeg must be > phiSubmergeDeg');
+  if (!(config.sail.yardSwingRateDegPerSec > 0)) errs.push('sail.yardSwingRateDegPerSec must be > 0');
+  if (!(config.sail.deltaMaxReleaseDeg > 0)) errs.push('sail.deltaMaxReleaseDeg must be > 0');
 
   if (errs.length) throw new Error('CONFIG validation failed:\n' + errs.join('\n'));
   return config;
@@ -545,16 +592,21 @@ function createConfig(userConfig) {
 // Angle-of-attack sign convention (derived once here, used throughout):
 //   The yard/boom trims to the side opposite the ama (leeward), but the
 //   chord DIRECTION VECTOR used to measure alpha is
-//   `chordAngle = end * |yardAngle|` (end-aware since
+//   `chordAngle = end * state.delta` (end-aware since
 //   FIX_REQUEST_round3_worldframe.md R3-1 — see state.js: the ama sits at
 //   boat-frame y-side `end`, not always +y, so "leeward" is the -end side
-//   and the chord's sign must track it). At end=+1 this reduces to the
-//   original `+|yardAngle|`, which — given the chirality of the
-//   awChordX/awChordYcw rotation below — is what makes alpha reduce to the
-//   sailor's angle of attack (apparent wind angle minus sheeting angle),
-//   signed so that a well-trimmed course (chord swept less than the
-//   apparent wind angle) gives positive alpha and positive driving force.
-//   An earlier version used `-|yardAngle|` unconditionally, which silently
+//   and the chord's sign must track it). `state.delta` is the yard's
+//   ACTUAL angle — a real piece of state that relaxes toward its
+//   aerodynamic equilibrium under a one-sided sheet constraint (R5-1,
+//   core/sheet.js); the sheet (`controls.sheet`) only ever LIMITS it from
+//   above; forces here are always computed at the current, physical
+//   `state.delta`, never at the commanded sheet limit directly. At end=+1
+//   this reduces to the original `+delta`, which — given the chirality of
+//   the awChordX/awChordYcw rotation below — is what makes alpha reduce to
+//   the sailor's angle of attack (apparent wind angle minus sheeting
+//   angle), signed so that a well-trimmed course (chord swept less than
+//   the apparent wind angle) gives positive alpha and positive driving
+//   force. An earlier version used `-|yardAngle|` unconditionally, which silently
 //   flipped the sign of CL relative to the fixed lift-direction convention
 //   below (see the L/D decomposition): since drag direction is fixed by the
 //   flow alone, flipping only CL's sign flips whether lift adds to or
@@ -573,6 +625,10 @@ function createConfig(userConfig) {
 
 
 const DEG = Math.PI / 180;
+// Flogging-drag window (R5-1): how close to a genuine zero-AoA weathervane
+// (alphaAbsDeg -> 0) the extra flutter drag ramps in over — see
+// sailCoefficients().
+const LUFF_WINDOW_DEG = 8;
 
 function apparentWind(state, controls) {
   const { windDirFrom, windSpeed } = controls;
@@ -647,11 +703,21 @@ function sailCoefficients(alpha, controls, config) {
   // (see config.js header comment for why this isn't read from the CSV).
   const CDbase = sail.CD0 + sail.s * CLtable * Math.tan(Math.min(alphaAbsRad, 89.9 * DEG));
 
+  // Flogging drag (R5-1, regime b): a real luffing sail flutters, adding
+  // unsteady-flow drag beyond what a static flat plate at the same
+  // (near-zero) AoA would cost. Ramped in only within a narrow window
+  // around alphaAbsDeg=0 — the genuine weathervane/luffing condition —
+  // fading linearly to 0 by LUFF_WINDOW_DEG so normal, loaded trims
+  // (regime a, and regime c's backwinded-but-pressed condition, both of
+  // which read a much larger alphaAbsDeg) are untouched.
+  const luffFrac = Math.max(0, 1 - alphaAbsDeg / LUFF_WINDOW_DEG);
+  const floggingCD = sail.floggingCDFactor * sail.CD0 * luffFrac;
+
   const camberCLf = camberCLFactor(alphaAbsDeg, sail.camber);
   const camberCDf = 1 + 1.0 * sail.camber;
 
   let CL1 = CLtable * camberCLf;
-  let CD1 = CDbase * camberCDf;
+  let CD1 = (CDbase + floggingCD) * camberCDf;
 
   const brailLee = controls.brailLee ?? 0;
   const brailWind = controls.brailWind ?? 0;
@@ -681,8 +747,9 @@ function sailCoefficients(alpha, controls, config) {
 //   angle a sailor/UI would call AoA (FIX_REQUEST_step1_round2.md R2-3).
 function sailForces(state, controls, config) {
   const aw = apparentWind(state, controls);
-  const yardAngle = state.end * Math.abs(controls.yardAngle); // chord direction convention, end-aware, see header comment
-  const cx = Math.cos(yardAngle), cy = Math.sin(yardAngle);
+  const delta = Math.abs(state.delta ?? 0); // actual yard angle magnitude, R5-1 — reused below for CE geometry (P1.2)
+  const chordAngle = state.end * delta; // chord direction convention, end-aware, see header comment
+  const cx = Math.cos(chordAngle), cy = Math.sin(chordAngle);
 
   // Flow components in the chord frame -> signed angle of attack (raw atan2,
   // no reflection: see header comment and sailCoefficients()).
@@ -714,8 +781,55 @@ function sailForces(state, controls, config) {
   const brailWind = controls.brailWind ?? 0;
   const heelMoment = Fy * config.sail.CEheight * (1 - 0.9 * brailWind);
 
-  const ceXFraction = config.sail.ceXFraction ?? 0.15;
-  const ceX = ceXFraction * (config.hull.length / 2) * state.end;
+  // CE geometry (ROUND5_CONSOLIDATED_work_order.md P1.2 — replaces the old
+  // fixed ceXFraction offset with a delta-dependent lever, same physical
+  // scale as before): the tack sits toward the active-bow SIDE of CG —
+  // tackX = tackXFraction*(hull.length/2), no `end` factor needed since the
+  // boat frame's own +x axis is already "toward the active bow" by
+  // construction (state.js Conventions). tackXFraction reuses the exact
+  // value (0.06) the old, now-removed ceXFraction tunable had — this is
+  // that same knob, repositioned to mean "where the mast/tack sits" instead
+  // of "the CE's own fixed position" (zero net new tunables). Numerically
+  // probed against literally placing the tack at the hull's physical tip
+  // (tackX = hull.length/2, ~16x larger): that let x_CE*Fy alone dwarf
+  // every other yaw source in the model (rudder, hull side force, and
+  // P2-1's ama-drag moment alike), which is inconsistent with the rest of
+  // the tuned model and, in particular, defeats P2-2's requirement that the
+  // ama-drag moment be able to dominate at moderate heel — a real mast
+  // step sits near midships on a canoe this size, not at the bow tip.
+  //
+  // The CE slides aft along the yard from the tack as delta swings the
+  // sail out, landing on the leeward (-end) side:
+  //   x_CE = tackX - (chord/2)*cos(delta)
+  //   y_CE = -end * (chord/2)*sin(delta)
+  // Chord scale reuses config.sail.CEheight/2 (zero new tunables): a full
+  // aerodynamic yard span (~5.6m, from the area/apex-angle triangle
+  // relation) was also probed and makes the y_CE*Fx term (Fx itself
+  // changes SIGN across a normal trim sweep, from drive to net aft thrust
+  // near alignment) dominate and REVERSE the qualitative trend x_CE*Fy
+  // alone already gets right, flipping "ease -> luffs to windward" (Pjoa
+  // manual III.3, T3) into its opposite.
+  //
+  // P2-3 (brail-induced CE shift): spilling the sail's rear/upper area
+  // (windward brail) moves the effective CE toward the tack — shrink the
+  // along-yard FORE-AFT distance from the tack proportionally to brailWind
+  // (config.sail.ceBrailShift, default ~0.3: full brailWind moves x_CE
+  // ~30% of the half-chord toward the tack). Only x_CE shifts, not y_CE —
+  // probed both ways (T5, downwind rudder-workload investigation): shrinking
+  // BOTH shrinks the whole lever uniformly and leaves the net yaw-moment
+  // magnitude essentially unchanged (or slightly larger, since x_CE and
+  // y_CE partly cancel through the ceLeverSign flip above), whereas shifting
+  // only x_CE genuinely reduces the yaw moment's magnitude — the "carrot"
+  // (a spilled sail bunched near the tack) damping the boat's yaw
+  // sensitivity downwind, not just relocating it.
+  const chord = config.sail.CEheight / 2;
+  const halfChord = chord / 2;
+  const tackXFraction = config.sail.tackXFraction ?? 0.06;
+  const tackX = tackXFraction * (config.hull.length / 2);
+  const ceBrailShift = config.sail.ceBrailShift ?? 0.3;
+  const halfChordEffX = halfChord * (1 - ceBrailShift * brailWind);
+  const xCE = tackX - halfChordEffX * Math.cos(delta);
+  const yCE = -state.end * halfChord * Math.sin(delta);
 
   // Heel-course coupling (pure geometry, FIX_REQUEST_round4_roll_dof.md
   // 1.4): heeling tips the mast, offsetting the CE laterally by
@@ -725,10 +839,23 @@ function sailForces(state, controls, config) {
   // -y*Fx (standard r x F, no x-offset for this term); substituting
   // y = -end*CEheight*sin(phi) gives the end*CEheight*sin(phi)*Fx below.
   // config.hull.yawHeelSign (+-1) is a verified-empirically flip knob —
-  // see ARCHITECTURE doc / harness/asserts.js coupling-sign tests (1.6).
+  // see ARCHITECTURE doc / harness/asserts.js coupling-sign tests. This is
+  // a SEPARATE mechanism from the x_CE/y_CE geometry above (mast RAKE
+  // under heel vs. the yard's OWN swing angle) and stays additive with it.
   const yawHeelSign = config.hull.yawHeelSign ?? 1;
   const yawMomentHeel = yawHeelSign * state.end * config.sail.CEheight * Math.sin(phi) * Fx;
-  const yawMoment = ceX * Fy + yawMomentHeel;
+  // ceLeverSign (P1.2/T3 — verified-empirically flip knob, same pattern as
+  // yawHeelSign above): the from-scratch geometric derivation (CE aft of
+  // CG when trimmed-in, forward when eased) gives standard weather/lee-helm
+  // physics — trim-in -> weather helm/luffs, ease -> lee helm/bears away —
+  // which is the OPPOSITE polarity from the Pjoa manual's field-validated
+  // rule III.3/4 ("sheet in bears away, eased luffs", ROUND5_CONSOLIDATED_
+  // work_order.md T3). Flipped to match the manual's documented practice
+  // rather than the unaided derivation, exactly as yawHeelSign was already
+  // fixed empirically elsewhere in this codebase without a from-scratch
+  // proof.
+  const ceLeverSign = config.hull.ceLeverSign ?? -1;
+  const yawMoment = ceLeverSign * (xCE * Fy - yCE * Fx) + yawMomentHeel;
 
   return { Fx, Fy, heelMoment, yawMoment, yawMomentHeel, alpha, alphaSailor, aw, CL, CD };
 }
@@ -822,7 +949,21 @@ function hullSideForce(u, v, crewPosX, config) {
   return { Fx, Fy, yawMoment };
 }
 
-function amaDrag(u, amaLoad, crewPos, config) {
+// amaDrag(u, amaLoad, crewPos, end, config) -> { Fx, yawMoment }
+//   yawMoment (ROUND5_CONSOLIDATED_work_order.md P2-1, Pjoa manual III.3:
+//   the ama's drag rotates the canoe around it): the ama's drag force acts
+//   at its lateral position (lever = ama.spacing, boat-frame side = `end`
+//   — the ama is bolted to ONE physical side, see state.js Conventions),
+//   so it produces a yaw moment same as any other off-centerline force —
+//   moment = -y*Fx (standard r x F, y = ama.spacing*end). Signed so
+//   INCREASED ama drag turns the bow TOWARD the ama side with no extra
+//   flip knob needed: e.g. end=+1 (ama at +y), Fx more negative (more
+//   drag) -> moment = -(spacing)*Fx more POSITIVE -> CCW -> the bow (+x)
+//   swings toward +y, the ama's own side. The round-4 crew-immersion term
+//   above already modulates this drag with crewPos, so "crew toward the
+//   ama sinks it, and the extra drag swings the bow toward the ama" (the
+//   manual's rule I) emerges with no new controls.
+function amaDrag(u, amaLoad, crewPos, end, config) {
   const { ama, crew, rho_w } = config;
   // Even at zero heel the ama still floats partially immersed at rest on
   // its own static buoyancy (it isn't hauled out just because there's no
@@ -847,7 +988,12 @@ function amaDrag(u, amaLoad, crewPos, config) {
   const immersion = Math.min(heelImmersion + crewImmersion, 1.3);
   const outboardRelief = 1 - 0.15 * (Math.max(0, -crewPos) / 0.3);
   const Seff = ama.wettedSurface * immersion * outboardRelief;
-  return -Math.sign(u) * 0.5 * rho_w * ama.dragCoeff * Seff * u * u;
+  const Fx = -Math.sign(u) * 0.5 * rho_w * ama.dragCoeff * Seff * u * u;
+
+  const yAma = ama.spacing * end;
+  const yawMoment = -yAma * Fx;
+
+  return { Fx, yawMoment };
 }
 
 function yawDamping(r, u, config) {
@@ -887,29 +1033,85 @@ function rudderForce(state, controls, config) {
 const DEG__b5 = Math.PI / 180;
 
 // rollRestoreMoment(phi, config) -> N*m, a genuine restoring term (opposes
-// phi: negative for phi>0, positive for phi<0).
+// phi: negative for phi>0, positive for phi<0) UP TO a point — see the
+// capsizing branch below.
 //   phi >= 0 (ama lifting/flying): the ama's own WEIGHT resists further
 //   lift, growing smoothly (ease-out, zero slope at the cap) from 0 at
 //   phi=0 to its full ama.mass*g*ama.spacing lever at phi=phiLiftoffRad
-//   ("ama just clear of the water" — restoring fully mobilised), then
-//   holding flat: past that angle the ama is fully airborne and
-//   contributes no MORE righting torque as phi keeps growing — a runaway
-//   condition, caught by the overload capsize timer via amaLoad below,
-//   not by this curve.
+//   ("ama just clear of the water" — restoring fully mobilised).
 //   phi < 0 (ama pressed): symmetric, using ama.maxBuoyancy instead of
 //   ama.mass, saturating at phi=-phiSubmergeRad ("ama fully submerged").
+//
+// Capsizing branch (EXTENSION_round5_sheet_constraint.md R5-2.1 —
+// supersedes the round-4 model, which held the moment flat at its
+// saturated value forever past liftoff/submergence): a real righting-arm
+// (GZ) curve doesn't plateau indefinitely — past some heel angle the
+// platform's effective CG has swung far enough that gravity itself starts
+// working on the capsizing side, and the arm reverses. Past phiCapsizeRad
+// (symmetric on both sides) the magnitude, which was held at its saturated
+// cap immediately past liftoff/submergence under the old model, is instead
+// ramped LINEARLY from that same cap back through zero AT phiCapsizeRad and
+// on into the opposite sign beyond it — a genuine capsizing arm — but that
+// ramp is itself capped at the SAME magnitude (Mmax) one further span past
+// phiCapsizeRad, rather than left to grow without bound: an unbounded
+// linear-in-phi term here is a destabilizing linear spring, and integrating
+// it produces a textbook exponential blow-up (verified: phi reaching
+// thousands of degrees within seconds, well before the capsize timer even
+// has a chance to fire and freeze the state) — numerically ugly and not
+// what "accelerates to the water" is asking for. Capping it at Mmax still
+// gives a strong, sustained, escalating-then-constant capsizing torque
+// (the timer fires and the core freezes the state — R5-2.2 — well within
+// this bounded regime for any realistic sail moment), while fixing the
+// original bug: a boat driven past the angle of vanishing stability no
+// longer finds a spurious stable equilibrium at some absurd heel (verified
+// bug: steady sailing at phi=58deg under the old flat-forever model).
+//
+// The ramp-down doesn't start immediately at liftoff/submergence: it holds
+// flat at the old, already-validated Mmax plateau for HOLD_FRAC of the
+// liftoff-to-capsize span first, matching a real GZ curve (righting arm
+// stays near its max for a good stretch past the initial "deck awash"
+// angle before falling away closer to the angle of vanishing stability),
+// and — pragmatically — preserving the round-4 squall scenario's gust-
+// recovery margin: a pure ramp-from-the-threshold (tried first) measurably
+// weakened the mid-range restoring the phi-aware brail/crew controller
+// relies on for an underdamped (~2.6s period) roll oscillation, enough to
+// tip a scenario that used to recover into a genuine capsize. Only past
+// HOLD_FRAC does it ramp down through zero at phiCapsizeRad and on into
+// the capped capsizing arm beyond, same as before. Near the OLD threshold
+// this is now IDENTICAL to the old flat-cap value (not just approximately,
+// as a from-the-threshold ramp gave), so the 2s/6s capsize timers' whole
+// pre-existing near-threshold behaviour is preserved outright — the timer
+// stays the FORMAL trigger; only genuinely runaway heel (past HOLD_FRAC of
+// the way to phiCapsizeDeg) now has the dynamics agree with it instead of
+// fighting it with an implausible indefinite plateau.
+const HOLD_FRAC = 0.5;
 function rollRestoreMoment(phi, config) {
   const { ama, g, stability } = config;
+  const capsizeRad = stability.phiCapsizeDeg * DEG__b5;
   if (phi >= 0) {
     const liftoffRad = stability.phiLiftoffDeg * DEG__b5;
     const Mmax = ama.mass * g * ama.spacing;
-    const frac = Math.min(phi / liftoffRad, 1);
-    return -Mmax * frac * (2 - frac);
+    if (phi <= liftoffRad) {
+      const frac = phi / liftoffRad;
+      return -Mmax * frac * (2 - frac);
+    }
+    const holdRad = liftoffRad + HOLD_FRAC * (capsizeRad - liftoffRad);
+    if (phi <= holdRad) return -Mmax;
+    const span = Math.max(capsizeRad - holdRad, 1e-6);
+    const frac2 = Math.min((phi - holdRad) / span, 2);
+    return -Mmax * (1 - frac2);
   }
   const submergeRad = stability.phiSubmergeDeg * DEG__b5;
   const Mmax = ama.maxBuoyancy * g * ama.spacing;
-  const frac = Math.min(-phi / submergeRad, 1);
-  return Mmax * frac * (2 - frac);
+  if (-phi <= submergeRad) {
+    const frac = -phi / submergeRad;
+    return Mmax * frac * (2 - frac);
+  }
+  const holdRad = submergeRad + HOLD_FRAC * (capsizeRad - submergeRad);
+  if (-phi <= holdRad) return Mmax;
+  const span = Math.max(capsizeRad - holdRad, 1e-6);
+  const frac2 = Math.min((-phi - holdRad) / span, 2);
+  return Mmax * (1 - frac2);
 }
 
 // crewRollMoment(phi, crewPos, config) -> N*m. A genuine pendulum torque,
@@ -1071,6 +1273,92 @@ function shuntStep(state, controls, config, dt) {
 }
 
 
+// ==== core/sheet.js ====
+// sheet.js — the one-sided sheet constraint on the yard
+// (EXTENSION_round5_sheet_constraint.md R5-1): you cannot push on a rope.
+// `controls.sheet` sets only the MAXIMUM yard angle delta_max; the yard's
+// ACTUAL angle `state.delta` (a real piece of state, >=0) chases its
+// aerodynamic equilibrium — clamped to that ceiling — at a bounded slew
+// rate. See state.js's Conventions comment for the field definitions.
+//
+// Derivation of deltaAlign (verified numerically, not just derived — see
+// the round-5 investigation): aero.js computes the chord-flow angle as
+// alpha = chordAngle - awAngle, where chordAngle = end*delta and awAngle =
+// apparentWind(...).angleToBoat (the "blowing towards" angle, boat frame).
+// The yard is edge-on to the wind (fully weathervaned/luffing, zero AoA
+// either face) whenever alpha is a multiple of PI. For delta>=0 there are
+// two candidate solutions per period: chordAngle=awAngle (needs a NEGATIVE
+// delta on this rig whenever the wind isn't already from dead ahead of the
+// -end side — unreachable) and chordAngle=awAngle+PI (the reachable one:
+// solving for delta gives end*(awAngle+PI), confirmed by probe to land at
+// a positive, in-range value across normal points of sail). Only the
+// second branch is physically reachable by a yard that can't swing past
+// dead centerline in the "wrong" direction, so that's the one used here.
+//
+// clamp(deltaAlign, 0, delta_max) alone reproduces all three regimes from
+// the extension request without any special-casing:
+//   - deltaAlign > delta_max: sheet is the binding constraint -> delta
+//     rests at delta_max, taut, normal drive (regime a).
+//   - deltaAlign in [0, delta_max]: the wind itself is the binding
+//     constraint -> delta settles exactly at deltaAlign, alpha exactly
+//     +-PI, CL~0 -- full weathervane/luffing (regime b).
+//   - deltaAlign < 0 (wind crossed to the leeward side): clamps to 0 ->
+//     the yard rests against the mast, backwinded, alpha<0 (regime c).
+
+
+const DEG__b7 = Math.PI / 180;
+function normalizeAngle__b7(a) { return Math.atan2(Math.sin(a), Math.cos(a)); }
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+// deltaAlign(state, controls) -> unclamped delta [rad] that puts the yard
+// chord edge-on to the apparent wind. NOT clamped to [0, delta_max] -- the
+// sign/magnitude of the raw value is what selects the regime (see header).
+function deltaAlign(state, controls) {
+  const aw = apparentWind(state, controls);
+  return normalizeAngle__b7(state.end * (aw.angleToBoat + Math.PI));
+}
+
+// effectiveDeltaMax(state, controls, config) -> the sheet ceiling actually
+// in force this instant. Released to config.sail.deltaMaxReleaseDeg while a
+// shunt is easing the sheet (phases 'ease'/'transfer'/'swap' — R5-1 point
+// 3: this is what lets the yard swing freely to flip sides during a
+// shunt), and closed back to the commanded controls.sheet once 'sheet'
+// starts hauling it back in.
+function effectiveDeltaMax(state, controls, config) {
+  const commanded = clamp(Math.abs(controls.sheet ?? 0), 0, Math.PI / 2);
+  const phase = state.shunt?.phase;
+  if (phase === 'ease' || phase === 'transfer' || phase === 'swap') {
+    return config.sail.deltaMaxReleaseDeg * DEG__b7;
+  }
+  return commanded;
+}
+
+// sheetStep(state, controls, config, dt) -> { delta } patch. delta relaxes
+// toward delta_eq = clamp(deltaAlign, 0, effectiveDeltaMax) at a bounded
+// slew rate (config.sail.yardSwingRateDegPerSec) -- "a swinging yard, not a
+// teleport": a sail slamming from backwinded delta_max down to the mast
+// takes real time, during which aero.js computes forces at the ACTUAL
+// (in-transit) delta every substep, so the resulting yaw/heel impulse
+// emerges from the existing force path rather than being scripted.
+function sheetStep(state, controls, config, dt) {
+  const deltaMax = effectiveDeltaMax(state, controls, config);
+  const align = deltaAlign(state, controls);
+  const deltaEq = clamp(align, 0, deltaMax);
+  const maxStep = config.sail.yardSwingRateDegPerSec * DEG__b7 * dt;
+  const diff = deltaEq - state.delta;
+  const delta = Math.abs(diff) <= maxStep ? deltaEq : state.delta + Math.sign(diff) * maxStep;
+  return { delta };
+}
+
+// isLuffing(state, controls, config) -> bool, delta held below the
+// (effective) sheet ceiling by the wind rather than by the sheet itself —
+// UI "LUFFING" indicator and aero.js's flogging-drag term both read this.
+function isLuffing(state, controls, config) {
+  const deltaMax = effectiveDeltaMax(state, controls, config);
+  return state.delta < deltaMax - 2 * DEG__b7;
+}
+
+
 // ==== core/integrator.js ====
 // integrator.js — assembles per-module forces into total Fx/Fy/M/Mroll,
 // RK4-integrates the smooth 4DOF ODE state [x, y, heading, u, v, r, phi,
@@ -1079,6 +1367,7 @@ function shuntStep(state, controls, config, dt) {
 // (which may itself override u, v, heading, end at the swap instant —
 // phi, p pass through unchanged, see core/shunt.js) and the ama-load /
 // aback-timer / capsize statics (now derived from phi, see stability.js).
+
 
 
 
@@ -1101,13 +1390,13 @@ function computeForces(state, controls, config) {
 
   const resist = hullResistance(state.u, config);
   const side = hullSideForce(state.u, state.v, controls.crewPosX ?? 0, config);
-  const drag = amaDrag(state.u, amaLoad, controls.crewPos, config);
+  const drag = amaDrag(state.u, amaLoad, controls.crewPos, state.end, config);
   const rudder = rudderForce(state, controls, config);
   const damp = yawDamping(state.r, state.u, config);
 
-  const Fx = aero.Fx + resist + side.Fx + drag;
+  const Fx = aero.Fx + resist + side.Fx + drag.Fx;
   const Fy = aero.Fy + side.Fy + rudder.Fy;
-  const M = aero.yawMoment + side.yawMoment + rudder.yawMoment + damp;
+  const M = aero.yawMoment + side.yawMoment + rudder.yawMoment + damp + drag.yawMoment;
 
   // Roll dynamics (4th DOF, FIX_REQUEST_round4_roll_dof.md Part 1):
   // sail heel (boat-frame heelMoment converted to the physical-frame roll
@@ -1120,15 +1409,18 @@ function computeForces(state, controls, config) {
   const Mdamp = rollDampingMoment(state.p, config);
   const Mroll = Msail + Mrestore + Mcrew + Mdamp;
 
+  const deltaMax = effectiveDeltaMax(state, controls, config);
+  const luffing = isLuffing(state, controls, config);
+
   return {
     Fx, Fy, M, Mroll, amaLoad, amaLoadDisplay,
     heelMoment: aero.heelMoment, alpha: aero.alpha, alphaSailor: aero.alphaSailor,
-    aw: aero.aw, CL: aero.CL, CD: aero.CD,
+    aw: aero.aw, CL: aero.CL, CD: aero.CD, deltaMax, luffing,
     breakdown: {
       sail: { Fx: aero.Fx, Fy: aero.Fy, yawMoment: aero.yawMoment, heelMoment: aero.heelMoment },
       hullResist: { Fx: resist },
       hullSide: { Fx: side.Fx, Fy: side.Fy, yawMoment: side.yawMoment },
-      amaDrag: { Fx: drag },
+      amaDrag: { Fx: drag.Fx, yawMoment: drag.yawMoment },
       rudder: { Fy: rudder.Fy, yawMoment: rudder.yawMoment },
       yawDamping: { M: damp },
       roll: { Msail, Mrestore, Mcrew, Mdamp, Mroll },
@@ -1164,7 +1456,23 @@ function addScaled(base, deriv, h) {
 }
 
 // integrate(state, controls, config, dt) -> newState (RK4, fixed dt)
+//
+// R5-2.2: once capsized, the core freezes -- zeroes u/v/r/p (a short
+// exponential bleed, not an instant jump) and stops accepting control
+// inputs (including the sheet/shunt/rudder) except reset, which is a
+// facade-level concern (simulator.js's reset()), not this function's.
+// This lives HERE, not in the UI-facing simulator.js facade, so every
+// caller of integrate() -- the harness scenarios and the polar sweep
+// included, which call it directly, bypassing the facade entirely -- gets
+// the same "no ghost sailing at some absurd heel" guarantee instead of
+// only the live UI.
 function integrate(state, controls, config, dt) {
+  if (state.capsized) {
+    const bleed = Math.exp(-dt / 0.3);
+    const decay = (v) => (Math.abs(v) < 1e-4 ? 0 : v * bleed);
+    return { ...state, t: state.t + dt, u: decay(state.u), v: decay(state.v), r: decay(state.r), p: decay(state.p) };
+  }
+
   const evalDeriv = (s) => {
     const full = { ...state, ...s };
     const forces = computeForces(full, controls, config);
@@ -1188,6 +1496,16 @@ function integrate(state, controls, config, dt) {
   // integrated velocities/heading so no substep's dynamics get discarded.
   const shuntPatch = shuntStep({ ...state, ...next }, controls, config, dt);
   Object.assign(next, shuntPatch);
+
+  // Sheet constraint (R5-1): delta relaxes toward its equilibrium at a
+  // bounded slew rate, evaluated AFTER the shunt patch so a phase
+  // transition landing on this exact step (e.g. entering 'sheet') is
+  // already reflected in the delta_max it relaxes against. Held constant
+  // across this step's own k1..k4 RK4 evaluations above (same treatment as
+  // the shunt phase/fade), then advanced once per substep here — cheap and
+  // accurate at dt=1/240s.
+  const sheetPatch = sheetStep({ ...state, ...next }, controls, config, dt);
+  Object.assign(next, sheetPatch);
 
   const finalState = { ...state, ...next, t: state.t + dt };
   const forcesAtNew = computeForces(finalState, controls, config);
@@ -1214,7 +1532,7 @@ function createSimulator(userConfig) {
   let config = createConfig(userConfig);
   let state = createInitialState(config);
   let lastForces = computeForces(state, {
-    windDirFrom: 0, windSpeed: 0, yardAngle: 0, rudder: 0,
+    windDirFrom: 0, windSpeed: 0, sheet: 0, rudder: 0,
     brailLee: 0, brailWind: 0, crewPos: 0, crewPosX: 0, shuntRequest: false,
   }, config);
   let lastShuntRequest = false;
@@ -1226,8 +1544,12 @@ function createSimulator(userConfig) {
 
     const nSub = Math.max(1, Math.round(dtFrame / config.dt));
     const subDt = dtFrame / nSub;
+    // No `if (state.capsized) break` here (R5-2.2): integrate() itself now
+    // freezes -- a short exponential bleed of u/v/r/p, ignoring controls --
+    // once capsized is set, so still calling it lets that bleed actually
+    // animate down over ~3s instead of leaving the state frozen at
+    // whatever u/v happened to be at the exact instant of capsize.
     for (let i = 0; i < nSub; i++) {
-      if (state.capsized) break;
       state = integrate(state, stepControls, config, subDt);
     }
     lastForces = computeForces(state, controls, config);
@@ -1258,32 +1580,49 @@ function createSimulator(userConfig) {
 // ==== harness/polar.js ====
 // harness/polar.js — automatic polar diagram computation.
 // computePolar(config, { twsList, twaFrom, twaTo, step }) -> rows of
-// { twa, tws, bestSpeed, bestYardAngle, bestCamberUse }
+// { twa, tws, bestSpeed, bestSheetAngle, deltaAngle, bestCamberUse }.
+// bestSheetAngle is the optimizer's search variable (R5-1: the sheet
+// LIMIT); deltaAngle is the settled ACTUAL yard angle (state.delta) it
+// produced — the two coincide only when the sheet is taut (see
+// harness/asserts.js's driving-row assertion).
 
 
-const DEG__b9 = Math.PI / 180;
+const DEG__b10 = Math.PI / 180;
 const HEADING0 = Math.PI / 2; // arbitrary reference heading; only relative angles matter
 
-function normalizeAngle__b9(a) { return Math.atan2(Math.sin(a), Math.cos(a)); }
+function normalizeAngle__b10(a) { return Math.atan2(Math.sin(a), Math.cos(a)); }
 
 // headingHoldRudder — small P+D autopilot used by the whole harness (polar
 // runs and scenarios) to hold a course so TWA stays put while speed settles.
 // The state.end factor compensates for the rudder's lever-arm sign flip
 // after a shunt (see rudder.js), so the same gains work on either tack/end.
 function headingHoldRudder(state, targetHeading, config, kp = 2.5, kd = 1.2) {
-  const error = normalizeAngle__b9(targetHeading - state.heading);
+  const error = normalizeAngle__b10(targetHeading - state.heading);
   const raw = state.end * (kp * error - kd * state.r);
   return Math.max(-1, Math.min(1, raw));
 }
 
-function makeInitialState() {
+function makeInitialState(deltaStart = 0) {
   // Small nonzero initial u: a rudder has zero authority at u=0 (rudder
   // force ~u*|u|, see rudder.js), so starting from a dead stop lets the
   // initial sail yaw moment swing the heading before steering can respond.
   // A little initial way avoids that startup transient dominating the
   // settle, similar to real boats needing steerageway.
+  //
+  // deltaStart (R5-1): by the same logic, simulateToSteady seeds this at
+  // the sheet value under test rather than 0 — with the yard genuinely
+  // taking real time to swing out (core/sheet.js), starting from a bare
+  // mast every trial makes the FIRST second or so a large, low-speed
+  // transient of its own (verified: this alone was enough to kick a
+  // perfectly holdable trim into a completely different, broached
+  // attractor — same class of artifact the u=1.0 choice above already
+  // guards against, just for the yard instead of the rudder). This
+  // represents "already sailing this course with the sail already
+  // trimmed", the realistic starting point for a steady-state search —
+  // the sheet dynamics still fully govern delta from there on; nothing
+  // stops it moving away again if that isn't actually where it settles.
   return {
-    t: 0, x: 0, y: 0, heading: HEADING0, u: 1.0, v: 0, r: 0, phi: 0, p: 0, end: 1,
+    t: 0, x: 0, y: 0, heading: HEADING0, u: 1.0, v: 0, r: 0, phi: 0, p: 0, delta: deltaStart, end: 1,
     amaLoad: 0, abackTimer: 0, overloadTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 },
   };
 }
@@ -1301,7 +1640,7 @@ function makeInitialState() {
 // yard=16 at TWA=40 "settles" with u~0.3, v~-1.6, heading drifted from 90
 // to ~15deg, i.e. actually sailing a ~115deg TWA reach, not the requested
 // close-hauled 40deg).
-const HEADING_HOLD_TOLERANCE = 15 * DEG__b9;
+const HEADING_HOLD_TOLERANCE = 15 * DEG__b10;
 
 // simulateToSteady -> { speed, settled }
 //   A badly-trimmed combination (e.g. yard far past the apparent-wind angle
@@ -1316,14 +1655,20 @@ const HEADING_HOLD_TOLERANCE = 15 * DEG__b9;
 //   FIX_REQUEST_step1_review.md MEDIUM-2: a previous version returned it
 //   unconditionally, letting a transient spike from an unsettled, unstable
 //   trim masquerade as the polar's best speed for that heading).
-function simulateToSteady(config, twaDeg, tws, yardDeg, crewPos, maxSeconds = 25) {
-  const windDirFrom = HEADING0 + twaDeg * DEG__b9;
+// simulateToSteady(config, twaDeg, tws, sheetDeg, crewPos, maxSeconds) ->
+// { speed, settled, deltaDeg }. sheetDeg is the SEARCH VARIABLE now (R5-1):
+// the sheet limit, not the actual yard angle — the settled actual yard
+// angle (state.delta) is reported separately as deltaDeg, since the two
+// only coincide when the sheet is taut (see bestForHeading's assertion-
+// facing use in harness/asserts.js).
+function simulateToSteady(config, twaDeg, tws, sheetDeg, crewPos, maxSeconds = 25) {
+  const windDirFrom = HEADING0 + twaDeg * DEG__b10;
   const controls = {
-    windDirFrom, windSpeed: tws, yardAngle: yardDeg * DEG__b9, rudder: 0,
+    windDirFrom, windSpeed: tws, sheet: sheetDeg * DEG__b10, rudder: 0,
     brailLee: 0, brailWind: 0, crewPos, crewPosX: 0, shuntRequest: false,
   };
 
-  let state = makeInitialState();
+  let state = makeInitialState(Math.min(Math.abs(sheetDeg) * DEG__b10, Math.PI / 2));
   const dt = config.dt;
   const stepsPerSecond = Math.round(1 / dt);
   const settleWindow = 10; // seconds of near-constant speed required
@@ -1341,7 +1686,7 @@ function simulateToSteady(config, twaDeg, tws, yardDeg, crewPos, maxSeconds = 25
       if (Math.abs(speed - lastSampleSpeed) < 0.01) {
         stableSeconds += 1;
         if (stableSeconds >= settleWindow) {
-          const headingError = Math.abs(normalizeAngle__b9(state.heading - HEADING0));
+          const headingError = Math.abs(normalizeAngle__b10(state.heading - HEADING0));
           settled = headingError <= HEADING_HOLD_TOLERANCE;
           break;
         }
@@ -1351,7 +1696,7 @@ function simulateToSteady(config, twaDeg, tws, yardDeg, crewPos, maxSeconds = 25
       lastSampleSpeed = speed;
     }
   }
-  return { speed: Math.hypot(state.u, state.v), settled };
+  return { speed: Math.hypot(state.u, state.v), settled, deltaDeg: state.delta / DEG__b10 };
 }
 
 // Crew ballast is searched across its full range, not just a token 0/0.3:
@@ -1364,11 +1709,11 @@ function simulateToSteady(config, twaDeg, tws, yardDeg, crewPos, maxSeconds = 25
 const CREW_POS_SEARCH = [0, 0.3, 0.6, 1.0];
 
 function bestForHeading(config, twaDeg, tws) {
-  let best = { speed: 0, yard: 0, crewPos: 0 };
-  for (let yard = 4; yard <= 88; yard += 4) {
+  let best = { speed: 0, sheet: 0, delta: 0, crewPos: 0 };
+  for (let sheet = 4; sheet <= 88; sheet += 4) {
     for (const crewPos of CREW_POS_SEARCH) {
-      const { speed, settled } = simulateToSteady(config, twaDeg, tws, yard, crewPos);
-      if (settled && speed > best.speed) best = { speed, yard, crewPos };
+      const { speed, settled, deltaDeg } = simulateToSteady(config, twaDeg, tws, sheet, crewPos);
+      if (settled && speed > best.speed) best = { speed, sheet, delta: deltaDeg, crewPos };
     }
   }
   return best;
@@ -1382,7 +1727,8 @@ function computePolar(config, { twsList, twaFrom = 40, twaTo = 170, step = 10 })
       rows.push({
         twa, tws,
         bestSpeed: best.speed,
-        bestYardAngle: best.yard,
+        bestSheetAngle: best.sheet,
+        deltaAngle: best.delta,
         bestCamberUse: config.sail.camber,
       });
     }
@@ -1421,7 +1767,7 @@ function computePolar(config, { twsList, twaFrom = 40, twaTo = 170, step = 10 })
 
 
 
-const DEG__b10 = Math.PI / 180;
+const DEG__b11 = Math.PI / 180;
 const MS_TO_KN = 1.9438;
 
 // ---------------------------------------------------------------------
@@ -1433,11 +1779,12 @@ const MS_TO_KN = 1.9438;
 const TRANSLATIONS = {
   en: {
     'hud.speed': 'Speed', 'unit.kn': 'kn', 'hud.leeway': 'Leeway', 'hud.amaLoad': 'Ama load', 'hud.shunt': 'Shunt',
+    'hud.sheet': 'Sheet', 'hud.yard': 'Yard',
     'btn.pause': 'Pause (P)', 'btn.step': 'Step (.)', 'btn.forces': 'Forces (F)', 'btn.polar': 'Polar (O)',
     'legend.lift': 'sail lift', 'legend.drag': 'sail drag', 'legend.hullSide': 'hull side', 'legend.rudder': 'rudder',
     'capsize.title': 'CAPSIZED', 'btn.reset': 'Reset (R)',
     'h.wind': 'Wind', 'lbl.direction': 'Direction', 'lbl.strength': 'Strength',
-    'h.sail': 'Sail', 'lbl.yardAngle': 'Yard angle', 'hint.yard': '←/→ arrow keys ease/sheet',
+    'h.sail': 'Sail', 'lbl.sheet': 'Sheet (szot)', 'hint.yard': '←/→ arrow keys ease/sheet',
     'lbl.brailLee': 'Brail (lee)', 'hint.brailLee': 'Q sheets in, Z eases',
     'lbl.brailWind': 'Brail (wind)', 'hint.brailWind': 'W sheets in, X eases',
     'h.steering': 'Steering & trim', 'lbl.rudder': 'Rudder', 'hint.rudder': 'A/D deflect, auto-centers on release',
@@ -1445,6 +1792,7 @@ const TRANSLATIONS = {
     'lbl.crewPosX': 'Crew fore-aft', 'hint.crewPosX': 'I moves forward, K moves aft',
     'h.shunt': 'Shunt', 'btn.shunt': 'SHUNT (space)',
     'h.amaLoad': 'Ama load', 'hud.heel': 'Heel', 'hint.heelBar': 'Heel (centered = upright)', 'h.reset': 'Reset',
+    'h.display': 'Display', 'lbl.wakeTrail': 'Wake trail (kilwater)', 'hud.luffing': 'LUFFING',
     'h.polarDiagram': 'Polar diagram',
     'hint.polar': "Runs the headless polar sweep against the current config (TWS 4/6/8/10 m/s) and plots it. The boat's live (TWA, speed) point is overlaid once you return to sailing.",
     'btn.runPolar': 'Run polar', 'btn.exportCsv': 'Export CSV', 'btn.backToSailing': 'Back to sailing',
@@ -1466,11 +1814,12 @@ const TRANSLATIONS = {
   },
   pl: {
     'hud.speed': 'Prędkość', 'unit.kn': 'w', 'hud.leeway': 'Znos', 'hud.amaLoad': 'Obc. amy', 'hud.shunt': 'Zwrot',
+    'hud.sheet': 'Szot', 'hud.yard': 'Reja',
     'btn.pause': 'Pauza (P)', 'btn.step': 'Krok (.)', 'btn.forces': 'Siły (F)', 'btn.polar': 'Polara (O)',
     'legend.lift': 'siła nośna żagla', 'legend.drag': 'opór żagla', 'legend.hullSide': 'siła boczna kadłuba', 'legend.rudder': 'ster',
     'capsize.title': 'WYWROTKA', 'btn.reset': 'Reset (R)',
     'h.wind': 'Wiatr', 'lbl.direction': 'Kierunek', 'lbl.strength': 'Siła',
-    'h.sail': 'Żagiel', 'lbl.yardAngle': 'Kąt reja', 'hint.yard': 'Strzałki ←/→: luzuj / wybieraj',
+    'h.sail': 'Żagiel', 'lbl.sheet': 'Szot', 'hint.yard': 'Strzałki ←/→: luzuj / wybieraj',
     'lbl.brailLee': 'Brajda zawietrzna', 'hint.brailLee': 'Q wybiera, Z luzuje',
     'lbl.brailWind': 'Brajda nawietrzna', 'hint.brailWind': 'W wybiera, X luzuje',
     'h.steering': 'Sterowanie i wyważenie', 'lbl.rudder': 'Ster', 'hint.rudder': 'A/D wychyla ster, centruje się po puszczeniu',
@@ -1478,6 +1827,7 @@ const TRANSLATIONS = {
     'lbl.crewPosX': 'Załoga wzdłuż', 'hint.crewPosX': 'I w stronę dziobu, K w stronę rufy',
     'h.shunt': 'Zwrot', 'btn.shunt': 'ZWROT (spacja)',
     'h.amaLoad': 'Obciążenie amy', 'hud.heel': 'Przechył', 'hint.heelBar': 'Przechył (środek = pion)', 'h.reset': 'Reset',
+    'h.display': 'Widok', 'lbl.wakeTrail': 'Kilwater', 'hud.luffing': 'ŁOPOCZE',
     'h.polarDiagram': 'Diagram polarny',
     'hint.polar': 'Uruchamia pomiar polary (bezekranowy silnik fizyki) dla bieżącej konfiguracji (TWS 4/6/8/10 m/s) i rysuje wykres. Po powrocie do żeglugi na wykresie pojawia się bieżący punkt (TWA, prędkość) łódki.',
     'btn.runPolar': 'Uruchom polarę', 'btn.exportCsv': 'Eksportuj CSV', 'btn.backToSailing': 'Powrót do żeglugi',
@@ -1551,7 +1901,7 @@ const shuntHint = document.getElementById('shuntHint');
 const sliders = {
   windDir: document.getElementById('windDir'),
   windSpeed: document.getElementById('windSpeed'),
-  yardAngle: document.getElementById('yardAngle'),
+  sheet: document.getElementById('sheet'),
   brailLee: document.getElementById('brailLee'),
   brailWind: document.getElementById('brailWind'),
   rudder: document.getElementById('rudder'),
@@ -1561,27 +1911,28 @@ const sliders = {
 const outs = {
   windDir: document.getElementById('windDirOut'),
   windSpeed: document.getElementById('windSpeedOut'),
-  yardAngle: document.getElementById('yardAngleOut'),
+  sheet: document.getElementById('sheetOut'),
   brailLee: document.getElementById('brailLeeOut'),
   brailWind: document.getElementById('brailWindOut'),
   rudder: document.getElementById('rudderOut'),
   crewPos: document.getElementById('crewPosOut'),
   crewPosX: document.getElementById('crewPosXOut'),
 };
+const wakeTrailCheckbox = document.getElementById('wakeTrail');
 
 // ---------------------------------------------------------------------
 // Control state — the single source of truth the sim reads each frame.
 // Sliders and keyboard both write into this object.
 // ---------------------------------------------------------------------
 // Defaults picked to land near the polar's own TWA=90/TWS=6 optimum
-// (yard~50deg, light crew ballast) instead of an arbitrary tight trim —
+// (sheet~50deg, light crew ballast) instead of an arbitrary tight trim —
 // starting overpowered with crewPos=0 hits the overload alarm within
 // half a second, which is correct per FIX_REQUEST_step1_round2.md R2-1's
 // tuning but a rough first impression for a freshly loaded page.
 const controls = createDefaultControls();
-controls.windDirFrom = 180 * DEG__b10;
+controls.windDirFrom = 180 * DEG__b11;
 controls.windSpeed = 6;
-controls.yardAngle = 50 * DEG__b10;
+controls.sheet = 50 * DEG__b11;
 controls.crewPos = 0.3;
 
 let autoRudder = true; // keyboard rudder auto-centers when A/D released
@@ -1589,9 +1940,9 @@ const keys = new Set();
 let shuntHeld = false;
 
 function syncSlidersFromControls() {
-  sliders.windDir.value = String(Math.round(controls.windDirFrom / DEG__b10));
+  sliders.windDir.value = String(Math.round(controls.windDirFrom / DEG__b11));
   sliders.windSpeed.value = String(controls.windSpeed);
-  sliders.yardAngle.value = String(Math.round(controls.yardAngle / DEG__b10));
+  sliders.sheet.value = String(Math.round(controls.sheet / DEG__b11));
   sliders.brailLee.value = String(Math.round(controls.brailLee * 100));
   sliders.brailWind.value = String(Math.round(controls.brailWind * 100));
   sliders.rudder.value = String(controls.rudder);
@@ -1601,9 +1952,9 @@ function syncSlidersFromControls() {
 }
 
 function refreshOutputs() {
-  outs.windDir.textContent = `${Math.round(controls.windDirFrom / DEG__b10)}°`;
+  outs.windDir.textContent = `${Math.round(controls.windDirFrom / DEG__b11)}°`;
   outs.windSpeed.textContent = controls.windSpeed.toFixed(1);
-  outs.yardAngle.textContent = `${Math.round(controls.yardAngle / DEG__b10)}°`;
+  outs.sheet.textContent = `${Math.round(controls.sheet / DEG__b11)}°`;
   outs.brailLee.textContent = `${Math.round(controls.brailLee * 100)}%`;
   outs.brailWind.textContent = `${Math.round(controls.brailWind * 100)}%`;
   outs.rudder.textContent = controls.rudder.toFixed(2);
@@ -1611,9 +1962,9 @@ function refreshOutputs() {
   outs.crewPosX.textContent = controls.crewPosX.toFixed(2);
 }
 
-sliders.windDir.addEventListener('input', () => { controls.windDirFrom = Number(sliders.windDir.value) * DEG__b10; refreshOutputs(); });
+sliders.windDir.addEventListener('input', () => { controls.windDirFrom = Number(sliders.windDir.value) * DEG__b11; refreshOutputs(); });
 sliders.windSpeed.addEventListener('input', () => { controls.windSpeed = Number(sliders.windSpeed.value); refreshOutputs(); });
-sliders.yardAngle.addEventListener('input', () => { controls.yardAngle = Number(sliders.yardAngle.value) * DEG__b10; refreshOutputs(); });
+sliders.sheet.addEventListener('input', () => { controls.sheet = Number(sliders.sheet.value) * DEG__b11; refreshOutputs(); });
 sliders.brailLee.addEventListener('input', () => { controls.brailLee = Number(sliders.brailLee.value) / 100; refreshOutputs(); });
 sliders.brailWind.addEventListener('input', () => { controls.brailWind = Number(sliders.brailWind.value) / 100; refreshOutputs(); });
 sliders.rudder.addEventListener('input', () => { autoRudder = false; controls.rudder = Number(sliders.rudder.value); refreshOutputs(); });
@@ -1625,7 +1976,7 @@ syncSlidersFromControls();
 // ---------------------------------------------------------------------
 // Keyboard
 // ---------------------------------------------------------------------
-const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const clamp__b11 = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 const HANDLED_KEYS = new Set(['Space', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',
   'KeyQ', 'KeyZ', 'KeyW', 'KeyX', 'KeyJ', 'KeyL', 'KeyI', 'KeyK', 'KeyA', 'KeyD', 'KeyP', 'Period', 'KeyF', 'KeyO', 'KeyR']);
@@ -1649,25 +2000,25 @@ window.addEventListener('keyup', (e) => {
 });
 
 function applyContinuousKeys(dt) {
-  const yardRate = 60 * DEG__b10; // per second
+  const sheetRate = 60 * DEG__b11; // per second
   const brailRate = 0.8; // fraction/sec
   const rudderRate = 2.2; // units/sec (-1..1 range)
   const crewRate = 0.5; // fraction/sec
 
-  if (keys.has('ArrowRight')) controls.yardAngle = clamp(controls.yardAngle + yardRate * dt, 0, 90 * DEG__b10);
-  if (keys.has('ArrowLeft')) controls.yardAngle = clamp(controls.yardAngle - yardRate * dt, 0, 90 * DEG__b10);
-  if (keys.has('KeyQ')) controls.brailLee = clamp(controls.brailLee + brailRate * dt, 0, 1);
-  if (keys.has('KeyZ')) controls.brailLee = clamp(controls.brailLee - brailRate * dt, 0, 1);
-  if (keys.has('KeyW')) controls.brailWind = clamp(controls.brailWind + brailRate * dt, 0, 1);
-  if (keys.has('KeyX')) controls.brailWind = clamp(controls.brailWind - brailRate * dt, 0, 1);
-  if (keys.has('KeyJ')) controls.crewPos = clamp(controls.crewPos - crewRate * dt, dims.crew.posMin, dims.crew.posMax);
-  if (keys.has('KeyL')) controls.crewPos = clamp(controls.crewPos + crewRate * dt, dims.crew.posMin, dims.crew.posMax);
-  if (keys.has('KeyI')) controls.crewPosX = clamp(controls.crewPosX + crewRate * dt, dims.crew.posXMin, dims.crew.posXMax);
-  if (keys.has('KeyK')) controls.crewPosX = clamp(controls.crewPosX - crewRate * dt, dims.crew.posXMin, dims.crew.posXMax);
+  if (keys.has('ArrowRight')) controls.sheet = clamp__b11(controls.sheet + sheetRate * dt, 0, 90 * DEG__b11);
+  if (keys.has('ArrowLeft')) controls.sheet = clamp__b11(controls.sheet - sheetRate * dt, 0, 90 * DEG__b11);
+  if (keys.has('KeyQ')) controls.brailLee = clamp__b11(controls.brailLee + brailRate * dt, 0, 1);
+  if (keys.has('KeyZ')) controls.brailLee = clamp__b11(controls.brailLee - brailRate * dt, 0, 1);
+  if (keys.has('KeyW')) controls.brailWind = clamp__b11(controls.brailWind + brailRate * dt, 0, 1);
+  if (keys.has('KeyX')) controls.brailWind = clamp__b11(controls.brailWind - brailRate * dt, 0, 1);
+  if (keys.has('KeyJ')) controls.crewPos = clamp__b11(controls.crewPos - crewRate * dt, dims.crew.posMin, dims.crew.posMax);
+  if (keys.has('KeyL')) controls.crewPos = clamp__b11(controls.crewPos + crewRate * dt, dims.crew.posMin, dims.crew.posMax);
+  if (keys.has('KeyI')) controls.crewPosX = clamp__b11(controls.crewPosX + crewRate * dt, dims.crew.posXMin, dims.crew.posXMax);
+  if (keys.has('KeyK')) controls.crewPosX = clamp__b11(controls.crewPosX - crewRate * dt, dims.crew.posXMin, dims.crew.posXMax);
 
   if (autoRudder) {
-    if (keys.has('KeyA')) controls.rudder = clamp(controls.rudder - rudderRate * dt, -1, 1);
-    else if (keys.has('KeyD')) controls.rudder = clamp(controls.rudder + rudderRate * dt, -1, 1);
+    if (keys.has('KeyA')) controls.rudder = clamp__b11(controls.rudder - rudderRate * dt, -1, 1);
+    else if (keys.has('KeyD')) controls.rudder = clamp__b11(controls.rudder + rudderRate * dt, -1, 1);
     else controls.rudder = Math.abs(controls.rudder) < rudderRate * dt ? 0 : controls.rudder - Math.sign(controls.rudder) * rudderRate * dt;
   }
   syncSlidersFromControls();
@@ -1683,7 +2034,7 @@ let polarMode = false;
 
 function togglePause() { paused = !paused; document.getElementById('btnPause').classList.toggle('active', paused); }
 function toggleForces() { showForces = !showForces; document.getElementById('btnForces').classList.toggle('active', showForces); }
-function doReset() { sim.reset(); capsizeOverlay.classList.remove('show'); }
+function doReset() { sim.reset(); capsizeOverlay.classList.remove('show'); wakeReset(); }
 
 document.getElementById('btnPause').addEventListener('click', togglePause);
 document.getElementById('btnStep').addEventListener('click', () => { stepOnce = true; });
@@ -1717,7 +2068,7 @@ resize();
 let scale = 24; // px per meter, adjustable via wheel zoom
 stage.addEventListener('wheel', (e) => {
   e.preventDefault();
-  scale = clamp(scale * (e.deltaY < 0 ? 1.08 : 0.93), 6, 80);
+  scale = clamp__b11(scale * (e.deltaY < 0 ? 1.08 : 0.93), 6, 80);
 }, { passive: false });
 
 // ---------------------------------------------------------------------
@@ -1781,13 +2132,15 @@ function drawTrueWindArrow() {
 }
 
 // Sail shape: an arc from the tack (near centerline) to the clew (swept to
-// leeward by yardAngle), curvature/fill communicating brail state. Purely a
-// drawing model — the physics only needs yardAngle and the brail fractions.
-// `end` (state.end) picks which side is leeward: the yard trims opposite
-// the ama, i.e. the -end side, not always -y (FIX_REQUEST_round3_worldframe.md
-// R3-1 — this is drawn in the same active-bow frame core/aero.js's chord
-// angle lives in, so it has to mirror the same way aero.js now does).
-function sailPath(yardLen, yardAngleAbs, brailLee, brailWind, end) {
+// leeward by the ACTUAL yard angle, state.delta — P4.1: this is a real,
+// dynamic piece of state now, not the commanded sheet), curvature/fill
+// communicating brail state. Purely a drawing model — the physics only
+// needs delta and the brail fractions. `end` (state.end) picks which side
+// is leeward: the yard trims opposite the ama, i.e. the -end side, not
+// always -y (FIX_REQUEST_round3_worldframe.md R3-1 — this is drawn in the
+// same active-bow frame core/aero.js's chord angle lives in, so it has to
+// mirror the same way aero.js now does).
+function sailPath(yardLen, deltaAbs, brailLee, brailWind, end, alphaSign) {
   const tackX = 0.35 * yardLen; // slightly forward of the mast step, anchored regardless of brail
   const furled = brailLee > 0.97 && brailWind > 0.97;
   if (furled) return { tackX, clewX: tackX + 0.15, clewY: -0.15 * end, furled: true };
@@ -1799,19 +2152,25 @@ function sailPath(yardLen, yardAngleAbs, brailLee, brailWind, end) {
   // same-length flatter arc).
   const maxBrail = Math.max(brailLee, brailWind);
   const chordLen = yardLen * (1 - 0.6 * maxBrail);
-  const clewX = tackX - chordLen * Math.cos(yardAngleAbs);
-  const clewY = -end * chordLen * Math.sin(yardAngleAbs); // leeward = -end side
+  const clewX = tackX - chordLen * Math.cos(deltaAbs);
+  const clewY = -end * chordLen * Math.sin(deltaAbs); // leeward = -end side
   // Camber bulge: leeward brail flattens it, windward brail over-curves it.
-  const camber = clamp(0.28 * (1 - brailLee) + 0.22 * brailWind, 0.02, 0.5);
+  const camber = clamp__b11(0.28 * (1 - brailLee) + 0.22 * brailWind, 0.02, 0.5);
   const midX = (tackX + clewX) / 2;
   const midY = (0 + clewY) / 2;
-  // Perpendicular to the chord, pointing away from the ama (FIX_REQUEST_round4_roll_dof.md
-  // 2.1): a fixed +90deg rotation of the (end-aware) chord vector is only
-  // correct at end=+1 — at end=-1 it doesn't flip with the chord (the
-  // chord's y-component negates with end, but a raw (-dy,dx) rotation
-  // doesn't), so the belly bulged toward the ama/windward after a shunt.
-  // Multiplying by `end` mirrors it the same way the chord itself mirrors.
-  const nx = -clewY * end, ny = (clewX - tackX) * end;
+  // Perpendicular to the chord, pointing away from the ama by default
+  // (FIX_REQUEST_round4_roll_dof.md 2.1): a fixed +90deg rotation of the
+  // (end-aware) chord vector is only correct at end=+1 — at end=-1 it
+  // doesn't flip with the chord (the chord's y-component negates with end,
+  // but a raw (-dy,dx) rotation doesn't), so the belly bulged toward the
+  // ama/windward after a shunt. Multiplying by `end` mirrors it the same
+  // way the chord itself mirrors.
+  // P4.3 (ROUND5_CONSOLIDATED_work_order.md): the belly follows the ACTUAL
+  // pressure side, sign of alpha — alphaSign flips this to the OPPOSITE
+  // (toward the ama) in exactly the backwinded case (regime c, alpha<0),
+  // where the wind presses the sail from the other face. Normal, driving
+  // trims (alpha>=0) are unaffected (alphaSign=+1, same as before).
+  const nx = -clewY * end * alphaSign, ny = (clewX - tackX) * end * alphaSign;
   const nlen = Math.hypot(nx, ny) || 1;
   const bulge = camber * chordLen;
   const ctrlX = midX + (nx / nlen) * bulge;
@@ -1857,7 +2216,7 @@ function drawBoat(state, forces, cam) {
   // pressed under (phi<0).
   const amaLoad = forces?.amaLoadDisplay ?? 0;
   const flying = state.phi >= 0;
-  const loadFrac = clamp(amaLoad, 0, 1.5) / 1.5;
+  const loadFrac = clamp__b11(amaLoad, 0, 1.5) / 1.5;
   ctx.save();
   if (flying) {
     ctx.globalAlpha = capsized ? 0.5 : 1 - 0.6 * loadFrac; // thins out as it lifts clear
@@ -1925,8 +2284,8 @@ function drawBoat(state, forces, cam) {
   // factor in the active-bow-tracked frame) — since it's being drawn
   // INSIDE this end-rotating physical block, it needs the compensating
   // *end so it lands at the correct active-bow-relative screen position.
-  const crewY = clamp(controls.crewPos, dims.crew.posMin, dims.crew.posMax) * spacing;
-  const crewX = clamp(controls.crewPosX, dims.crew.posXMin, dims.crew.posXMax) * halfL * 0.6 * state.end;
+  const crewY = clamp__b11(controls.crewPos, dims.crew.posMin, dims.crew.posMax) * spacing;
+  const crewX = clamp__b11(controls.crewPosX, dims.crew.posXMin, dims.crew.posXMax) * halfL * 0.6 * state.end;
   ctx.fillStyle = '#ffe08a';
   ctx.beginPath(); ctx.arc(crewX, crewY, 0.28, 0, Math.PI * 2); ctx.fill();
 
@@ -1947,7 +2306,7 @@ function drawBoat(state, forces, cam) {
   const fade = state.shunt.phase === 'ease' ? 1 - state.shunt.progress
     : (state.shunt.phase === 'transfer' || state.shunt.phase === 'swap') ? 0
     : state.shunt.phase === 'sheet' ? state.shunt.progress : 1;
-  const yardLen = clamp(Math.sqrt(dims.sail.area) * 1.8, 3, 8);
+  const yardLen = clamp__b11(Math.sqrt(dims.sail.area) * 1.8, 3, 8);
 
   if (state.shunt.phase === 'transfer') {
     // Cosmetic only (core forces stay faded to 0 throughout — see shunt.js):
@@ -1967,7 +2326,23 @@ function drawBoat(state, forces, cam) {
     // normal heel angles, ties the picture to the roll physics without
     // needing its own visual language.
     const heelYardLen = yardLen * Math.max(0.3, Math.cos(state.phi));
-    const sp = sailPath(heelYardLen, Math.abs(controls.yardAngle), controls.brailLee, controls.brailWind, state.end);
+    // P4.1/P4.3: the drawn yard angle is the ACTUAL state.delta (a real,
+    // dynamic piece of state now — may differ from the commanded sheet
+    // during a swing or while luffing), and the belly's bulge direction
+    // follows the sign of alpha (aero.js's raw, signed AoA), not a fixed
+    // rule — see sailPath's header comment.
+    const alphaSign = (forces?.alpha ?? 0) >= 0 ? 1 : -1;
+    const sp = sailPath(heelYardLen, Math.abs(state.delta ?? 0), controls.brailLee, controls.brailWind, state.end, alphaSign);
+    // The dashed/fluttering visual is gated on the AERODYNAMIC condition
+    // (near-zero angle of attack — genuine regime b weathervaning, ~zero
+    // force), not forces.luffing's mechanical "delta < deltaMax-2deg"
+    // definition: that mechanical flag (used for the HUD tag, matching the
+    // spec's literal wording) also reads true throughout regime c
+    // (backwinded, delta pinned at ~0 by the wind, NOT the sheet) — but a
+    // pressed sail there is under real, substantial load (alphaSailor is
+    // large, see aero.js), not fluttering, and should render as a filled,
+    // alpha-sign-flipped belly (P4.3), not an empty dashed outline.
+    const flogging = (forces?.alphaSailor ?? Math.PI / 2) < 10 * DEG__b11;
     if (fade > 0.02) {
       ctx.save();
       ctx.globalAlpha = 0.35 + 0.65 * fade;
@@ -1978,6 +2353,20 @@ function drawBoat(state, forces, cam) {
         ctx.moveTo(sp.tackX, 0); ctx.lineTo(sp.clewX, sp.clewY);
         ctx.lineWidth = 0.22; ctx.strokeStyle = '#8a8060';
         ctx.stroke();
+      } else if (flogging) {
+        // P4.2 flogging visual: an unfilled, fluttering dashed outline —
+        // belly gone (a luffing sail carries ~zero lift, see aero.js's
+        // flogging-drag comment), with a small time-based wobble on the
+        // control point so it visibly flutters rather than sitting static.
+        const flutter = Math.sin(performance.now() / 90) * 0.12 * heelYardLen;
+        const nx = -(sp.clewY - 0), ny = (sp.clewX - sp.tackX);
+        const nlen = Math.hypot(nx, ny) || 1;
+        const fx = sp.ctrlX + (nx / nlen) * flutter, fy = sp.ctrlY + (ny / nlen) * flutter;
+        ctx.setLineDash([0.15, 0.12]);
+        ctx.moveTo(sp.tackX, 0);
+        ctx.quadraticCurveTo(fx, fy, sp.clewX, sp.clewY);
+        ctx.stroke();
+        ctx.setLineDash([]);
       } else {
         ctx.moveTo(sp.tackX, 0);
         ctx.quadraticCurveTo(sp.ctrlX, sp.ctrlY, sp.clewX, sp.clewY);
@@ -2009,7 +2398,19 @@ function drawBoat(state, forces, cam) {
   if (showForces && forces) {
     const fScale = 0.0035; // N -> m, chosen for legibility, log-softened below
     const soften = (n) => Math.sign(n) * Math.log10(1 + Math.abs(n)) * 0.55;
-    const ceX = (dims.sail.ceXFraction ?? 0.06) * halfL * state.end;
+    // CE position (P1.2): mirrors core/aero.js's sailForces geometry exactly
+    // (tack near the active-bow side of CG, CE sliding aft along the yard
+    // as delta swings it out to the leeward/-end side, shrunk toward the
+    // tack by windward brail) so the force-vector origin tracks the real,
+    // moving CE instead of a fixed point.
+    const tackXFraction = dims.sail.tackXFraction ?? 0.06;
+    const tackX = tackXFraction * halfL;
+    const chord = dims.sail.CEheight / 2;
+    const halfChord = chord / 2;
+    const ceBrailShift = dims.sail.ceBrailShift ?? 0.3;
+    const halfChordEffX = halfChord * (1 - ceBrailShift * (controls.brailWind ?? 0));
+    const ceX = tackX - halfChordEffX * Math.cos(state.delta ?? 0);
+    const ceY = -state.end * halfChord * Math.sin(state.delta ?? 0);
     const clrX = -(dims.hull.clrXFraction ?? 0.05) * halfL;
     const rudderX = -halfL * state.end; // physical stern, opposite the active bow
 
@@ -2023,8 +2424,8 @@ function drawBoat(state, forces, cam) {
       const yHatX = -xHatY, yHatY = xHatX;
       const D = sp2.Fx * xHatX + sp2.Fy * xHatY;
       const L = sp2.Fx * yHatX + sp2.Fy * yHatY;
-      drawVectorLocal(ceX, 0, xHatX * soften(D), xHatY * soften(D), '#ff6b6b'); // drag
-      drawVectorLocal(ceX, 0, yHatX * soften(L), yHatY * soften(L), '#ffd23f'); // lift
+      drawVectorLocal(ceX, ceY, xHatX * soften(D), xHatY * soften(D), '#ff6b6b'); // drag
+      drawVectorLocal(ceX, ceY, yHatX * soften(L), yHatY * soften(L), '#ffd23f'); // lift
     }
     const hs = forces.breakdown.hullSide;
     drawVectorLocal(clrX, 0, 0, soften(hs.Fy), '#7fe3a3');
@@ -2066,15 +2467,18 @@ const hud = {
   heel: document.getElementById('hudHeel'),
   shunt: document.getElementById('hudShunt'),
   tws: document.getElementById('hudTws'),
+  sheet: document.getElementById('hudSheet'),
+  yard: document.getElementById('hudYard'),
+  luffing: document.getElementById('hudLuffing'),
 };
 
-function normalizeAngle__b10(a) { return Math.atan2(Math.sin(a), Math.cos(a)); }
+function normalizeAngle__b11(a) { return Math.atan2(Math.sin(a), Math.cos(a)); }
 
 function updateHud(state, forces) {
   const speedMs = Math.hypot(state.u, state.v);
   const speedKn = speedMs * MS_TO_KN;
-  const twaDeg = normalizeAngle__b10(controls.windDirFrom - state.heading) / DEG__b10;
-  const awaDeg = forces.aw ? normalizeAngle__b10(Math.atan2(-forces.aw.vy, -forces.aw.vx)) / DEG__b10 : 0;
+  const twaDeg = normalizeAngle__b11(controls.windDirFrom - state.heading) / DEG__b11;
+  const awaDeg = forces.aw ? normalizeAngle__b11(Math.atan2(-forces.aw.vy, -forces.aw.vx)) / DEG__b11 : 0;
   // VMG upwind: boat's world-frame velocity projected onto the "toward the
   // wind source" unit vector. windDirFrom is a "blowing from" bearing, so
   // (cos,sin)(windDirFrom) already points from here toward the source (see
@@ -2083,21 +2487,27 @@ function updateHud(state, forces) {
   const boatWx = state.u * Math.cos(state.heading) - state.v * Math.sin(state.heading);
   const boatWy = state.u * Math.sin(state.heading) + state.v * Math.cos(state.heading);
   const vmg = boatWx * Math.cos(controls.windDirFrom) + boatWy * Math.sin(controls.windDirFrom);
-  const leewayDeg = Math.atan2(state.v, Math.abs(state.u) + 0.05) / DEG__b10;
+  const leewayDeg = Math.atan2(state.v, Math.abs(state.u) + 0.05) / DEG__b11;
 
   hud.speed.textContent = speedKn.toFixed(1);
   hud.twa.textContent = twaDeg.toFixed(0);
   hud.awa.textContent = awaDeg.toFixed(0);
-  hud.alpha.textContent = (forces.alphaSailor / DEG__b10).toFixed(0);
+  hud.alpha.textContent = (forces.alphaSailor / DEG__b11).toFixed(0);
   hud.vmg.textContent = (vmg * MS_TO_KN).toFixed(1);
   hud.leeway.textContent = leewayDeg.toFixed(0);
   hud.amaLoad.textContent = (forces.amaLoadDisplay * 100).toFixed(0);
-  hud.heel.textContent = (state.phi / DEG__b10).toFixed(1);
+  hud.heel.textContent = (state.phi / DEG__b11).toFixed(1);
   hud.shunt.textContent = t(`shuntPhase.${state.shunt.phase}`);
   hud.tws.textContent = controls.windSpeed.toFixed(1);
+  // P4.1: sheet limit (commanded) vs actual yard angle (state.delta, a real
+  // piece of state — R5-1) shown side by side, plus a LUFFING tag when the
+  // wind, not the sheet, is holding delta below the (effective) limit.
+  hud.sheet.textContent = `${Math.round(controls.sheet / DEG__b11)}`;
+  hud.yard.textContent = `${Math.round((state.delta ?? 0) / DEG__b11)}`;
+  hud.luffing.textContent = forces.luffing ? t('hud.luffing') : '';
 
-  const loadFrac = clamp(forces.amaLoadDisplay, 0, 3) / 3;
-  amaBar.style.width = `${clamp(forces.amaLoadDisplay, 0, 1) * 100}%`;
+  const loadFrac = clamp__b11(forces.amaLoadDisplay, 0, 3) / 3;
+  amaBar.style.width = `${clamp__b11(forces.amaLoadDisplay, 0, 1) * 100}%`;
   amaBarWrap.classList.toggle('warn', forces.amaLoadDisplay > 0.75 && forces.amaLoadDisplay <= 1.0);
   amaBarWrap.classList.toggle('danger', forces.amaLoadDisplay > 1.0);
   amaBar.style.width = `${loadFrac * 100}%`;
@@ -2107,9 +2517,9 @@ function updateHud(state, forces) {
   // matching the roll model's own asymmetric saturation angles), color
   // synced to the same warn/danger states as the ama-load bar
   // (FIX_REQUEST_round4_roll_dof.md 2.3).
-  const phiDeg = state.phi / DEG__b10;
+  const phiDeg = state.phi / DEG__b11;
   const heelRangeDeg = phiDeg >= 0 ? dims.stability.phiLiftoffDeg : dims.stability.phiSubmergeDeg;
-  const heelFrac = clamp(phiDeg / (heelRangeDeg * 1.5), -1, 1); // *1.5 so the needle doesn't pin at the edge right at amaLoad==1
+  const heelFrac = clamp__b11(phiDeg / (heelRangeDeg * 1.5), -1, 1); // *1.5 so the needle doesn't pin at the edge right at amaLoad==1
   heelNeedle.style.left = `${50 + heelFrac * 50}%`;
   heelBarWrap.classList.toggle('warn', forces.amaLoadDisplay > 0.75 && forces.amaLoadDisplay <= 1.0);
   heelBarWrap.classList.toggle('danger', forces.amaLoadDisplay > 1.0);
@@ -2143,6 +2553,62 @@ function updateAlarms(state) {
 }
 
 // ---------------------------------------------------------------------
+// Wake trail (P4.4, ROUND5_CONSOLIDATED_work_order.md) — UI-layer only, no
+// core changes: a preallocated ring buffer of WORLD positions, sampled
+// every ~0.15s of SIM time (not per frame, so the track's spacing doesn't
+// depend on frame rate). Sampling itself is independent of the checkbox
+// (it keeps recording while hidden, so re-enabling resumes seamlessly with
+// no gap) and continues through shunts — the proa's characteristic
+// reciprocal-leg "zigzag" is the whole point. Drawn as a world-space
+// polyline so the camera-follows-boat pan doesn't drag the trail along.
+// ---------------------------------------------------------------------
+const WAKE_CAPACITY = 600;
+const WAKE_SAMPLE_INTERVAL = 0.15; // seconds of SIM time
+const wakeX = new Float64Array(WAKE_CAPACITY);
+const wakeY = new Float64Array(WAKE_CAPACITY);
+let wakeCount = 0; // valid points, <= WAKE_CAPACITY
+let wakeHead = 0; // ring index the NEXT sample writes to
+let wakeLastSampleT = -Infinity;
+
+function wakeReset() {
+  wakeCount = 0;
+  wakeHead = 0;
+  wakeLastSampleT = -Infinity;
+}
+
+function wakeSample(state) {
+  if (state.t - wakeLastSampleT < WAKE_SAMPLE_INTERVAL) return;
+  wakeLastSampleT = state.t;
+  wakeX[wakeHead] = state.x;
+  wakeY[wakeHead] = state.y;
+  wakeHead = (wakeHead + 1) % WAKE_CAPACITY;
+  wakeCount = Math.min(wakeCount + 1, WAKE_CAPACITY);
+}
+
+function drawWakeTrail(cam) {
+  if (!wakeTrailCheckbox.checked || wakeCount < 2) return;
+  ctx.save();
+  ctx.lineWidth = Math.max(1, 1.4 * dpr);
+  ctx.lineCap = 'round';
+  const start = (wakeHead - wakeCount + WAKE_CAPACITY) % WAKE_CAPACITY;
+  let prevX, prevY;
+  for (let i = 0; i < wakeCount; i++) {
+    const idx = (start + i) % WAKE_CAPACITY;
+    const p = worldToScreen(wakeX[idx], wakeY[idx], cam);
+    if (i > 0) {
+      const frac = i / (wakeCount - 1); // 0 oldest .. 1 newest
+      ctx.strokeStyle = `rgba(170,225,215,${(0.5 * frac).toFixed(3)})`;
+      ctx.beginPath();
+      ctx.moveTo(prevX, prevY);
+      ctx.lineTo(p.x, p.y);
+      ctx.stroke();
+    }
+    prevX = p.x; prevY = p.y;
+  }
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------------
 // Main loop
 // ---------------------------------------------------------------------
 let lastT = performance.now();
@@ -2151,7 +2617,7 @@ let prevShuntHeld = false;
 let shuntFlashUntil = 0;
 
 function frame(now) {
-  const dtFrame = Math.min(0.1, Math.max(0, (now - lastT) / 1000)); // clamp 100ms, tab-switch protection
+  const dtFrame = Math.min(0.1, Math.max(0, (now - lastT) / 1000)); // clamp__b11 100ms, tab-switch protection
   lastT = now;
 
   if (!polarMode) {
@@ -2165,13 +2631,19 @@ function frame(now) {
     // of real elapsed time, so it's a reproducible frame-by-frame advance
     // (e.g. for inspecting the shunt sequence) rather than however long the
     // button click happened to take.
-    if (!paused || stepOnce) {
+    const stepped = !paused || stepOnce;
+    if (stepped) {
       sim.step(controls, stepOnce ? 1 / 60 : dtFrame);
       stepOnce = false;
     }
     const state = sim.getState();
     const forces = sim.forcesBreakdown();
     camera.x = state.x; camera.y = state.y;
+
+    // Wake trail sampling (P4.4): pause suspends it (tied to `stepped`,
+    // same condition the sim itself advances under) and capsize stops it;
+    // shunts are NOT excluded — the zigzag through them is the point.
+    if (stepped && !state.capsized) wakeSample(state);
 
     // A rising-edge shuntRequest that didn't move the phase off 'none' AND
     // was above the speed lockout was rejected by shunt.js for that reason
@@ -2189,6 +2661,7 @@ function frame(now) {
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     drawWaterGrid(camera);
+    drawWakeTrail(camera);
     drawBoat(state, forces, camera);
     drawTrueWindArrow();
     updateHud(state, forces);
@@ -2252,8 +2725,8 @@ btnRunPolar.addEventListener('click', async () => {
 
 btnExportPolar.addEventListener('click', () => {
   if (!lastPolarRows) return;
-  const header = 'twa,tws,bestSpeed,bestYardAngle,bestCamberUse';
-  const lines = [header, ...lastPolarRows.map((r) => `${r.twa},${r.tws},${r.bestSpeed.toFixed(4)},${r.bestYardAngle},${r.bestCamberUse}`)];
+  const header = 'twa,tws,bestSpeed,bestSheetAngle,deltaAngle,bestCamberUse';
+  const lines = [header, ...lastPolarRows.map((r) => `${r.twa},${r.tws},${r.bestSpeed.toFixed(4)},${r.bestSheetAngle},${r.deltaAngle.toFixed(2)},${r.bestCamberUse}`)];
   const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -2277,9 +2750,9 @@ function drawPolarView(rows) {
     ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI, Math.PI * 2); ctx.stroke();
   }
   for (let twa = 0; twa <= 180; twa += 30) {
-    const a = Math.PI + twa * DEG__b10; // 0deg TWA = straight up in this half-polar
-    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.sin(twa * DEG__b10) * R, cy - Math.cos(twa * DEG__b10) * R); ctx.stroke();
-    ctx.fillText(`${twa}°`, cx + Math.sin(twa * DEG__b10) * (R + 14 * dpr) - 10, cy - Math.cos(twa * DEG__b10) * (R + 14 * dpr));
+    const a = Math.PI + twa * DEG__b11; // 0deg TWA = straight up in this half-polar
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.sin(twa * DEG__b11) * R, cy - Math.cos(twa * DEG__b11) * R); ctx.stroke();
+    ctx.fillText(`${twa}°`, cx + Math.sin(twa * DEG__b11) * (R + 14 * dpr) - 10, cy - Math.cos(twa * DEG__b11) * (R + 14 * dpr));
   }
   ctx.restore();
 
@@ -2297,7 +2770,7 @@ function drawPolarView(rows) {
     ctx.beginPath();
     pts.forEach((p, i) => {
       const rr = (p.bestSpeed / maxSpeed) * R;
-      const a = p.twa * DEG__b10;
+      const a = p.twa * DEG__b11;
       const x = cx + Math.sin(a) * rr, y = cy - Math.cos(a) * rr;
       if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     });
@@ -2319,11 +2792,11 @@ function drawPolarView(rows) {
 
   // Live point overlay
   const state = sim.getState();
-  const twaNow = normalizeAngle__b10(controls.windDirFrom - state.heading) / DEG__b10;
+  const twaNow = normalizeAngle__b11(controls.windDirFrom - state.heading) / DEG__b11;
   const speedNow = Math.hypot(state.u, state.v);
   if (twaNow >= 0 && twaNow <= 180) {
     const rr = (speedNow / maxSpeed) * R;
-    const a = twaNow * DEG__b10;
+    const a = twaNow * DEG__b11;
     const x = cx + Math.sin(a) * rr, y = cy - Math.cos(a) * rr;
     ctx.beginPath(); ctx.arc(x, y, 5 * dpr, 0, Math.PI * 2);
     ctx.fillStyle = '#ff6b6b'; ctx.fill();

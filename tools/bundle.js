@@ -30,6 +30,7 @@ const CORE_FILES = [
   'core/rudder.js',
   'core/stability.js',
   'core/shunt.js',
+  'core/sheet.js',
   'core/integrator.js',
   'core/simulator.js',
 ];

@@ -64,7 +64,7 @@ otherwise. Documentation (this file, code comments) stays English-only.
 | Action | Control |
 |---|---|
 | Wind direction / strength | sliders |
-| Yard angle (sheeting) | `←` / `→`, or slider |
+| Sheet (szot) — MAXIMUM yard angle, not the actual yard | `←` / `→`, or slider |
 | Leeward brail | `Q` sheets in, `Z` eases |
 | Windward brail | `W` sheets in, `X` eases |
 | Rudder | `A` / `D` (auto-centers on release), or slider |
@@ -74,6 +74,13 @@ otherwise. Documentation (this file, code comments) stays English-only.
 | Pause / single-step | `P` / `.` |
 | Toggle force-vector overlay | `F` |
 | Polar mode | `O` |
+| Wake trail (kilwater) | checkbox in the Display panel |
+
+The yard's ACTUAL angle (`state.delta`) is real, dynamic state now (round
+5) — the sheet only ever limits how far it can swing; the HUD shows both
+side by side (Sheet / Yard) plus a LUFFING tag when the wind, not the
+sheet, is holding it below the limit. See `ARCHITECTURE_physics_core_EN.md`'s
+"Sheet constraint" notes.
 
 Force vectors (when on): yellow = sail lift, red = sail drag, green =
 hull side force, blue = rudder force — drawn at their application
@@ -97,13 +104,17 @@ Step 2, since the UI doesn't change them):
   window, so this has no force-model consequence. The UI adds a purely
   cosmetic sliding-tack animation during `transfer` to match the
   prompt's visual expectation without implying the core tracks it.
-- **Fixed centre of effort.** CE position is a constant fraction of
-  hull length (`sail.ceXFraction`), not dynamically computed from sail
-  shape/trim.
-- **No roll dynamics.** `amaLoad` is a static heel-moment/righting-
-  capacity ratio, not an integrated roll angle — there is no roll
-  inertia or oscillation, just the instantaneous load indicator plus
-  timer-driven capsize.
+- **CE geometry is a simplified tack-to-clew model**, not a full
+  sail-shape/camber-aware computation: `sail.tackXFraction` (mast/tack
+  position) and `sail.CEheight`/2 (characteristic chord scale) combine
+  with the actual yard angle (`state.delta`) into a real, moving CE —
+  see `ARCHITECTURE_physics_core_EN.md`'s aero.js section (round 5).
+- **Roll is a real 2nd-order DOF** (`phi`, `p` — integrated roll angle
+  and rate, round 4), not a static ratio; `amaLoad` is derived from
+  `phi`. The righting curve itself is piecewise (ease-out, flat, then a
+  genuine capsizing arm past `phiCapsizeDeg`, round 5) rather than a
+  single formula — see `ARCHITECTURE_physics_core_EN.md`'s stability.js
+  section.
 - **Crew-immersion drag model is a linear approximation.** Crew weight
   toward the ama presses it deeper (`ama.crewImmersionCoeff`, added in
   round 2 to close a ballast exploit — see
@@ -123,7 +134,7 @@ Part A) as calibration watch items, not bugs:
   Both pass the acceptance criteria as written; final numbers await
   calibration against real-boat reference data (Dierking designs, Di
   Piazza wind-tunnel tables) mentioned in `data/README_input_data_EN.md`.
-- `bestYardAngle` jitters at TWA 160 in the polar (a flat downwind
+- `bestSheetAngle` jitters at TWA 160 in the polar (a flat downwind
   optimum where several trims give near-identical speed) — cosmetic,
   the speed curve itself is smooth there.
 

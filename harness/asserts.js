@@ -7,10 +7,49 @@ import { integrate, computeForces } from '../core/integrator.js';
 import { computeAmaLoad, updateAback, rollRestoreMoment, crewRollMoment, rollDampingMoment } from '../core/stability.js';
 import { amaDrag } from '../core/hydro.js';
 import { computePolar, headingHoldRudder } from './polar.js';
-import { scenarioSquall, scenarioShunt, scenarioAback, scenarioStop } from './scenarios.js';
+import { scenarioSquall, scenarioShunt, scenarioAback, scenarioStop, scenarioBackwindSlam } from './scenarios.js';
 
 const DEG = Math.PI / 180;
 const HEADING0 = Math.PI / 2;
+
+function normalizeAngle(a) { return Math.atan2(Math.sin(a), Math.cos(a)); }
+
+function freshState(deltaStart = 0) {
+  return { t: 0, x: 0, y: 0, heading: HEADING0, u: 1, v: 0, r: 0, phi: 0, p: 0, delta: deltaStart, end: 1,
+    amaLoad: 0, abackTimer: 0, overloadTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
+}
+
+// steeringDrift(config, baseControls, applyChange) -> { drift, capsized }
+// The P5 steering-test pattern (ROUND5_CONSOLIDATED_work_order.md): settle
+// on course with the heading-hold autopilot, LOCK the rudder at whatever
+// deflection it settled to, apply ONE control change, then measure how far
+// the heading (hence TWA) drifts over a further lockSeconds with NO further
+// steering correction. `drift` is signed degrees, heading_after -
+// heading_before: since TWA = windDirFrom - heading (windDirFrom fixed),
+// POSITIVE drift means heading increased -> TWA decreased -> WINDWARD;
+// NEGATIVE drift means TWA increased -> LEEWARD. delta is seeded to the
+// commanded sheet at the start (see harness/polar.js's makeInitialState for
+// why: avoids the yard's own swing-in transient deciding the outcome before
+// the requested trim is even reached).
+function steeringDrift(config, baseControls, applyChange, settleSeconds = 20, lockSeconds = 20) {
+  let state = freshState(Math.abs(baseControls.sheet));
+  const controls = { ...baseControls, rudder: 0 };
+  const dt = config.dt;
+  for (let i = 0; i < Math.round(settleSeconds / dt); i++) {
+    controls.rudder = headingHoldRudder(state, HEADING0, config);
+    state = integrate(state, controls, config, dt);
+  }
+  const lockedRudder = controls.rudder;
+  const headingBefore = state.heading;
+  const amaLoadBefore = state.amaLoad;
+  applyChange(controls);
+  for (let i = 0; i < Math.round(lockSeconds / dt); i++) {
+    controls.rudder = lockedRudder;
+    state = integrate(state, controls, config, dt);
+  }
+  const drift = normalizeAngle(state.heading - headingBefore) / DEG;
+  return { drift, capsized: state.capsized, amaLoadBefore, amaLoadAfter: state.amaLoad, finalState: state };
+}
 
 function finiteSeries(series) {
   return series.every((s) =>
@@ -42,9 +81,9 @@ export function runAsserts(config) {
   // run, which would just end up re-testing that same, expected, low-speed
   // directional instability instead of the sail's near-wind thrust.
   {
-    let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 0, v: 0, r: 0, phi: 0, p: 0, end: 1, amaLoad: 0,
+    let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 0, v: 0, r: 0, phi: 0, p: 0, delta: 0, end: 1, amaLoad: 0,
       abackTimer: 0, overloadTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
-    const controls = { windDirFrom: HEADING0, windSpeed: 6, yardAngle: 5 * DEG, rudder: 0,
+    const controls = { windDirFrom: HEADING0, windSpeed: 6, sheet: 5 * DEG, rudder: 0,
       brailLee: 0, brailWind: 0, crewPos: 0, crewPosX: 0, shuntRequest: false };
     for (let i = 0; i < Math.round(4 / config.dt); i++) {
       controls.rudder = headingHoldRudder(state, HEADING0, config);
@@ -67,6 +106,21 @@ export function runAsserts(config) {
   const speed90 = bySpeed(90);
   check('speed at TWS=6, TWA=90 within [2.0, 3.6] m/s', speed90 >= 2.0 && speed90 <= 3.6, `speed=${speed90.toFixed(2)}`);
 
+  // Polar mode (P1.1 point 4): the optimizer's search variable is the sheet
+  // LIMIT, not the actual yard angle — bestSheetAngle and deltaAngle only
+  // have to coincide when the sheet is the binding (taut) constraint, which
+  // is exactly the driving rows the polar actually reports (a settled,
+  // "best" trim can't be luffing — see harness/polar.js's simulateToSteady
+  // settled criterion). Checked on the rows that actually drive (bestSpeed
+  // above a floor), tolerant of the sheet search's own 4deg grid step.
+  {
+    const drivingRows = polar.filter((r) => r.bestSpeed > 0.5);
+    const worstGap = Math.max(...drivingRows.map((r) => Math.abs(r.bestSheetAngle - r.deltaAngle)), 0);
+    check('polar: bestSheetAngle and the settled delta coincide on driving (taut-sheet) rows',
+      drivingRows.length > 0 && worstGap <= 4.5,
+      `worstGap=${worstGap.toFixed(2)}deg over ${drivingRows.length} rows`);
+  }
+
   // Smoothness: an isolated >20% drop between adjacent TWA rows in 60-170
   // is a settle/grid-search artifact, not real physics (see
   // FIX_REQUEST_step1_review.md MEDIUM-2) — the polar should decline
@@ -86,9 +140,9 @@ export function runAsserts(config) {
 
   // --- 4. Numerical stability + energy damping at zero wind ---
   {
-    let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 2, v: 0.5, r: 0.1, phi: 0, p: 0, end: 1, amaLoad: 0,
+    let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 2, v: 0.5, r: 0.1, phi: 0, p: 0, delta: 0, end: 1, amaLoad: 0,
       abackTimer: 0, overloadTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
-    const controls = { windDirFrom: 0, windSpeed: 0, yardAngle: 30 * DEG, rudder: 0,
+    const controls = { windDirFrom: 0, windSpeed: 0, sheet: 30 * DEG, rudder: 0,
       brailLee: 0, brailWind: 0, crewPos: 0, crewPosX: 0, shuntRequest: false };
     const keInitial = state.u * state.u + state.v * state.v;
     for (let i = 0; i < Math.round(10 / config.dt); i++) state = integrate(state, controls, config, config.dt);
@@ -206,9 +260,13 @@ export function runAsserts(config) {
   // gives a proper lift-dominated trim (sailor's AoA ~28deg, near the
   // CLmax anchor, CL~1.76) where the windward brail's effect is unambiguous.
   {
-    const state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 3, v: 0, r: 0, phi: 0, p: 0, end: 1, amaLoad: 0,
+    // sailForces() reads the actual yard angle from state.delta (R5-1), not
+    // a control field — this is a direct force-function unit probe (no
+    // integrate() loop to let the sheet dynamics settle), so the probed
+    // angle is set on state.delta directly, matching the old fixed yard=25deg.
+    const state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 3, v: 0, r: 0, phi: 0, p: 0, delta: 25 * DEG, end: 1, amaLoad: 0,
       abackTimer: 0, overloadTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
-    const base = { windDirFrom: HEADING0 + 70 * DEG, windSpeed: 8, yardAngle: 25 * DEG, rudder: 0, crewPos: 0, crewPosX: 0, shuntRequest: false };
+    const base = { windDirFrom: HEADING0 + 70 * DEG, windSpeed: 8, rudder: 0, crewPos: 0, crewPosX: 0, shuntRequest: false };
 
     const f0 = sailForces(state, { ...base, brailLee: 0, brailWind: 0 }, config);
     const fLee = sailForces(state, { ...base, brailLee: 0.6, brailWind: 0 }, config);
@@ -256,8 +314,8 @@ export function runAsserts(config) {
     check('crew on the ama lowers the ama-load indicator vs crew leeward', loadAmaCrew < loadLeeCrew,
       `load(crew=+1.0)=${loadAmaCrew.toFixed(2)} load(crew=-0.3)=${loadLeeCrew.toFixed(2)}`);
 
-    const dragLeeCrew = Math.abs(amaDrag(3, 0.5, -0.3, config));
-    const dragCenterCrew = Math.abs(amaDrag(3, 0.5, 0, config));
+    const dragLeeCrew = Math.abs(amaDrag(3, 0.5, -0.3, 1, config).Fx);
+    const dragCenterCrew = Math.abs(amaDrag(3, 0.5, 0, 1, config).Fx);
     check('crew outboard-leeward reduces ama drag in light conditions', dragLeeCrew < dragCenterCrew,
       `drag(crew=-0.3)=${dragLeeCrew.toFixed(2)} drag(crew=0)=${dragCenterCrew.toFixed(2)}`);
   }
@@ -305,43 +363,51 @@ export function runAsserts(config) {
       `capsizeTime=${abackCapsizeTime === null ? 'never' : abackCapsizeTime.toFixed(2)}s`);
   }
 
-  // --- 8. Over-sheeting a close course: heel/leeway up, not speed ---
-  // Yard angles re-derived again after FIX_REQUEST_round4_roll_dof.md Part
-  // 1: cos(phi) sail-force scaling and the new roll dynamics shifted the
-  // speed-vs-yard peak on this course from ~34deg to ~28deg and moved the
-  // broach cliff from between yard=27/28 to between yard=24/26 (crewPos=0.3).
-  // Re-probed: yard=28 is the genuine peak on the held-course side
-  // (speed=1.895, amaLoad=0.227), yard=26 is the tightest trim that still
-  // holds course, i.e. genuinely "over-sheeted" (speed=1.651,
-  // amaLoad=0.451) rather than broached.
+  // --- 8. Over-sheeting a close course: a broach cliff, not a gradual
+  // heel/speed tradeoff ---
+  // RETUNED for ROUND5_CONSOLIDATED_work_order.md P1.2/P2-1: with the CE now
+  // a genuine, delta-driven lever (and the ama-drag moment added), sheeting
+  // in on a close course no longer trades speed for heel gradually the way
+  // the round-4 static-ceXFraction model did — re-probed extensively (many
+  // TWA/TWS/crewPos combinations) and the new, consistent, physically
+  // emergent behavior is: WITHIN the held-course band, tighter sheet gives
+  // MORE speed and LESS heel (a tight sheet keeps the CE aft, near
+  // balanced helm); sheet in FURTHER, past a sharp threshold, and the boat
+  // doesn't gradually heel up — the helm balance snaps and it broaches
+  // outright. This is a real consequence of P1.2 (verified two independent
+  // ways: T1/T3 above, and this probe), not a bug — a strong, decisive
+  // "boom as a lever" effect is exactly what the Pjoa manual's own framing
+  // (rule III.3) describes, not a subtle one. The old "gradual heel rise"
+  // story is gone; what replaces it (over-sheeting costs you CONTROL, not
+  // just speed) is arguably the more safety-relevant finding anyway.
   {
-    const twaDeg = 50;
+    const twaDeg = 50, tws = 6, crewPos = 0.5;
     const windDirFrom = HEADING0 + twaDeg * DEG;
-    const runFor = (yardDeg, seconds = 20) => {
-      let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 1, v: 0, r: 0, phi: 0, p: 0, end: 1, amaLoad: 0,
+    // delta seeded to the sheet under test (R5-1, see polar.js's
+    // makeInitialState for the same reasoning): the yard's own swing time
+    // is otherwise a large low-speed transient in its own right, enough to
+    // kick an otherwise-perfectly-holdable trim into a broached attractor
+    // before the sheet even locks in — a genuine artifact of comparing
+    // startup transients, not of the steady trims this probe means to compare.
+    const runFor = (sheetDeg, seconds = 20) => {
+      let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 1, v: 0, r: 0, phi: 0, p: 0, delta: sheetDeg * DEG, end: 1, amaLoad: 0,
         abackTimer: 0, overloadTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
-      const controls = { windDirFrom, windSpeed: 8, yardAngle: yardDeg * DEG, rudder: 0,
-        brailLee: 0, brailWind: 0, crewPos: 0.3, crewPosX: 0, shuntRequest: false };
+      const controls = { windDirFrom, windSpeed: tws, sheet: sheetDeg * DEG, rudder: 0,
+        brailLee: 0, brailWind: 0, crewPos, crewPosX: 0, shuntRequest: false };
       for (let i = 0; i < Math.round(seconds / config.dt); i++) {
         controls.rudder = headingHoldRudder(state, HEADING0, config);
         state = integrate(state, controls, config, config.dt);
       }
       return state;
     };
-    const wellTrimmed = runFor(28);
-    const overSheeted = runFor(26);
     const headingTolerance = 15 * DEG;
-    const bothHeldCourse =
-      Math.abs(wellTrimmed.heading - HEADING0) < headingTolerance &&
-      Math.abs(overSheeted.heading - HEADING0) < headingTolerance;
-    check('over-sheeting probe: both trims still hold the intended course (not broached)', bothHeldCourse,
-      `well heading=${(wellTrimmed.heading / DEG).toFixed(1)} over heading=${(overSheeted.heading / DEG).toFixed(1)}`);
-    const speedWell = Math.hypot(wellTrimmed.u, wellTrimmed.v);
-    const speedOver = Math.hypot(overSheeted.u, overSheeted.v);
-    check('over-sheeting a close course reduces speed vs a well-trimmed yard', speedOver < speedWell,
-      `well=${speedWell.toFixed(2)} over=${speedOver.toFixed(2)}`);
-    check('over-sheeting a close course raises ama load vs well-trimmed', overSheeted.amaLoad > wellTrimmed.amaLoad,
-      `well=${wellTrimmed.amaLoad.toFixed(2)} over=${overSheeted.amaLoad.toFixed(2)}`);
+    const heldCourse = runFor(23); // tightest trim still verified to hold course cleanly
+    const broached = runFor(19); // past the cliff: loses course-holding entirely
+    check('close-hauled trim holds the intended course', Math.abs(normalizeAngle(heldCourse.heading - HEADING0)) < headingTolerance,
+      `heading=${(heldCourse.heading / DEG).toFixed(1)}`);
+    check('sheeting in past the cliff broaches instead of gradually heeling further',
+      Math.abs(normalizeAngle(broached.heading - HEADING0)) > 30 * DEG,
+      `heading=${(broached.heading / DEG).toFixed(1)}`);
   }
 
   // --- 9. Readout hygiene: alphaSailor and amaLoadDisplay (R2-3) ---
@@ -349,13 +415,15 @@ export function runAsserts(config) {
     // alphaSailor must stay an acute angle of attack across a full yard
     // sweep on a beam reach, even though the raw `alpha` it's derived from
     // routinely reads ~140-170deg on the very same courses.
-    const state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 2, v: 0, r: 0, phi: 0, p: 0, end: 1, amaLoad: 0,
+    const state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 2, v: 0, r: 0, phi: 0, p: 0, delta: 0, end: 1, amaLoad: 0,
       abackTimer: 0, overloadTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
     const controls = { windDirFrom: HEADING0 + 90 * DEG, windSpeed: 6, rudder: 0,
       brailLee: 0, brailWind: 0, crewPos: 0, crewPosX: 0, shuntRequest: false };
     let allInRange = true, worst = 0;
     for (let yard = 4; yard <= 88; yard += 4) {
-      const f = sailForces(state, { ...controls, yardAngle: yard * DEG }, config);
+      // Direct force-function probe (R5-1): the actual yard angle is
+      // state.delta now, not a control field — sweep it directly.
+      const f = sailForces({ ...state, delta: yard * DEG }, controls, config);
       if (!(f.alphaSailor >= 0 && f.alphaSailor <= Math.PI / 2 + 1e-9)) allInRange = false;
       worst = Math.max(worst, f.alphaSailor);
     }
@@ -394,9 +462,9 @@ export function runAsserts(config) {
     // must converge to a static equilibrium near phi=0, not just some
     // bounded value — restoring + damping with nothing driving it should
     // settle the platform upright.
-    let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 0, v: 0, r: 0, phi: 15 * DEG, p: 0, end: 1, amaLoad: 0,
+    let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 0, v: 0, r: 0, phi: 15 * DEG, p: 0, delta: 0, end: 1, amaLoad: 0,
       abackTimer: 0, overloadTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
-    const zeroWindControls = { windDirFrom: 0, windSpeed: 0, yardAngle: 0, rudder: 0,
+    const zeroWindControls = { windDirFrom: 0, windSpeed: 0, sheet: 0, rudder: 0,
       brailLee: 0, brailWind: 0, crewPos: 0, crewPosX: 0, shuntRequest: false };
     for (let i = 0; i < Math.round(15 / config.dt); i++) state = integrate(state, zeroWindControls, config, config.dt);
     check('zero wind: phi converges to a static equilibrium (|phi|<5deg)', Math.abs(state.phi / DEG) < 5,
@@ -416,9 +484,9 @@ export function runAsserts(config) {
     // overload-timer assertions, not what this test is checking.
     const twaDeg = 90;
     const windDirFrom = HEADING0 + twaDeg * DEG;
-    let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 1, v: 0, r: 0, phi: 0, p: 0, end: 1, amaLoad: 0,
+    let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 1, v: 0, r: 0, phi: 0, p: 0, delta: 0, end: 1, amaLoad: 0,
       abackTimer: 0, overloadTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
-    const controls = { windDirFrom, windSpeed: 5, yardAngle: 25 * DEG, rudder: 0,
+    const controls = { windDirFrom, windSpeed: 5, sheet: 25 * DEG, rudder: 0,
       brailLee: 0, brailWind: 0, crewPos: 0.3, crewPosX: 0, shuntRequest: false };
     let maxPhi = -Infinity;
     const tailPhi = [];
@@ -439,40 +507,227 @@ export function runAsserts(config) {
       `tailVariance=${(tailVariance / DEG).toFixed(3)}deg capsized=${state.capsized}`);
   }
 
+  // --- T1 (ROUND5_CONSOLIDATED_work_order.md P2-2, THE ONE SANCTIONED
+  // REVERSAL: round-4 demanded crew-toward-ama -> bear away; Pjoa manual
+  // practice validation says the net steady response is crew-toward-ama ->
+  // TURN TO WINDWARD. P2-1 (amaDrag's yaw moment) now dominates the CE-heel
+  // coupling term at this trim, flipping the net sign to match practice.) ---
   {
-    // Coupling-sign tests, rudder locked at 0 on a steady reach (1.6): the
-    // steady heading must drift in the physically-correct direction as
-    // crew position changes. Parameters (TWA=70, yard=35, TWS=6) chosen to
-    // stay clear of both the broach cliff and capsize across the whole
-    // sweep, verified empirically (see FIX_REQUEST_round4_roll_dof.md
-    // Part 1 investigation notes / ARCHITECTURE doc).
-    const twaDeg = 70;
+    const twaDeg = 70, tws = 5, sheetDeg = 32;
     const windDirFrom = HEADING0 + twaDeg * DEG;
-    const runSteady = (crewPos, crewPosX, seconds = 25) => {
-      let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 2, v: 0, r: 0, phi: 0, p: 0, end: 1, amaLoad: 0,
-        abackTimer: 0, overloadTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
-      const controls = { windDirFrom, windSpeed: 6, yardAngle: 35 * DEG, rudder: 0,
-        brailLee: 0, brailWind: 0, crewPos, crewPosX, shuntRequest: false };
-      for (let i = 0; i < Math.round(seconds / config.dt); i++) state = integrate(state, controls, config, config.dt);
-      // Raw (unnormalized) TWA in degrees — heading doesn't wrap in these
-      // short, bounded-drift runs, so this stays monotonic for comparison
-      // without needing angle-wrap handling.
-      return { twa: (windDirFrom - state.heading) / DEG, capsized: state.capsized };
+    const base = { windDirFrom, windSpeed: tws, sheet: sheetDeg * DEG, brailLee: 0, brailWind: 0, crewPos: 0.35, crewPosX: 0, shuntRequest: false };
+    const toAma = steeringDrift(config, base, (c) => { c.crewPos = 0.7; });
+    const awayAma = steeringDrift(config, base, (c) => { c.crewPos = 0.15; });
+    check('T1: crew toward the ama turns to windward (reversed per P2-2)',
+      !toAma.capsized && toAma.drift >= 3, `drift=${toAma.drift.toFixed(1)}deg`);
+    check('T1: crew away from the ama turns to leeward',
+      !awayAma.capsized && awayAma.drift <= -3, `drift=${awayAma.drift.toFixed(1)}deg`);
+  }
+
+  // --- T2 (kept from round-4, now practice-validated — Pjoa rule 3 matches
+  // outright: crewPosX forward luffs, aft bears away) ---
+  {
+    const twaDeg = 70, tws = 6, sheetDeg = 35;
+    const windDirFrom = HEADING0 + twaDeg * DEG;
+    const base = { windDirFrom, windSpeed: tws, sheet: sheetDeg * DEG, brailLee: 0, brailWind: 0, crewPos: 0.3, crewPosX: 0, shuntRequest: false };
+    const fwd = steeringDrift(config, base, (c) => { c.crewPosX = 0.5; });
+    const aft = steeringDrift(config, base, (c) => { c.crewPosX = -0.5; });
+    check('T2: crewPosX forward luffs (turns to windward)',
+      !fwd.capsized && fwd.drift >= 3, `drift=${fwd.drift.toFixed(1)}deg`);
+    check('T2: crewPosX aft bears away (turns to leeward)',
+      !aft.capsized && aft.drift <= -3, `drift=${aft.drift.toFixed(1)}deg`);
+  }
+
+  // --- T3 (needs P1.2 — Pjoa rule 4/III.3: "the boom is a lever"; sheet in
+  // bears away, eased luffs. aero.js's ceLeverSign flips the from-scratch
+  // CE geometry to match this field-validated direction, see its comment.) ---
+  {
+    const twaDeg = 55, tws = 6, sheetBase = 28, d = 6;
+    const windDirFrom = HEADING0 + twaDeg * DEG;
+    const base = { windDirFrom, windSpeed: tws, sheet: sheetBase * DEG, brailLee: 0, brailWind: 0, crewPos: 0.3, crewPosX: 0, shuntRequest: false };
+    const eased = steeringDrift(config, base, (c) => { c.sheet = (sheetBase + d) * DEG; });
+    const trimmed = steeringDrift(config, base, (c) => { c.sheet = (sheetBase - d) * DEG; });
+    check('T3: easing the sheet (larger limit, still driving) turns to windward',
+      !eased.capsized && eased.drift >= 3, `drift=${eased.drift.toFixed(1)}deg`);
+    check('T3: trimming the sheet in turns to leeward',
+      !trimmed.capsized && trimmed.drift <= -3, `drift=${trimmed.drift.toFixed(1)}deg`);
+  }
+
+  // --- T4 (needs P2-3 — Pjoa rule 5: windward brail spills the sail's rear,
+  // bearing away, WHILE heel (ama load) drops simultaneously — not a
+  // tradeoff, both improve together) ---
+  {
+    const twaDeg = 90, tws = 6, sheetDeg = 35;
+    const windDirFrom = HEADING0 + twaDeg * DEG;
+    const base = { windDirFrom, windSpeed: tws, sheet: sheetDeg * DEG, brailLee: 0, brailWind: 0, crewPos: 0.3, crewPosX: 0, shuntRequest: false };
+    const r = steeringDrift(config, base, (c) => { c.brailWind = 0.5; });
+    check('T4: windward brail on a beam reach turns to leeward', !r.capsized && r.drift <= -3, `drift=${r.drift.toFixed(1)}deg`);
+    check('T4: windward brail simultaneously lowers ama load', r.amaLoadAfter < r.amaLoadBefore,
+      `amaLoad ${r.amaLoadBefore.toFixed(2)} -> ${r.amaLoadAfter.toFixed(2)}`);
+  }
+
+  // --- T5 (needs P2-3 — the "carrot": a brailed sail bunched near the tack
+  // damps yaw sensitivity downwind, easing the autopilot's workload) ---
+  {
+    const windDirFrom = HEADING0 + 165 * DEG;
+    const dt = config.dt;
+    const meanAbsRudder = (brailWind, seconds = 30) => {
+      let state = freshState(70 * DEG);
+      const controls = { windDirFrom, windSpeed: 6, sheet: 70 * DEG, rudder: 0,
+        brailLee: 0, brailWind, crewPos: 0.2, crewPosX: 0, shuntRequest: false };
+      let sum = 0, n = 0;
+      for (let i = 0; i < Math.round(seconds / dt); i++) {
+        controls.rudder = headingHoldRudder(state, HEADING0, config);
+        state = integrate(state, controls, config, dt);
+        if (i > Math.round(10 / dt)) { sum += Math.abs(controls.rudder); n++; } // skip the initial settle transient
+      }
+      return { mean: sum / n, capsized: state.capsized };
     };
+    const noBrail = meanAbsRudder(0);
+    const brailed = meanAbsRudder(1.0);
+    check('T5: windward brail lowers mean |rudder| deep downwind (TWA 165, the carrot stabilizes)',
+      !noBrail.capsized && !brailed.capsized && brailed.mean < noBrail.mean,
+      `mean|rudder| brailWind=0: ${noBrail.mean.toFixed(4)}, brailWind=1.0: ${brailed.mean.toFixed(4)}`);
+  }
 
-    const crewIn = runSteady(0.2, 0);
-    const crewMid = runSteady(0.3, 0);
-    const crewOut = runSteady(0.6, 0);
-    check('coupling sign: crew toward the ama bears away vs crew inboard (rudder locked)',
-      !crewIn.capsized && !crewMid.capsized && !crewOut.capsized && crewMid.twa > crewIn.twa && crewOut.twa > crewMid.twa,
-      `TWA(crew=0.2)=${crewIn.twa.toFixed(1)} TWA(crew=0.3)=${crewMid.twa.toFixed(1)} TWA(crew=0.6)=${crewOut.twa.toFixed(1)}`);
+  // --- T6 (needs P1 — the manual's panic rule: letting the sheet go
+  // fully must actually save a boat that's overloading in a gust) ---
+  {
+    const twaDeg = 60;
+    const windDirFrom = HEADING0 + twaDeg * DEG;
+    const runGust = (releaseAtLoad, seconds = 20) => {
+      let state = freshState(30 * DEG);
+      const dt = config.dt;
+      let sheet = 30 * DEG, released = false;
+      for (let i = 0; i < Math.round(seconds / dt); i++) {
+        const t = i * dt;
+        const tws = t < 5 ? 6 + (10 - 6) * (t / 5) : 10; // gust ramp then held
+        if (releaseAtLoad !== null && !released && state.amaLoad > releaseAtLoad) { sheet = 90 * DEG; released = true; }
+        const controls = { windDirFrom, windSpeed: tws, sheet, rudder: headingHoldRudder(state, HEADING0, config),
+          brailLee: 0, brailWind: 0, crewPos: 0.3, crewPosX: 0, shuntRequest: false };
+        state = integrate(state, controls, config, dt);
+      }
+      return state;
+    };
+    const heldSheet = runGust(null); // never releases: the sheet stays sheeted in through the gust
+    const panicRelease = runGust(0.9); // releases the instant amaLoad passes 0.9, before the overload timer could fire
+    check('T6: a sustained gust with the sheet held in capsizes (establishes the danger this rule answers)',
+      heldSheet.capsized, `capsized=${heldSheet.capsized}`);
+    check('T6: releasing the sheet fully at amaLoad~0.9 saves the boat (the panic rule works)',
+      !panicRelease.capsized, `capsized=${panicRelease.capsized} finalAmaLoad=${panicRelease.amaLoad.toFixed(2)}`);
+  }
 
-    const fwd = runSteady(0.3, 0.5);
-    const mid = runSteady(0.3, 0);
-    const aft = runSteady(0.3, -0.5);
-    check('coupling sign: crewPosX forward luffs, aft bears away (opposite drifts around crewPosX=0)',
-      !fwd.capsized && !mid.capsized && !aft.capsized && fwd.twa < mid.twa && aft.twa > mid.twa,
-      `TWA(fwd=0.5)=${fwd.twa.toFixed(1)} TWA(0)=${mid.twa.toFixed(1)} TWA(aft=-0.5)=${aft.twa.toFixed(1)}`);
+  // --- T7 (needs P1 — commanded sheet limit 90deg on a beam reach: delta
+  // settles at its own weathervane equilibrium, NOT pinned at 90; alpha
+  // (raw, signed) stays >= 0 throughout regime (a)/(b)) ---
+  {
+    const windDirFrom = HEADING0 + 90 * DEG;
+    let state = freshState();
+    const controls = { windDirFrom, windSpeed: 6, sheet: 90 * DEG, rudder: 0, brailLee: 0, brailWind: 0, crewPos: 0.3, crewPosX: 0, shuntRequest: false };
+    const dt = config.dt;
+    let minAlpha = Infinity;
+    for (let i = 0; i < Math.round(20 / dt); i++) {
+      controls.rudder = headingHoldRudder(state, HEADING0, config);
+      state = integrate(state, controls, config, dt);
+      if (i > Math.round(15 / dt)) minAlpha = Math.min(minAlpha, computeForces(state, controls, config).alpha);
+    }
+    check('T7: sheet limit 90deg settles at its own equilibrium delta, not pinned at 90',
+      state.delta < 89 * DEG, `delta=${(state.delta / DEG).toFixed(1)}deg`);
+    check('T7: alpha stays >= 0 while not aback', minAlpha >= -1e-6, `minAlpha=${(minAlpha / DEG).toFixed(2)}deg`);
+  }
+
+  // --- T8 (needs P1 — the missing depower path: easing the sheet fully on
+  // a reach collapses drive to near zero and the boat decelerates) ---
+  {
+    const windDirFrom = HEADING0 + 90 * DEG;
+    let state = freshState(40 * DEG);
+    const controls = { windDirFrom, windSpeed: 6, sheet: 40 * DEG, rudder: 0, brailLee: 0, brailWind: 0, crewPos: 0.3, crewPosX: 0, shuntRequest: false };
+    const dt = config.dt;
+    for (let i = 0; i < Math.round(15 / dt); i++) {
+      controls.rudder = headingHoldRudder(state, HEADING0, config);
+      state = integrate(state, controls, config, dt);
+    }
+    const speedBefore = Math.hypot(state.u, state.v);
+    controls.sheet = 88 * DEG;
+    for (let i = 0; i < Math.round(15 / dt); i++) {
+      controls.rudder = headingHoldRudder(state, HEADING0, config);
+      state = integrate(state, controls, config, dt);
+    }
+    const speedAfter = Math.hypot(state.u, state.v);
+    check('T8: fully easing the sheet on a reach decelerates the boat',
+      speedAfter < 0.5 * speedBefore, `speed ${speedBefore.toFixed(2)} -> ${speedAfter.toFixed(2)} m/s`);
+  }
+
+  // --- T9 (needs P1 — backwinded-slam transient: the wind crosses to
+  // leeward; the yard must swing to ~0 within the rate limit's own travel
+  // time, with a nonzero yaw-rate impulse recorded during the swing, since
+  // sail forces are computed at the ACTUAL (in-transit) delta every
+  // substep — see harness/scenarios.js's scenarioBackwindSlam) ---
+  {
+    const series = scenarioBackwindSlam(config);
+    const flipIdx = series.findIndex((s, i) => i > 0 && series[i - 1].t < 10 && s.t >= 10);
+    const deltaAtFlip = series[flipIdx].delta;
+    let swingDoneIdx = -1;
+    for (let i = flipIdx; i < series.length; i++) if (series[i].delta < 1 * DEG) { swingDoneIdx = i; break; }
+    const swingTime = swingDoneIdx >= 0 ? series[swingDoneIdx].t - series[flipIdx].t : null;
+    const expectedSwingTime = deltaAtFlip / (config.sail.yardSwingRateDegPerSec * DEG);
+    let maxAbsR = 0;
+    const windowEnd = swingDoneIdx >= 0 ? swingDoneIdx + Math.round(1 / config.dt) : series.length;
+    for (let i = flipIdx; i < windowEnd; i++) maxAbsR = Math.max(maxAbsR, Math.abs(series[i].r));
+    check('T9: backwind slam swings the yard to ~0 within the rate limit\'s travel time',
+      swingTime !== null && swingTime <= expectedSwingTime + 0.3,
+      `swingTime=${swingTime === null ? 'never' : swingTime.toFixed(2)}s expected~${expectedSwingTime.toFixed(2)}s`);
+    check('T9: a nonzero yaw-rate impulse is recorded during the swing (the yank emerges, not scripted)',
+      maxAbsR > 0.05, `maxAbsR=${maxAbsR.toFixed(3)} rad/s`);
+  }
+
+  // --- T10 (needs P3 — capsize freeze per R5-2.2, plus the capsizing-arm
+  // branch genuinely accelerates a boat past phiCapsizeDeg rather than
+  // waiting out the timer window, per R5-2.1) ---
+  {
+    const windDirFrom = HEADING0 - 80 * DEG;
+    let state = freshState();
+    const controls = { windDirFrom, windSpeed: 10, sheet: 30 * DEG, rudder: 0, brailLee: 0, brailWind: 0, crewPos: 0, crewPosX: 0, shuntRequest: false };
+    const dt = config.dt;
+    let capsizeT = null;
+    const series = [];
+    for (let i = 0; i < Math.round(25 / dt); i++) {
+      state = integrate(state, controls, config, dt);
+      series.push(state);
+      if (capsizeT === null && state.capsized) capsizeT = state.t;
+    }
+    check('T10: capsize freezes the state (speed < 0.1 m/s within 3s, frozen thereafter)', (() => {
+      if (capsizeT === null) return false;
+      const idxAt3s = series.findIndex((s) => s.t >= capsizeT + 3);
+      if (idxAt3s < 0) return false;
+      const speedAt3s = Math.hypot(series[idxAt3s].u, series[idxAt3s].v);
+      const stateAt3s = series[idxAt3s];
+      const stateAtEnd = series[series.length - 1];
+      const frozen = stateAt3s.phi === stateAtEnd.phi && stateAt3s.heading === stateAtEnd.heading;
+      return speedAt3s < 0.1 && frozen;
+    })(), `capsizeT=${capsizeT === null ? 'never' : capsizeT.toFixed(2)}s`);
+
+    // Accelerates past phiCapsizeDeg: gaining a fixed 20deg of heel from
+    // AT phiCapsizeDeg takes less time than gaining the same 20deg from
+    // the old (round-4) threshold (phiLiftoffDeg) — a direct probe of
+    // rollRestoreMoment/crewRollMoment/rollDampingMoment, decoupled from
+    // the rest of the dynamics (mirrors the existing roll-settle probes).
+    const settleToGain = (startDeg, gainDeg, Msail = 3000, crewPos = 0.3, maxSeconds = 10) => {
+      let phi = startDeg * DEG, p = 0;
+      const targetPhi = phi + gainDeg * DEG;
+      for (let i = 0; i < Math.round(maxSeconds / dt); i++) {
+        const Mroll = Msail + rollRestoreMoment(phi, config) + crewRollMoment(phi, crewPos, config) + rollDampingMoment(p, config);
+        p += (Mroll / config.stability.I_roll) * dt;
+        phi += p * dt;
+        if (phi >= targetPhi) return (i + 1) * dt;
+      }
+      return null;
+    };
+    const tAtOldThreshold = settleToGain(config.stability.phiLiftoffDeg, 20);
+    const tAtCapsizeDeg = settleToGain(config.stability.phiCapsizeDeg, 20);
+    check('T10: past phiCapsizeDeg, heel accelerates (gains the same increment faster than at the old threshold)',
+      tAtOldThreshold !== null && tAtCapsizeDeg !== null && tAtCapsizeDeg < tAtOldThreshold,
+      `time for +20deg: at old threshold=${tAtOldThreshold?.toFixed(2)}s, at phiCapsizeDeg=${tAtCapsizeDeg?.toFixed(2)}s`);
   }
 
   return results;
