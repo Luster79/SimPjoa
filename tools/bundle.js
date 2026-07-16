@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// tools/bundle.js — inlines /core, harness/polar.js, and ui/app.js, plus
-// the two CSV data files, into a single, offline, double-clickable
-// dist/simulator_standalone.html. Deliberately NOT a build framework: no
-// bundler dependency, no module resolution beyond the fixed file list
-// below, just source-text stripping + concatenation (see B1 in
-// STEP1_SIGNOFF_and_STEP2_instructions.md).
+// tools/bundle.js — inlines /core, harness/polar.js, harness/checksum.js,
+// and ui/app.js, plus the two CSV data files, into a single, offline,
+// double-clickable dist/simulator_standalone.html. Deliberately NOT a
+// build framework: no bundler dependency, no module resolution beyond the
+// fixed file list below, just source-text stripping + concatenation (see
+// B1 in STEP1_SIGNOFF_and_STEP2_instructions.md).
 //
 // The only semantic change from the real source is confined to
 // core/config.js's data-loading path: its `import`/`export` lines are
@@ -18,6 +18,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { execSync } from 'node:child_process';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
@@ -34,7 +35,7 @@ const CORE_FILES = [
   'core/integrator.js',
   'core/simulator.js',
 ];
-const HARNESS_FILES = ['harness/polar.js'];
+const HARNESS_FILES = ['harness/polar.js', 'harness/checksum.js'];
 const UI_FILES = ['ui/app.js'];
 const ALL_FILES = [...CORE_FILES, ...HARNESS_FILES, ...UI_FILES];
 
@@ -115,6 +116,34 @@ function readFileSync(p) {
 `.trim();
 
 // ---------------------------------------------------------------------
+// 3b. Round 6 (ROUND6_flight_recorder.md, R6-2): recordings carry a
+// codeVersion so harness/replay.js can warn if the code has moved on since
+// a recording was made. Best-effort — a bundle built outside a git
+// checkout (or with git unavailable) falls back to 'unknown' rather than
+// failing the build over a diagnostic nicety.
+// ---------------------------------------------------------------------
+function currentCodeVersion() {
+  try {
+    return execSync('git rev-parse --short HEAD', { cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+  } catch {
+    return 'unknown';
+  }
+}
+
+// ui/app.js's own `const CODE_VERSION = 'dev';` line survives
+// stripModuleSyntax unchanged (it's not an import/export statement) — this
+// replaces that EXACT, uniquely-worded line with the real version, rather
+// than a generic find-and-replace of the string 'dev' anywhere in the
+// bundle, so it can't accidentally touch an unrelated string literal.
+function injectCodeVersion(bundleScript, version) {
+  const needle = "const CODE_VERSION = 'dev';";
+  if (!bundleScript.includes(needle)) {
+    throw new Error(`bundle.js: expected to find ${JSON.stringify(needle)} in ui/app.js to inject the code version — did that line change?`);
+  }
+  return bundleScript.replace(needle, `const CODE_VERSION = ${JSON.stringify(version)};`);
+}
+
+// ---------------------------------------------------------------------
 // 4. Build the bundle
 // ---------------------------------------------------------------------
 function buildBundleScript() {
@@ -164,7 +193,8 @@ function buildHtml(bundleScript) {
 }
 
 function main() {
-  const bundleScript = buildBundleScript();
+  let bundleScript = buildBundleScript();
+  bundleScript = injectCodeVersion(bundleScript, currentCodeVersion());
   const html = buildHtml(bundleScript);
   const outDir = path.join(ROOT, 'dist');
   mkdirSync(outDir, { recursive: true });

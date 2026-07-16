@@ -16,6 +16,10 @@
   .luffing-tag:empty { display: none; }
   .checkboxRow { display: flex; align-items: center; gap: 6px; margin: 6px 0; color: #9fb4c8; }
   .checkboxRow input { margin: 0; }
+  .rec-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #555; margin-right: 5px; vertical-align: middle; }
+  .rec-dot.live { background: #e33b3b; animation: pulse 1s infinite; }
+  #recStat { display: none; }
+  #recStat.show { display: inline-flex; align-items: center; }
   #stage { position: relative; overflow: hidden; background: #06121f; }
   canvas { display: block; }
   #banner { position: absolute; top: 0; left: 0; right: 0; text-align: center; padding: 10px; font-weight: 700; font-size: 16px; letter-spacing: 0.03em; display: none; }
@@ -71,8 +75,12 @@
     <span class="stat"><span data-i18n="hud.yard">Yard</span> <b id="hudYard">0</b>&deg; <b id="hudLuffing" class="luffing-tag"></b></span>
     <span class="stat"><span data-i18n="hud.shunt">Shunt</span> <b id="hudShunt">none</b></span>
     <span class="stat">TWS <b id="hudTws">6.0</b> m/s</span>
+    <span class="stat" id="recStat"><span class="rec-dot" id="recDot"></span><b id="recDuration">0:00</b> / <span id="recSize">0 KB</span></span>
     <span class="stat" style="margin-left:auto">
       <button id="btnLang">PL</button>
+      <button id="btnRec"><span data-i18n="btn.rec">REC (F9)</span></button>
+      <button id="btnMark" disabled><span data-i18n="btn.mark">Mark (F10)</span></button>
+      <button id="btnDownloadRec" disabled><span data-i18n="btn.downloadRec">Download rec.</span></button>
       <button id="btnPause"><span data-i18n="btn.pause">Pause (P)</span></button>
       <button id="btnStep"><span data-i18n="btn.step">Step (.)</span></button>
       <button id="btnForces" class="active"><span data-i18n="btn.forces">Forces (F)</span></button>
@@ -1737,6 +1745,30 @@ function computePolar(config, { twsList, twaFrom = 40, twaTo = 170, step = 10 })
 }
 
 
+// ==== harness/checksum.js ====
+// harness/checksum.js — deterministic, non-cryptographic hash over a
+// JSON-serializable value (round 6, R6-1/R6-2). Shared by the determinism
+// self-test (harness/asserts.js), the UI recorder (ui/app.js), and the
+// replay tool (harness/replay.js) so all three compute checksums the same
+// way — a mismatch between recorder-time and replay-time hashing would
+// look exactly like a real determinism bug, so this MUST be one shared
+// function, not three copies.
+//
+// FNV-1a, 32-bit: fast, good avalanche for this size of input, no need for
+// cryptographic strength — this only has to catch accidental divergence
+// between two runs of the same deterministic simulation, not resist a
+// motivated adversary.
+function hashState(value) {
+  const s = JSON.stringify(value);
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16).padStart(8, '0');
+}
+
+
 // ==== ui/app.js ====
 // ui/app.js — Step 2 browser UI. Imports the frozen Step 1 core
 // unmodified; all physics lives in /core, this file only reads state via
@@ -1767,8 +1799,16 @@ function computePolar(config, { twsList, twaFrom = 40, twaTo = 170, step = 10 })
 
 
 
-const DEG__b11 = Math.PI / 180;
+
+const DEG__b12 = Math.PI / 180;
 const MS_TO_KN = 1.9438;
+// Round 6 (ROUND6_flight_recorder.md, R6-2): "dev" here, at the dev-server
+// entry point — tools/bundle.js replaces this exact literal with the real
+// git short hash when it builds dist/simulator_standalone.html, so a
+// recording's codeVersion is meaningful (harness/replay.js warns on
+// mismatch) for a downloaded bundle without requiring a build step for
+// plain `python3 -m http.server` development.
+const CODE_VERSION = "8493c58";
 
 // ---------------------------------------------------------------------
 // i18n — EN/PL. Static labels are marked with data-i18n="key" in
@@ -1780,6 +1820,7 @@ const TRANSLATIONS = {
   en: {
     'hud.speed': 'Speed', 'unit.kn': 'kn', 'hud.leeway': 'Leeway', 'hud.amaLoad': 'Ama load', 'hud.shunt': 'Shunt',
     'hud.sheet': 'Sheet', 'hud.yard': 'Yard',
+    'btn.rec': 'REC (F9)', 'btn.mark': 'Mark (F10)', 'btn.downloadRec': 'Download rec.',
     'btn.pause': 'Pause (P)', 'btn.step': 'Step (.)', 'btn.forces': 'Forces (F)', 'btn.polar': 'Polar (O)',
     'legend.lift': 'sail lift', 'legend.drag': 'sail drag', 'legend.hullSide': 'hull side', 'legend.rudder': 'rudder',
     'capsize.title': 'CAPSIZED', 'btn.reset': 'Reset (R)',
@@ -1815,6 +1856,7 @@ const TRANSLATIONS = {
   pl: {
     'hud.speed': 'Prędkość', 'unit.kn': 'w', 'hud.leeway': 'Znos', 'hud.amaLoad': 'Obc. amy', 'hud.shunt': 'Zwrot',
     'hud.sheet': 'Szot', 'hud.yard': 'Reja',
+    'btn.rec': 'NAGR (F9)', 'btn.mark': 'Znacznik (F10)', 'btn.downloadRec': 'Pobierz nagranie',
     'btn.pause': 'Pauza (P)', 'btn.step': 'Krok (.)', 'btn.forces': 'Siły (F)', 'btn.polar': 'Polara (O)',
     'legend.lift': 'siła nośna żagla', 'legend.drag': 'opór żagla', 'legend.hullSide': 'siła boczna kadłuba', 'legend.rudder': 'ster',
     'capsize.title': 'WYWROTKA', 'btn.reset': 'Reset (R)',
@@ -1919,6 +1961,13 @@ const outs = {
   crewPosX: document.getElementById('crewPosXOut'),
 };
 const wakeTrailCheckbox = document.getElementById('wakeTrail');
+const btnRec = document.getElementById('btnRec');
+const btnMark = document.getElementById('btnMark');
+const btnDownloadRec = document.getElementById('btnDownloadRec');
+const recStat = document.getElementById('recStat');
+const recDot = document.getElementById('recDot');
+const recDuration = document.getElementById('recDuration');
+const recSize = document.getElementById('recSize');
 
 // ---------------------------------------------------------------------
 // Control state — the single source of truth the sim reads each frame.
@@ -1930,9 +1979,9 @@ const wakeTrailCheckbox = document.getElementById('wakeTrail');
 // half a second, which is correct per FIX_REQUEST_step1_round2.md R2-1's
 // tuning but a rough first impression for a freshly loaded page.
 const controls = createDefaultControls();
-controls.windDirFrom = 180 * DEG__b11;
+controls.windDirFrom = 180 * DEG__b12;
 controls.windSpeed = 6;
-controls.sheet = 50 * DEG__b11;
+controls.sheet = 50 * DEG__b12;
 controls.crewPos = 0.3;
 
 let autoRudder = true; // keyboard rudder auto-centers when A/D released
@@ -1940,9 +1989,9 @@ const keys = new Set();
 let shuntHeld = false;
 
 function syncSlidersFromControls() {
-  sliders.windDir.value = String(Math.round(controls.windDirFrom / DEG__b11));
+  sliders.windDir.value = String(Math.round(controls.windDirFrom / DEG__b12));
   sliders.windSpeed.value = String(controls.windSpeed);
-  sliders.sheet.value = String(Math.round(controls.sheet / DEG__b11));
+  sliders.sheet.value = String(Math.round(controls.sheet / DEG__b12));
   sliders.brailLee.value = String(Math.round(controls.brailLee * 100));
   sliders.brailWind.value = String(Math.round(controls.brailWind * 100));
   sliders.rudder.value = String(controls.rudder);
@@ -1952,9 +2001,9 @@ function syncSlidersFromControls() {
 }
 
 function refreshOutputs() {
-  outs.windDir.textContent = `${Math.round(controls.windDirFrom / DEG__b11)}°`;
+  outs.windDir.textContent = `${Math.round(controls.windDirFrom / DEG__b12)}°`;
   outs.windSpeed.textContent = controls.windSpeed.toFixed(1);
-  outs.sheet.textContent = `${Math.round(controls.sheet / DEG__b11)}°`;
+  outs.sheet.textContent = `${Math.round(controls.sheet / DEG__b12)}°`;
   outs.brailLee.textContent = `${Math.round(controls.brailLee * 100)}%`;
   outs.brailWind.textContent = `${Math.round(controls.brailWind * 100)}%`;
   outs.rudder.textContent = controls.rudder.toFixed(2);
@@ -1962,9 +2011,9 @@ function refreshOutputs() {
   outs.crewPosX.textContent = controls.crewPosX.toFixed(2);
 }
 
-sliders.windDir.addEventListener('input', () => { controls.windDirFrom = Number(sliders.windDir.value) * DEG__b11; refreshOutputs(); });
+sliders.windDir.addEventListener('input', () => { controls.windDirFrom = Number(sliders.windDir.value) * DEG__b12; refreshOutputs(); });
 sliders.windSpeed.addEventListener('input', () => { controls.windSpeed = Number(sliders.windSpeed.value); refreshOutputs(); });
-sliders.sheet.addEventListener('input', () => { controls.sheet = Number(sliders.sheet.value) * DEG__b11; refreshOutputs(); });
+sliders.sheet.addEventListener('input', () => { controls.sheet = Number(sliders.sheet.value) * DEG__b12; refreshOutputs(); });
 sliders.brailLee.addEventListener('input', () => { controls.brailLee = Number(sliders.brailLee.value) / 100; refreshOutputs(); });
 sliders.brailWind.addEventListener('input', () => { controls.brailWind = Number(sliders.brailWind.value) / 100; refreshOutputs(); });
 sliders.rudder.addEventListener('input', () => { autoRudder = false; controls.rudder = Number(sliders.rudder.value); refreshOutputs(); });
@@ -1976,10 +2025,11 @@ syncSlidersFromControls();
 // ---------------------------------------------------------------------
 // Keyboard
 // ---------------------------------------------------------------------
-const clamp__b11 = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const clamp__b12 = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 const HANDLED_KEYS = new Set(['Space', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',
-  'KeyQ', 'KeyZ', 'KeyW', 'KeyX', 'KeyJ', 'KeyL', 'KeyI', 'KeyK', 'KeyA', 'KeyD', 'KeyP', 'Period', 'KeyF', 'KeyO', 'KeyR']);
+  'KeyQ', 'KeyZ', 'KeyW', 'KeyX', 'KeyJ', 'KeyL', 'KeyI', 'KeyK', 'KeyA', 'KeyD', 'KeyP', 'Period', 'KeyF', 'KeyO', 'KeyR',
+  'F9', 'F10']);
 
 window.addEventListener('keydown', (e) => {
   if (HANDLED_KEYS.has(e.code)) e.preventDefault();
@@ -1991,6 +2041,8 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyF') toggleForces();
   if (e.code === 'KeyO') togglePolar();
   if (e.code === 'KeyR') doReset();
+  if (e.code === 'F9') recToggle();
+  if (e.code === 'F10') recMark(sim.getState().t);
   if (['KeyA', 'KeyD'].includes(e.code)) autoRudder = false;
 });
 window.addEventListener('keyup', (e) => {
@@ -2000,25 +2052,25 @@ window.addEventListener('keyup', (e) => {
 });
 
 function applyContinuousKeys(dt) {
-  const sheetRate = 60 * DEG__b11; // per second
+  const sheetRate = 60 * DEG__b12; // per second
   const brailRate = 0.8; // fraction/sec
   const rudderRate = 2.2; // units/sec (-1..1 range)
   const crewRate = 0.5; // fraction/sec
 
-  if (keys.has('ArrowRight')) controls.sheet = clamp__b11(controls.sheet + sheetRate * dt, 0, 90 * DEG__b11);
-  if (keys.has('ArrowLeft')) controls.sheet = clamp__b11(controls.sheet - sheetRate * dt, 0, 90 * DEG__b11);
-  if (keys.has('KeyQ')) controls.brailLee = clamp__b11(controls.brailLee + brailRate * dt, 0, 1);
-  if (keys.has('KeyZ')) controls.brailLee = clamp__b11(controls.brailLee - brailRate * dt, 0, 1);
-  if (keys.has('KeyW')) controls.brailWind = clamp__b11(controls.brailWind + brailRate * dt, 0, 1);
-  if (keys.has('KeyX')) controls.brailWind = clamp__b11(controls.brailWind - brailRate * dt, 0, 1);
-  if (keys.has('KeyJ')) controls.crewPos = clamp__b11(controls.crewPos - crewRate * dt, dims.crew.posMin, dims.crew.posMax);
-  if (keys.has('KeyL')) controls.crewPos = clamp__b11(controls.crewPos + crewRate * dt, dims.crew.posMin, dims.crew.posMax);
-  if (keys.has('KeyI')) controls.crewPosX = clamp__b11(controls.crewPosX + crewRate * dt, dims.crew.posXMin, dims.crew.posXMax);
-  if (keys.has('KeyK')) controls.crewPosX = clamp__b11(controls.crewPosX - crewRate * dt, dims.crew.posXMin, dims.crew.posXMax);
+  if (keys.has('ArrowRight')) controls.sheet = clamp__b12(controls.sheet + sheetRate * dt, 0, 90 * DEG__b12);
+  if (keys.has('ArrowLeft')) controls.sheet = clamp__b12(controls.sheet - sheetRate * dt, 0, 90 * DEG__b12);
+  if (keys.has('KeyQ')) controls.brailLee = clamp__b12(controls.brailLee + brailRate * dt, 0, 1);
+  if (keys.has('KeyZ')) controls.brailLee = clamp__b12(controls.brailLee - brailRate * dt, 0, 1);
+  if (keys.has('KeyW')) controls.brailWind = clamp__b12(controls.brailWind + brailRate * dt, 0, 1);
+  if (keys.has('KeyX')) controls.brailWind = clamp__b12(controls.brailWind - brailRate * dt, 0, 1);
+  if (keys.has('KeyJ')) controls.crewPos = clamp__b12(controls.crewPos - crewRate * dt, dims.crew.posMin, dims.crew.posMax);
+  if (keys.has('KeyL')) controls.crewPos = clamp__b12(controls.crewPos + crewRate * dt, dims.crew.posMin, dims.crew.posMax);
+  if (keys.has('KeyI')) controls.crewPosX = clamp__b12(controls.crewPosX + crewRate * dt, dims.crew.posXMin, dims.crew.posXMax);
+  if (keys.has('KeyK')) controls.crewPosX = clamp__b12(controls.crewPosX - crewRate * dt, dims.crew.posXMin, dims.crew.posXMax);
 
   if (autoRudder) {
-    if (keys.has('KeyA')) controls.rudder = clamp__b11(controls.rudder - rudderRate * dt, -1, 1);
-    else if (keys.has('KeyD')) controls.rudder = clamp__b11(controls.rudder + rudderRate * dt, -1, 1);
+    if (keys.has('KeyA')) controls.rudder = clamp__b12(controls.rudder - rudderRate * dt, -1, 1);
+    else if (keys.has('KeyD')) controls.rudder = clamp__b12(controls.rudder + rudderRate * dt, -1, 1);
     else controls.rudder = Math.abs(controls.rudder) < rudderRate * dt ? 0 : controls.rudder - Math.sign(controls.rudder) * rudderRate * dt;
   }
   syncSlidersFromControls();
@@ -2034,7 +2086,7 @@ let polarMode = false;
 
 function togglePause() { paused = !paused; document.getElementById('btnPause').classList.toggle('active', paused); }
 function toggleForces() { showForces = !showForces; document.getElementById('btnForces').classList.toggle('active', showForces); }
-function doReset() { sim.reset(); capsizeOverlay.classList.remove('show'); wakeReset(); }
+function doReset() { recEndForReset(); sim.reset(); capsizeOverlay.classList.remove('show'); wakeReset(); }
 
 document.getElementById('btnPause').addEventListener('click', togglePause);
 document.getElementById('btnStep').addEventListener('click', () => { stepOnce = true; });
@@ -2068,7 +2120,7 @@ resize();
 let scale = 24; // px per meter, adjustable via wheel zoom
 stage.addEventListener('wheel', (e) => {
   e.preventDefault();
-  scale = clamp__b11(scale * (e.deltaY < 0 ? 1.08 : 0.93), 6, 80);
+  scale = clamp__b12(scale * (e.deltaY < 0 ? 1.08 : 0.93), 6, 80);
 }, { passive: false });
 
 // ---------------------------------------------------------------------
@@ -2155,7 +2207,7 @@ function sailPath(yardLen, deltaAbs, brailLee, brailWind, end, alphaSign) {
   const clewX = tackX - chordLen * Math.cos(deltaAbs);
   const clewY = -end * chordLen * Math.sin(deltaAbs); // leeward = -end side
   // Camber bulge: leeward brail flattens it, windward brail over-curves it.
-  const camber = clamp__b11(0.28 * (1 - brailLee) + 0.22 * brailWind, 0.02, 0.5);
+  const camber = clamp__b12(0.28 * (1 - brailLee) + 0.22 * brailWind, 0.02, 0.5);
   const midX = (tackX + clewX) / 2;
   const midY = (0 + clewY) / 2;
   // Perpendicular to the chord, pointing away from the ama by default
@@ -2216,7 +2268,7 @@ function drawBoat(state, forces, cam) {
   // pressed under (phi<0).
   const amaLoad = forces?.amaLoadDisplay ?? 0;
   const flying = state.phi >= 0;
-  const loadFrac = clamp__b11(amaLoad, 0, 1.5) / 1.5;
+  const loadFrac = clamp__b12(amaLoad, 0, 1.5) / 1.5;
   ctx.save();
   if (flying) {
     ctx.globalAlpha = capsized ? 0.5 : 1 - 0.6 * loadFrac; // thins out as it lifts clear
@@ -2284,8 +2336,8 @@ function drawBoat(state, forces, cam) {
   // factor in the active-bow-tracked frame) — since it's being drawn
   // INSIDE this end-rotating physical block, it needs the compensating
   // *end so it lands at the correct active-bow-relative screen position.
-  const crewY = clamp__b11(controls.crewPos, dims.crew.posMin, dims.crew.posMax) * spacing;
-  const crewX = clamp__b11(controls.crewPosX, dims.crew.posXMin, dims.crew.posXMax) * halfL * 0.6 * state.end;
+  const crewY = clamp__b12(controls.crewPos, dims.crew.posMin, dims.crew.posMax) * spacing;
+  const crewX = clamp__b12(controls.crewPosX, dims.crew.posXMin, dims.crew.posXMax) * halfL * 0.6 * state.end;
   ctx.fillStyle = '#ffe08a';
   ctx.beginPath(); ctx.arc(crewX, crewY, 0.28, 0, Math.PI * 2); ctx.fill();
 
@@ -2306,7 +2358,7 @@ function drawBoat(state, forces, cam) {
   const fade = state.shunt.phase === 'ease' ? 1 - state.shunt.progress
     : (state.shunt.phase === 'transfer' || state.shunt.phase === 'swap') ? 0
     : state.shunt.phase === 'sheet' ? state.shunt.progress : 1;
-  const yardLen = clamp__b11(Math.sqrt(dims.sail.area) * 1.8, 3, 8);
+  const yardLen = clamp__b12(Math.sqrt(dims.sail.area) * 1.8, 3, 8);
 
   if (state.shunt.phase === 'transfer') {
     // Cosmetic only (core forces stay faded to 0 throughout — see shunt.js):
@@ -2342,7 +2394,7 @@ function drawBoat(state, forces, cam) {
     // pressed sail there is under real, substantial load (alphaSailor is
     // large, see aero.js), not fluttering, and should render as a filled,
     // alpha-sign-flipped belly (P4.3), not an empty dashed outline.
-    const flogging = (forces?.alphaSailor ?? Math.PI / 2) < 10 * DEG__b11;
+    const flogging = (forces?.alphaSailor ?? Math.PI / 2) < 10 * DEG__b12;
     if (fade > 0.02) {
       ctx.save();
       ctx.globalAlpha = 0.35 + 0.65 * fade;
@@ -2472,13 +2524,13 @@ const hud = {
   luffing: document.getElementById('hudLuffing'),
 };
 
-function normalizeAngle__b11(a) { return Math.atan2(Math.sin(a), Math.cos(a)); }
+function normalizeAngle__b12(a) { return Math.atan2(Math.sin(a), Math.cos(a)); }
 
 function updateHud(state, forces) {
   const speedMs = Math.hypot(state.u, state.v);
   const speedKn = speedMs * MS_TO_KN;
-  const twaDeg = normalizeAngle__b11(controls.windDirFrom - state.heading) / DEG__b11;
-  const awaDeg = forces.aw ? normalizeAngle__b11(Math.atan2(-forces.aw.vy, -forces.aw.vx)) / DEG__b11 : 0;
+  const twaDeg = normalizeAngle__b12(controls.windDirFrom - state.heading) / DEG__b12;
+  const awaDeg = forces.aw ? normalizeAngle__b12(Math.atan2(-forces.aw.vy, -forces.aw.vx)) / DEG__b12 : 0;
   // VMG upwind: boat's world-frame velocity projected onto the "toward the
   // wind source" unit vector. windDirFrom is a "blowing from" bearing, so
   // (cos,sin)(windDirFrom) already points from here toward the source (see
@@ -2487,27 +2539,27 @@ function updateHud(state, forces) {
   const boatWx = state.u * Math.cos(state.heading) - state.v * Math.sin(state.heading);
   const boatWy = state.u * Math.sin(state.heading) + state.v * Math.cos(state.heading);
   const vmg = boatWx * Math.cos(controls.windDirFrom) + boatWy * Math.sin(controls.windDirFrom);
-  const leewayDeg = Math.atan2(state.v, Math.abs(state.u) + 0.05) / DEG__b11;
+  const leewayDeg = Math.atan2(state.v, Math.abs(state.u) + 0.05) / DEG__b12;
 
   hud.speed.textContent = speedKn.toFixed(1);
   hud.twa.textContent = twaDeg.toFixed(0);
   hud.awa.textContent = awaDeg.toFixed(0);
-  hud.alpha.textContent = (forces.alphaSailor / DEG__b11).toFixed(0);
+  hud.alpha.textContent = (forces.alphaSailor / DEG__b12).toFixed(0);
   hud.vmg.textContent = (vmg * MS_TO_KN).toFixed(1);
   hud.leeway.textContent = leewayDeg.toFixed(0);
   hud.amaLoad.textContent = (forces.amaLoadDisplay * 100).toFixed(0);
-  hud.heel.textContent = (state.phi / DEG__b11).toFixed(1);
+  hud.heel.textContent = (state.phi / DEG__b12).toFixed(1);
   hud.shunt.textContent = t(`shuntPhase.${state.shunt.phase}`);
   hud.tws.textContent = controls.windSpeed.toFixed(1);
   // P4.1: sheet limit (commanded) vs actual yard angle (state.delta, a real
   // piece of state — R5-1) shown side by side, plus a LUFFING tag when the
   // wind, not the sheet, is holding delta below the (effective) limit.
-  hud.sheet.textContent = `${Math.round(controls.sheet / DEG__b11)}`;
-  hud.yard.textContent = `${Math.round((state.delta ?? 0) / DEG__b11)}`;
+  hud.sheet.textContent = `${Math.round(controls.sheet / DEG__b12)}`;
+  hud.yard.textContent = `${Math.round((state.delta ?? 0) / DEG__b12)}`;
   hud.luffing.textContent = forces.luffing ? t('hud.luffing') : '';
 
-  const loadFrac = clamp__b11(forces.amaLoadDisplay, 0, 3) / 3;
-  amaBar.style.width = `${clamp__b11(forces.amaLoadDisplay, 0, 1) * 100}%`;
+  const loadFrac = clamp__b12(forces.amaLoadDisplay, 0, 3) / 3;
+  amaBar.style.width = `${clamp__b12(forces.amaLoadDisplay, 0, 1) * 100}%`;
   amaBarWrap.classList.toggle('warn', forces.amaLoadDisplay > 0.75 && forces.amaLoadDisplay <= 1.0);
   amaBarWrap.classList.toggle('danger', forces.amaLoadDisplay > 1.0);
   amaBar.style.width = `${loadFrac * 100}%`;
@@ -2517,9 +2569,9 @@ function updateHud(state, forces) {
   // matching the roll model's own asymmetric saturation angles), color
   // synced to the same warn/danger states as the ama-load bar
   // (FIX_REQUEST_round4_roll_dof.md 2.3).
-  const phiDeg = state.phi / DEG__b11;
+  const phiDeg = state.phi / DEG__b12;
   const heelRangeDeg = phiDeg >= 0 ? dims.stability.phiLiftoffDeg : dims.stability.phiSubmergeDeg;
-  const heelFrac = clamp__b11(phiDeg / (heelRangeDeg * 1.5), -1, 1); // *1.5 so the needle doesn't pin at the edge right at amaLoad==1
+  const heelFrac = clamp__b12(phiDeg / (heelRangeDeg * 1.5), -1, 1); // *1.5 so the needle doesn't pin at the edge right at amaLoad==1
   heelNeedle.style.left = `${50 + heelFrac * 50}%`;
   heelBarWrap.classList.toggle('warn', forces.amaLoadDisplay > 0.75 && forces.amaLoadDisplay <= 1.0);
   heelBarWrap.classList.toggle('danger', forces.amaLoadDisplay > 1.0);
@@ -2609,6 +2661,176 @@ function drawWakeTrail(cam) {
 }
 
 // ---------------------------------------------------------------------
+// Session recorder (round 6, ROUND6_flight_recorder.md) — records every
+// step()'s (dt, controls), plus the state it started from, so a session
+// can be re-simulated EXACTLY offline via harness/replay.js. This works
+// ONLY because the core is a verified-deterministic function of
+// (initialState, configSnapshot, frame sequence) — see harness/asserts.js's
+// R6-1 self-test; the recorder itself is pure UI-layer bookkeeping, it
+// never feeds back into physics.
+//
+// recLastShuntRequest mirrors core/simulator.js's OWN internal
+// edge-detector (private to that module's closure): controls.shuntRequest
+// as recorded is the RAW held-key boolean, not yet edge-detected (the
+// facade turns a held key into a single pulse internally) — so a
+// checkpoint/trim boundary has to carry the edge-detector's own state
+// forward too, or a replay starting mid-hold could fire a spurious extra
+// shunt request that never happened live.
+// ---------------------------------------------------------------------
+const REC_CHECKPOINT_INTERVAL = 60; // frames -- matches R6-2's "hash every N frames, N=60"
+const REC_MAX_FRAMES = 15 * 60 * 60; // ~15 min of frames at a nominal 60fps (R6-2 ring-buffer cap)
+
+let recActive = false;
+let recEverStarted = false;
+let recFrames = [];
+let recChecksums = [];
+let recCheckpoints = []; // { frameIdx (into recFrames, taken AFTER this frame), state, lastShuntRequest }
+let recTrimmed = false;
+let recInitialState = null;
+let recInitialLastShuntRequest = false;
+let recAnnotations = [];
+let recSimSeconds = 0; // sum of recorded dt -- HUD duration readout
+let recLastShuntRequest = false;
+
+function recFormatDuration(seconds) {
+  const m = Math.floor(seconds / 60), s = Math.floor(seconds % 60);
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+// Cheap estimate (no JSON.stringify every frame just to show a size): ~80
+// bytes/frame for {dt, controls} as JSON is a reasonable average for this
+// control shape, plus a fixed overhead for checkpoints/metadata.
+function recEstimateSizeBytes() {
+  return recFrames.length * 80 + recCheckpoints.length * 300 + 500;
+}
+
+function recUpdateHudReadout() {
+  if (!recEverStarted) return;
+  recDuration.textContent = recFormatDuration(recSimSeconds);
+  recSize.textContent = `${Math.ceil(recEstimateSizeBytes() / 1024)} KB`;
+}
+
+function recStart() {
+  recActive = true;
+  recEverStarted = true;
+  recFrames = [];
+  recChecksums = [];
+  recCheckpoints = [];
+  recTrimmed = false;
+  recAnnotations = [];
+  recSimSeconds = 0;
+  const state = sim.getState();
+  recInitialState = { ...state, shunt: { ...state.shunt } };
+  recInitialLastShuntRequest = recLastShuntRequest;
+  btnRec.classList.add('active');
+  recDot.classList.add('live');
+  recStat.classList.add('show');
+  btnMark.disabled = false;
+  btnDownloadRec.disabled = true;
+  recUpdateHudReadout();
+}
+
+function recStop() {
+  recActive = false;
+  btnRec.classList.remove('active');
+  recDot.classList.remove('live');
+  btnMark.disabled = true;
+  btnDownloadRec.disabled = recFrames.length === 0;
+}
+
+function recToggle() { if (recActive) recStop(); else recStart(); }
+
+function recMark(t) {
+  if (!recActive) return;
+  recAnnotations.push({ t, note: `marker @ ${t.toFixed(1)}s` });
+}
+
+// recOnFrame(dtFrame, frameControls, stateAfter) — called once per actual
+// sim.step() (never while paused: "pause frames are simply absent — no
+// steps happen"), with the EXACT dt that step used and the controls
+// object as it stood for that step (snapshotted here, since `controls` is
+// the same mutated object every frame elsewhere in this file — this copy
+// is the one necessary per-frame allocation on this path, no others).
+function recOnFrame(dtFrame, frameControls, stateAfter) {
+  recLastShuntRequest = Boolean(frameControls.shuntRequest);
+
+  if (!recActive) return;
+
+  recFrames.push({ dt: dtFrame, controls: { ...frameControls } });
+  recSimSeconds += dtFrame;
+
+  if (recFrames.length % REC_CHECKPOINT_INTERVAL === 0) {
+    recChecksums.push(hashState(stateAfter));
+    recCheckpoints.push({
+      frameIdx: recFrames.length - 1,
+      state: { ...stateAfter, shunt: { ...stateAfter.shunt } },
+      lastShuntRequest: recLastShuntRequest,
+    });
+  }
+
+  if (recFrames.length > REC_MAX_FRAMES) {
+    // Trim to the oldest checkpoint boundary (checkpoints are dense --
+    // every 60 frames -- so this costs at most ~1s of history beyond the
+    // nominal cap in exchange for a simple, correct trim: the checkpoint
+    // IS a valid, self-contained new initialState).
+    const cp = recCheckpoints.shift();
+    recFrames = recFrames.slice(cp.frameIdx + 1);
+    recChecksums = recChecksums.slice(1);
+    for (const c of recCheckpoints) c.frameIdx -= (cp.frameIdx + 1);
+    recInitialState = cp.state;
+    recInitialLastShuntRequest = cp.lastShuntRequest;
+    recAnnotations = recAnnotations.filter((a) => a.t >= recInitialState.t);
+    recTrimmed = true;
+  }
+}
+
+function recBuildJSON() {
+  return {
+    format: 'simpjoa-recording',
+    formatVersion: 1,
+    codeVersion: CODE_VERSION,
+    configVersion: dims.configVersion,
+    configSnapshot: dims,
+    initialState: recInitialState,
+    initialLastShuntRequest: recInitialLastShuntRequest,
+    frames: recFrames,
+    stateChecksums: recChecksums,
+    annotations: recAnnotations,
+    trimmed: recTrimmed,
+  };
+}
+
+function recDownload() {
+  if (recFrames.length === 0) return;
+  const json = JSON.stringify(recBuildJSON());
+  const blob = new Blob([json], { type: 'application/json' });
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `simpjoa-recording-${stamp}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+// Capsize+reset ENDS the recording automatically (reset changes
+// initialState, breaking the "one continuous initialState + frame
+// sequence" invariant this format depends on) and offers the download —
+// this is exactly the moment a diagnostic recording is most likely to be
+// wanted, so the download triggers automatically rather than waiting for
+// a second click.
+function recEndForReset() {
+  if (!recActive) return;
+  recStop();
+  recDownload();
+}
+
+btnRec.addEventListener('click', recToggle);
+btnMark.addEventListener('click', () => recMark(sim.getState().t));
+btnDownloadRec.addEventListener('click', recDownload);
+
+// ---------------------------------------------------------------------
 // Main loop
 // ---------------------------------------------------------------------
 let lastT = performance.now();
@@ -2617,7 +2839,7 @@ let prevShuntHeld = false;
 let shuntFlashUntil = 0;
 
 function frame(now) {
-  const dtFrame = Math.min(0.1, Math.max(0, (now - lastT) / 1000)); // clamp__b11 100ms, tab-switch protection
+  const dtFrame = Math.min(0.1, Math.max(0, (now - lastT) / 1000)); // clamp__b12 100ms, tab-switch protection
   lastT = now;
 
   if (!polarMode) {
@@ -2632,8 +2854,9 @@ function frame(now) {
     // (e.g. for inspecting the shunt sequence) rather than however long the
     // button click happened to take.
     const stepped = !paused || stepOnce;
+    const usedDt = stepOnce ? 1 / 60 : dtFrame;
     if (stepped) {
-      sim.step(controls, stepOnce ? 1 / 60 : dtFrame);
+      sim.step(controls, usedDt);
       stepOnce = false;
     }
     const state = sim.getState();
@@ -2644,6 +2867,16 @@ function frame(now) {
     // same condition the sim itself advances under) and capsize stops it;
     // shunts are NOT excluded — the zigzag through them is the point.
     if (stepped && !state.capsized) wakeSample(state);
+
+    // Session recorder (round 6): called unconditionally whenever a step
+    // actually happened (pause -> no call -> "pause frames are simply
+    // absent"), NOT gated on capsized (recording continues through a
+    // capsize; only reset ends it, see recEndForReset) — and NOT gated on
+    // recActive internally either, since recOnFrame must keep tracking the
+    // shunt-request edge state continuously so recStart() can seed a
+    // correct initialLastShuntRequest whenever recording actually begins.
+    if (stepped) recOnFrame(usedDt, controls, state);
+    recUpdateHudReadout();
 
     // A rising-edge shuntRequest that didn't move the phase off 'none' AND
     // was above the speed lockout was rejected by shunt.js for that reason
@@ -2750,9 +2983,9 @@ function drawPolarView(rows) {
     ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI, Math.PI * 2); ctx.stroke();
   }
   for (let twa = 0; twa <= 180; twa += 30) {
-    const a = Math.PI + twa * DEG__b11; // 0deg TWA = straight up in this half-polar
-    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.sin(twa * DEG__b11) * R, cy - Math.cos(twa * DEG__b11) * R); ctx.stroke();
-    ctx.fillText(`${twa}°`, cx + Math.sin(twa * DEG__b11) * (R + 14 * dpr) - 10, cy - Math.cos(twa * DEG__b11) * (R + 14 * dpr));
+    const a = Math.PI + twa * DEG__b12; // 0deg TWA = straight up in this half-polar
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.sin(twa * DEG__b12) * R, cy - Math.cos(twa * DEG__b12) * R); ctx.stroke();
+    ctx.fillText(`${twa}°`, cx + Math.sin(twa * DEG__b12) * (R + 14 * dpr) - 10, cy - Math.cos(twa * DEG__b12) * (R + 14 * dpr));
   }
   ctx.restore();
 
@@ -2770,7 +3003,7 @@ function drawPolarView(rows) {
     ctx.beginPath();
     pts.forEach((p, i) => {
       const rr = (p.bestSpeed / maxSpeed) * R;
-      const a = p.twa * DEG__b11;
+      const a = p.twa * DEG__b12;
       const x = cx + Math.sin(a) * rr, y = cy - Math.cos(a) * rr;
       if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     });
@@ -2792,11 +3025,11 @@ function drawPolarView(rows) {
 
   // Live point overlay
   const state = sim.getState();
-  const twaNow = normalizeAngle__b11(controls.windDirFrom - state.heading) / DEG__b11;
+  const twaNow = normalizeAngle__b12(controls.windDirFrom - state.heading) / DEG__b12;
   const speedNow = Math.hypot(state.u, state.v);
   if (twaNow >= 0 && twaNow <= 180) {
     const rr = (speedNow / maxSpeed) * R;
-    const a = twaNow * DEG__b11;
+    const a = twaNow * DEG__b12;
     const x = cx + Math.sin(a) * rr, y = cy - Math.cos(a) * rr;
     ctx.beginPath(); ctx.arc(x, y, 5 * dpr, 0, Math.PI * 2);
     ctx.fillStyle = '#ff6b6b'; ctx.fill();

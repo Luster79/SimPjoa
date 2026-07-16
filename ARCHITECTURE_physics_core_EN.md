@@ -2,6 +2,15 @@
 
 *Last reviewed: 2026-07-16*
 
+**Round 6 note:** `ROUND6_flight_recorder.md` added a session recorder
+(UI) and offline replay tool (`harness/replay.js`), both resting entirely
+on a now-TESTED determinism guarantee (`harness/asserts.js`'s R6-1
+self-test) rather than an assumption — see "Determinism contract" below.
+No core physics changed this round (the self-test passed on the first
+run — the core was already deterministic); the only new core-adjacent
+file is `harness/checksum.js`, a pure hashing utility shared by the
+self-test, the recorder, and the replay tool.
+
 **Round 5 note:** `ROUND5_CONSOLIDATED_work_order.md` replaced direct
 `controls.yardAngle` control with a one-sided SHEET CONSTRAINT — the yard's
 actual angle `state.delta` is now real state that relaxes toward its
@@ -55,6 +64,8 @@ changes.
       scenarios.js   — test scenarios (squall, shunt, aback, stop)
       asserts.js     — acceptance criteria as tests
       export.js      — dump time series to CSV
+      checksum.js    — hashState(): shared per-step hash (round 6, used by the determinism self-test, the UI recorder, and replay.js)
+      replay.js      — headless CLI: re-simulates a recorded session exactly (round 6)
     run_tests.js     — runs everything; nonzero exit code on failure
 
 ## Conventions (MANDATORY, put in a comment at the top of state.js)
@@ -427,6 +438,43 @@ reason; see its header comment for the capsize this exposed and fixed.
     // leaving the state frozen at whatever u/v happened to be at the exact
     // instant of capsize.
 
+## Determinism contract (round 6 — ROUND6_flight_recorder.md)
+
+Determinism is a TESTED contract, not an assumption: given the same
+`initialState`, `config`, and ordered sequence of `(dtFrame, controls)`
+steps, `core/integrator.js`'s `integrate()` produces bit-identical output
+every time — no wall-clock reads, no randomness, no iteration-order
+dependence, fixed-size substeps derived only from `dtFrame` and
+`config.dt`. `harness/asserts.js`'s R6-1 self-test runs a scenario twice
+from the same initial state and hashes every step (`harness/checksum.js`)
+to catch a violation immediately if one is ever introduced; this is what
+the session recorder (`ui/app.js`) and offline replay tool
+(`harness/replay.js`) both depend on to make a recorded session
+re-simulate EXACTLY. Any future core change that breaks this self-test is
+a regression, full stop — not a "well, close enough."
+
+**Scope of the guarantee — same-engine, not cross-engine:** the contract
+above is proven WITHIN one JS engine build (R6-1 runs entirely inside one
+Node process). A recording made in a BROWSER and replayed via
+`node harness/replay.js` crosses an engine boundary — the browser and
+Node bundle different V8 versions even on the same machine, and
+`Math.sin`/`cos`/`atan2`/`sqrt` are "implementation-approximated" per the
+ECMAScript spec, not required to be bit-identical across engine builds.
+Verified directly (round-6 investigation): a long enough browser recording
+CAN show a single-ULP divergence in one field (e.g. `p`) after a few
+thousand accumulated RK4 substeps, purely from this cross-engine trig
+difference — confirmed by (a) replaying the exact same recording's
+stepping logic against `core/simulator.js`'s real facade WITHIN Node
+(bit-exact match, so `harness/replay.js`'s own logic is not the cause),
+and (b) the divergence appearing only after hundreds of frames, never at
+the very start (the signature of accumulated ULP-scale drift, not a
+struck logic bug). This does not weaken the guarantee that matters for
+catching regressions — R6-1 stays bit-exact forever, in-engine — it just
+means `harness/replay.js --verify` treats a late, single-field, tiny
+divergence as informational rather than alarming; see its own output for
+the detail. The replayed CSV remains fully trustworthy for diagnosis
+either way.
+
 ## Test harness
 
 ### polar.js
@@ -499,6 +547,35 @@ reason; see its header comment for the capsize this exposed and fixed.
         thereafter); past phiCapsizeDeg, heel gains a fixed increment
         faster than at the old (round-4) threshold — genuinely
         accelerating, not just waiting out the timer
+    - round 6: determinism self-test (see "Determinism contract" above) —
+      run scenarioSquall() twice from the same initial state, hash every
+      step, assert zero divergence
+
+### checksum.js (round 6)
+    hashState(value) -> string
+      // FNV-1a 32-bit hash of JSON.stringify(value). Non-cryptographic —
+      // only has to catch accidental divergence between two runs of a
+      // deterministic simulation, not resist an adversary. The ONE shared
+      // implementation the determinism self-test, the UI recorder, and
+      // replay.js all use — three independent copies could each agree
+      // with themselves while silently disagreeing with each other,
+      // which would look exactly like a real replay bug.
+
+### replay.js (round 6) — CLI, no dependencies
+    node harness/replay.js <recording.json> [--csv out.csv] [--verify]
+    // Loads a UI-recorded session (see ui/app.js's recorder), warns
+    // loudly if the recording's codeVersion/configVersion don't match
+    // the current tree, then re-simulates the exact frame sequence via
+    // core/integrator.js's integrate() directly — NOT through
+    // core/simulator.js's facade, since that facade's edge-detection for
+    // controls.shuntRequest (a held key -> a single pulse) is private to
+    // its own closure; replay.js mirrors that same edge-detection itself
+    // (stepFrame()) rather than requiring a core change to expose it,
+    // keeping this round's core footprint at zero beyond the determinism
+    // self-test. --verify recomputes checksums every 60 frames (same
+    // cadence the recorder used) and reports PASS or the first divergent
+    // frame index. --csv dumps the full replayed state + force breakdown
+    // per frame, with any annotations echoed into their own column.
 
 ### export.js
     toCSV(run) — columns: t, TWA, AWA, u, v, r, phi, p, delta, deltaMax,

@@ -8,6 +8,7 @@ import { computeAmaLoad, updateAback, rollRestoreMoment, crewRollMoment, rollDam
 import { amaDrag } from '../core/hydro.js';
 import { computePolar, headingHoldRudder } from './polar.js';
 import { scenarioSquall, scenarioShunt, scenarioAback, scenarioStop, scenarioBackwindSlam } from './scenarios.js';
+import { hashState } from './checksum.js';
 
 const DEG = Math.PI / 180;
 const HEADING0 = Math.PI / 2;
@@ -728,6 +729,36 @@ export function runAsserts(config) {
     check('T10: past phiCapsizeDeg, heel accelerates (gains the same increment faster than at the old threshold)',
       tAtOldThreshold !== null && tAtCapsizeDeg !== null && tAtCapsizeDeg < tAtOldThreshold,
       `time for +20deg: at old threshold=${tAtOldThreshold?.toFixed(2)}s, at phiCapsizeDeg=${tAtCapsizeDeg?.toFixed(2)}s`);
+  }
+
+  // --- R6-1 determinism self-test (ROUND6_flight_recorder.md): the
+  // recorder/replay tool's entire premise is that the core has NO hidden
+  // nondeterminism (Math.random, Date.now/performance.now, iteration-order
+  // dependence, accumulating dtFrame instead of fixed substeps) — verify
+  // this directly rather than assume it. Runs the same scenario TWICE from
+  // the same initial state (scenarioSquall builds its own fresh initial
+  // state internally each call, and reads only `config`, which no scenario
+  // mutates) and hashes the FULL annotated per-step object (state plus
+  // alpha/CL/CD/aw — see scenarios.js's annotate()), not just a few
+  // fields, so this catches nondeterminism anywhere in the force/derive
+  // chain, not only in the raw ODE state. Uses the SAME hashState() the
+  // live recorder and replay.js use (harness/checksum.js) — if this ever
+  // used a different hash, a real recorder/replay mismatch could hide
+  // behind "well the test's own hash agrees", which would defeat the point.
+  {
+    const seriesA = scenarioSquall(config).map(hashState);
+    const seriesB = scenarioSquall(config).map(hashState);
+    const n = Math.min(seriesA.length, seriesB.length);
+    let firstDivergence = -1;
+    for (let i = 0; i < n; i++) {
+      if (seriesA[i] !== seriesB[i]) { firstDivergence = i; break; }
+    }
+    const lengthMatch = seriesA.length === seriesB.length;
+    check('determinism: repeated scenario run from the same initial state is bit-identical (per-step hash)',
+      firstDivergence === -1 && lengthMatch,
+      firstDivergence !== -1
+        ? `first divergence at step ${firstDivergence}/${n}`
+        : lengthMatch ? `${seriesA.length} steps matched` : `length mismatch: ${seriesA.length} vs ${seriesB.length}`);
   }
 
   return results;

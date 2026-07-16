@@ -44,12 +44,14 @@ node tools/bundle.js       # regenerate dist/simulator_standalone.html
 
 `dist/simulator_standalone.html` is already built and committed;
 double-click it (or open via `file://`) — no server, no network. It
-inlines `/core`, `harness/polar.js`, `ui/app.js`, and both CSV data
-files into one script. `tools/bundle.js` is a small dependency-free
+inlines `/core`, `harness/polar.js`, `harness/checksum.js`, `ui/app.js`,
+and both CSV data files into one script (and stamps the current git
+short hash into the recorder's `codeVersion` field — see "Session
+recorder & replay" below). `tools/bundle.js` is a small dependency-free
 source-text transform (strip `import`/`export`, concatenate, embed the
 CSVs as string constants) — not a build framework, and it doesn't touch
 core logic. Re-run it after changing anything under `/core`,
-`harness/polar.js`, or `ui/app.js`.
+`harness/polar.js`, `harness/checksum.js`, or `ui/app.js`.
 
 ### Language
 
@@ -92,6 +94,75 @@ the live config (TWS 4/6/8/10 m/s) with a progress readout — it's the
 same expensive grid-search sweep `run_tests.js` runs, so it takes on
 the order of a minute or two. "Export CSV" downloads the result in the
 same column layout as `out/polar.csv`.
+
+## Session recorder & replay (round 6)
+
+If something looks wrong while sailing and you want it diagnosed, **the
+recording is the bug report** — record the session, download it, and
+send the JSON file. That's the only thing needed; no description of
+"what happened" is required (though a marker or two helps narrow it down).
+
+**Recording, in the UI:**
+
+- `F9` or the **REC** button starts/stops recording (red dot = live).
+  The HUD corner shows elapsed duration and an estimated file size while
+  recording.
+- `F10` or the **Mark** button drops a timestamped annotation at the
+  current moment — press it right when something looks wrong, before
+  you forget exactly when.
+- **Download rec.** saves the recording as a JSON file
+  (`simpjoa-recording-<timestamp>.json`). Capsizing and then resetting
+  ends the recording automatically and triggers the download itself —
+  a reset starts a new `initialState`, which would otherwise silently
+  invalidate the rest of the recording.
+- Pausing the sim simply produces no frames for that span (nothing to
+  replay, nothing lost). Recording keeps running through shunts and
+  through a capsize's freeze — only an explicit reset ends it.
+
+**Why this works exactly, not approximately:** the physics core has no
+hidden state — no wall-clock reads, no randomness, fixed-size substeps —
+so replaying the same `(initialState, config, frame sequence)` through
+`core/integrator.js` reproduces the original run bit-for-bit. This is a
+tested guarantee, not an assumption: `run_tests.js` includes a
+determinism self-test (run the same scenario twice, hash every step,
+assert no divergence) that would fail loudly if a future change ever
+broke it. See `ARCHITECTURE_physics_core_EN.md`'s "Determinism contract"
+note.
+
+**Replaying a recording, offline:**
+
+```bash
+node harness/replay.js <recording.json> [--csv out.csv] [--verify]
+```
+
+- No flags: re-simulates the recording and prints a one-line summary.
+- `--verify`: recomputes state-hash checksums every 60 frames and
+  compares them against the ones captured live, reporting PASS or the
+  first divergent frame — this is what catches "the recording doesn't
+  actually reproduce the bug" (usually a `codeVersion`/`configVersion`
+  mismatch, both of which the tool warns about loudly on load).
+- `--csv out.csv`: dumps the full replayed state and force breakdown
+  per frame (position, velocity, roll, delta/deltaMax, alpha, CL/CD,
+  every force component, timers, shunt phase, all controls, plus an
+  `annotation` column echoing any markers) — open it next to the
+  session and look at exactly what the physics was doing at the marked
+  moment.
+
+A recording made from the standalone bundle replays identically through
+this same tool (the bundle inlines the exact same core, just built at a
+different git commit — that's what `codeVersion` is for).
+
+**One caveat, since a recording is always made in a browser and always
+replayed in Node:** the determinism guarantee is proven WITHIN one JS
+engine build (see the architecture doc); a browser and Node bundle
+different V8 versions even on the same machine, and trig functions
+(`Math.sin`/`cos`/`atan2`) aren't required to be bit-identical across
+engine builds. On a long recording this can show up as a `--verify`
+divergence appearing only after hundreds of frames, in one field, by the
+smallest possible amount — that's cross-engine floating-point noise, not
+a bug, and `replay.js` says so directly when it happens. A divergence
+that's large, early, or affects many fields is the real thing to worry
+about.
 
 ## Known simplifications
 
@@ -153,6 +224,7 @@ UI-specific simplifications (Step 2 only, not physics):
 ```
 core/                 Step 1 physics core (frozen — see sign-off doc)
 harness/               Step 1 test harness (asserts.js, scenarios.js, polar.js, export.js)
+                       plus round-6 checksum.js (shared state hash) and replay.js (offline CLI)
 run_tests.js           Step 1 entry point
 out/                    Step 1 scenario/polar CSV output
 ui/

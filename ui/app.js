@@ -27,9 +27,17 @@ import { createSimulator } from '../core/simulator.js';
 import { createConfig } from '../core/config.js';
 import { createDefaultControls } from '../core/state.js';
 import { computePolar } from '../harness/polar.js';
+import { hashState } from '../harness/checksum.js';
 
 const DEG = Math.PI / 180;
 const MS_TO_KN = 1.9438;
+// Round 6 (ROUND6_flight_recorder.md, R6-2): "dev" here, at the dev-server
+// entry point — tools/bundle.js replaces this exact literal with the real
+// git short hash when it builds dist/simulator_standalone.html, so a
+// recording's codeVersion is meaningful (harness/replay.js warns on
+// mismatch) for a downloaded bundle without requiring a build step for
+// plain `python3 -m http.server` development.
+const CODE_VERSION = 'dev';
 
 // ---------------------------------------------------------------------
 // i18n — EN/PL. Static labels are marked with data-i18n="key" in
@@ -41,6 +49,7 @@ const TRANSLATIONS = {
   en: {
     'hud.speed': 'Speed', 'unit.kn': 'kn', 'hud.leeway': 'Leeway', 'hud.amaLoad': 'Ama load', 'hud.shunt': 'Shunt',
     'hud.sheet': 'Sheet', 'hud.yard': 'Yard',
+    'btn.rec': 'REC (F9)', 'btn.mark': 'Mark (F10)', 'btn.downloadRec': 'Download rec.',
     'btn.pause': 'Pause (P)', 'btn.step': 'Step (.)', 'btn.forces': 'Forces (F)', 'btn.polar': 'Polar (O)',
     'legend.lift': 'sail lift', 'legend.drag': 'sail drag', 'legend.hullSide': 'hull side', 'legend.rudder': 'rudder',
     'capsize.title': 'CAPSIZED', 'btn.reset': 'Reset (R)',
@@ -76,6 +85,7 @@ const TRANSLATIONS = {
   pl: {
     'hud.speed': 'Prędkość', 'unit.kn': 'w', 'hud.leeway': 'Znos', 'hud.amaLoad': 'Obc. amy', 'hud.shunt': 'Zwrot',
     'hud.sheet': 'Szot', 'hud.yard': 'Reja',
+    'btn.rec': 'NAGR (F9)', 'btn.mark': 'Znacznik (F10)', 'btn.downloadRec': 'Pobierz nagranie',
     'btn.pause': 'Pauza (P)', 'btn.step': 'Krok (.)', 'btn.forces': 'Siły (F)', 'btn.polar': 'Polara (O)',
     'legend.lift': 'siła nośna żagla', 'legend.drag': 'opór żagla', 'legend.hullSide': 'siła boczna kadłuba', 'legend.rudder': 'ster',
     'capsize.title': 'WYWROTKA', 'btn.reset': 'Reset (R)',
@@ -180,6 +190,13 @@ const outs = {
   crewPosX: document.getElementById('crewPosXOut'),
 };
 const wakeTrailCheckbox = document.getElementById('wakeTrail');
+const btnRec = document.getElementById('btnRec');
+const btnMark = document.getElementById('btnMark');
+const btnDownloadRec = document.getElementById('btnDownloadRec');
+const recStat = document.getElementById('recStat');
+const recDot = document.getElementById('recDot');
+const recDuration = document.getElementById('recDuration');
+const recSize = document.getElementById('recSize');
 
 // ---------------------------------------------------------------------
 // Control state — the single source of truth the sim reads each frame.
@@ -240,7 +257,8 @@ syncSlidersFromControls();
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 const HANDLED_KEYS = new Set(['Space', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',
-  'KeyQ', 'KeyZ', 'KeyW', 'KeyX', 'KeyJ', 'KeyL', 'KeyI', 'KeyK', 'KeyA', 'KeyD', 'KeyP', 'Period', 'KeyF', 'KeyO', 'KeyR']);
+  'KeyQ', 'KeyZ', 'KeyW', 'KeyX', 'KeyJ', 'KeyL', 'KeyI', 'KeyK', 'KeyA', 'KeyD', 'KeyP', 'Period', 'KeyF', 'KeyO', 'KeyR',
+  'F9', 'F10']);
 
 window.addEventListener('keydown', (e) => {
   if (HANDLED_KEYS.has(e.code)) e.preventDefault();
@@ -252,6 +270,8 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyF') toggleForces();
   if (e.code === 'KeyO') togglePolar();
   if (e.code === 'KeyR') doReset();
+  if (e.code === 'F9') recToggle();
+  if (e.code === 'F10') recMark(sim.getState().t);
   if (['KeyA', 'KeyD'].includes(e.code)) autoRudder = false;
 });
 window.addEventListener('keyup', (e) => {
@@ -295,7 +315,7 @@ let polarMode = false;
 
 function togglePause() { paused = !paused; document.getElementById('btnPause').classList.toggle('active', paused); }
 function toggleForces() { showForces = !showForces; document.getElementById('btnForces').classList.toggle('active', showForces); }
-function doReset() { sim.reset(); capsizeOverlay.classList.remove('show'); wakeReset(); }
+function doReset() { recEndForReset(); sim.reset(); capsizeOverlay.classList.remove('show'); wakeReset(); }
 
 document.getElementById('btnPause').addEventListener('click', togglePause);
 document.getElementById('btnStep').addEventListener('click', () => { stepOnce = true; });
@@ -870,6 +890,176 @@ function drawWakeTrail(cam) {
 }
 
 // ---------------------------------------------------------------------
+// Session recorder (round 6, ROUND6_flight_recorder.md) — records every
+// step()'s (dt, controls), plus the state it started from, so a session
+// can be re-simulated EXACTLY offline via harness/replay.js. This works
+// ONLY because the core is a verified-deterministic function of
+// (initialState, configSnapshot, frame sequence) — see harness/asserts.js's
+// R6-1 self-test; the recorder itself is pure UI-layer bookkeeping, it
+// never feeds back into physics.
+//
+// recLastShuntRequest mirrors core/simulator.js's OWN internal
+// edge-detector (private to that module's closure): controls.shuntRequest
+// as recorded is the RAW held-key boolean, not yet edge-detected (the
+// facade turns a held key into a single pulse internally) — so a
+// checkpoint/trim boundary has to carry the edge-detector's own state
+// forward too, or a replay starting mid-hold could fire a spurious extra
+// shunt request that never happened live.
+// ---------------------------------------------------------------------
+const REC_CHECKPOINT_INTERVAL = 60; // frames -- matches R6-2's "hash every N frames, N=60"
+const REC_MAX_FRAMES = 15 * 60 * 60; // ~15 min of frames at a nominal 60fps (R6-2 ring-buffer cap)
+
+let recActive = false;
+let recEverStarted = false;
+let recFrames = [];
+let recChecksums = [];
+let recCheckpoints = []; // { frameIdx (into recFrames, taken AFTER this frame), state, lastShuntRequest }
+let recTrimmed = false;
+let recInitialState = null;
+let recInitialLastShuntRequest = false;
+let recAnnotations = [];
+let recSimSeconds = 0; // sum of recorded dt -- HUD duration readout
+let recLastShuntRequest = false;
+
+function recFormatDuration(seconds) {
+  const m = Math.floor(seconds / 60), s = Math.floor(seconds % 60);
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+// Cheap estimate (no JSON.stringify every frame just to show a size): ~80
+// bytes/frame for {dt, controls} as JSON is a reasonable average for this
+// control shape, plus a fixed overhead for checkpoints/metadata.
+function recEstimateSizeBytes() {
+  return recFrames.length * 80 + recCheckpoints.length * 300 + 500;
+}
+
+function recUpdateHudReadout() {
+  if (!recEverStarted) return;
+  recDuration.textContent = recFormatDuration(recSimSeconds);
+  recSize.textContent = `${Math.ceil(recEstimateSizeBytes() / 1024)} KB`;
+}
+
+function recStart() {
+  recActive = true;
+  recEverStarted = true;
+  recFrames = [];
+  recChecksums = [];
+  recCheckpoints = [];
+  recTrimmed = false;
+  recAnnotations = [];
+  recSimSeconds = 0;
+  const state = sim.getState();
+  recInitialState = { ...state, shunt: { ...state.shunt } };
+  recInitialLastShuntRequest = recLastShuntRequest;
+  btnRec.classList.add('active');
+  recDot.classList.add('live');
+  recStat.classList.add('show');
+  btnMark.disabled = false;
+  btnDownloadRec.disabled = true;
+  recUpdateHudReadout();
+}
+
+function recStop() {
+  recActive = false;
+  btnRec.classList.remove('active');
+  recDot.classList.remove('live');
+  btnMark.disabled = true;
+  btnDownloadRec.disabled = recFrames.length === 0;
+}
+
+function recToggle() { if (recActive) recStop(); else recStart(); }
+
+function recMark(t) {
+  if (!recActive) return;
+  recAnnotations.push({ t, note: `marker @ ${t.toFixed(1)}s` });
+}
+
+// recOnFrame(dtFrame, frameControls, stateAfter) — called once per actual
+// sim.step() (never while paused: "pause frames are simply absent — no
+// steps happen"), with the EXACT dt that step used and the controls
+// object as it stood for that step (snapshotted here, since `controls` is
+// the same mutated object every frame elsewhere in this file — this copy
+// is the one necessary per-frame allocation on this path, no others).
+function recOnFrame(dtFrame, frameControls, stateAfter) {
+  recLastShuntRequest = Boolean(frameControls.shuntRequest);
+
+  if (!recActive) return;
+
+  recFrames.push({ dt: dtFrame, controls: { ...frameControls } });
+  recSimSeconds += dtFrame;
+
+  if (recFrames.length % REC_CHECKPOINT_INTERVAL === 0) {
+    recChecksums.push(hashState(stateAfter));
+    recCheckpoints.push({
+      frameIdx: recFrames.length - 1,
+      state: { ...stateAfter, shunt: { ...stateAfter.shunt } },
+      lastShuntRequest: recLastShuntRequest,
+    });
+  }
+
+  if (recFrames.length > REC_MAX_FRAMES) {
+    // Trim to the oldest checkpoint boundary (checkpoints are dense --
+    // every 60 frames -- so this costs at most ~1s of history beyond the
+    // nominal cap in exchange for a simple, correct trim: the checkpoint
+    // IS a valid, self-contained new initialState).
+    const cp = recCheckpoints.shift();
+    recFrames = recFrames.slice(cp.frameIdx + 1);
+    recChecksums = recChecksums.slice(1);
+    for (const c of recCheckpoints) c.frameIdx -= (cp.frameIdx + 1);
+    recInitialState = cp.state;
+    recInitialLastShuntRequest = cp.lastShuntRequest;
+    recAnnotations = recAnnotations.filter((a) => a.t >= recInitialState.t);
+    recTrimmed = true;
+  }
+}
+
+function recBuildJSON() {
+  return {
+    format: 'simpjoa-recording',
+    formatVersion: 1,
+    codeVersion: CODE_VERSION,
+    configVersion: dims.configVersion,
+    configSnapshot: dims,
+    initialState: recInitialState,
+    initialLastShuntRequest: recInitialLastShuntRequest,
+    frames: recFrames,
+    stateChecksums: recChecksums,
+    annotations: recAnnotations,
+    trimmed: recTrimmed,
+  };
+}
+
+function recDownload() {
+  if (recFrames.length === 0) return;
+  const json = JSON.stringify(recBuildJSON());
+  const blob = new Blob([json], { type: 'application/json' });
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `simpjoa-recording-${stamp}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+// Capsize+reset ENDS the recording automatically (reset changes
+// initialState, breaking the "one continuous initialState + frame
+// sequence" invariant this format depends on) and offers the download —
+// this is exactly the moment a diagnostic recording is most likely to be
+// wanted, so the download triggers automatically rather than waiting for
+// a second click.
+function recEndForReset() {
+  if (!recActive) return;
+  recStop();
+  recDownload();
+}
+
+btnRec.addEventListener('click', recToggle);
+btnMark.addEventListener('click', () => recMark(sim.getState().t));
+btnDownloadRec.addEventListener('click', recDownload);
+
+// ---------------------------------------------------------------------
 // Main loop
 // ---------------------------------------------------------------------
 let lastT = performance.now();
@@ -893,8 +1083,9 @@ function frame(now) {
     // (e.g. for inspecting the shunt sequence) rather than however long the
     // button click happened to take.
     const stepped = !paused || stepOnce;
+    const usedDt = stepOnce ? 1 / 60 : dtFrame;
     if (stepped) {
-      sim.step(controls, stepOnce ? 1 / 60 : dtFrame);
+      sim.step(controls, usedDt);
       stepOnce = false;
     }
     const state = sim.getState();
@@ -905,6 +1096,16 @@ function frame(now) {
     // same condition the sim itself advances under) and capsize stops it;
     // shunts are NOT excluded — the zigzag through them is the point.
     if (stepped && !state.capsized) wakeSample(state);
+
+    // Session recorder (round 6): called unconditionally whenever a step
+    // actually happened (pause -> no call -> "pause frames are simply
+    // absent"), NOT gated on capsized (recording continues through a
+    // capsize; only reset ends it, see recEndForReset) — and NOT gated on
+    // recActive internally either, since recOnFrame must keep tracking the
+    // shunt-request edge state continuously so recStart() can seed a
+    // correct initialLastShuntRequest whenever recording actually begins.
+    if (stepped) recOnFrame(usedDt, controls, state);
+    recUpdateHudReadout();
 
     // A rising-edge shuntRequest that didn't move the phase off 'none' AND
     // was above the speed lockout was rejected by shunt.js for that reason

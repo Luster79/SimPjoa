@@ -25,6 +25,10 @@
   .luffing-tag:empty { display: none; }
   .checkboxRow { display: flex; align-items: center; gap: 6px; margin: 6px 0; color: #9fb4c8; }
   .checkboxRow input { margin: 0; }
+  .rec-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #555; margin-right: 5px; vertical-align: middle; }
+  .rec-dot.live { background: #e33b3b; animation: pulse 1s infinite; }
+  #recStat { display: none; }
+  #recStat.show { display: inline-flex; align-items: center; }
   #stage { position: relative; overflow: hidden; background: #06121f; }
   canvas { display: block; }
   #banner { position: absolute; top: 0; left: 0; right: 0; text-align: center; padding: 10px; font-weight: 700; font-size: 16px; letter-spacing: 0.03em; display: none; }
@@ -80,8 +84,12 @@
     <span class="stat"><span data-i18n="hud.yard">Yard</span> <b id="hudYard">0</b>&deg; <b id="hudLuffing" class="luffing-tag"></b></span>
     <span class="stat"><span data-i18n="hud.shunt">Shunt</span> <b id="hudShunt">none</b></span>
     <span class="stat">TWS <b id="hudTws">6.0</b> m/s</span>
+    <span class="stat" id="recStat"><span class="rec-dot" id="recDot"></span><b id="recDuration">0:00</b> / <span id="recSize">0 KB</span></span>
     <span class="stat" style="margin-left:auto">
       <button id="btnLang">PL</button>
+      <button id="btnRec"><span data-i18n="btn.rec">REC (F9)</span></button>
+      <button id="btnMark" disabled><span data-i18n="btn.mark">Mark (F10)</span></button>
+      <button id="btnDownloadRec" disabled><span data-i18n="btn.downloadRec">Download rec.</span></button>
       <button id="btnPause"><span data-i18n="btn.pause">Pause (P)</span></button>
       <button id="btnStep"><span data-i18n="btn.step">Step (.)</span></button>
       <button id="btnForces" class="active"><span data-i18n="btn.forces">Forces (F)</span></button>
