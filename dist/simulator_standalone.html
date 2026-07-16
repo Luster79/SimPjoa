@@ -1808,7 +1808,7 @@ const MS_TO_KN = 1.9438;
 // recording's codeVersion is meaningful (harness/replay.js warns on
 // mismatch) for a downloaded bundle without requiring a build step for
 // plain `python3 -m http.server` development.
-const CODE_VERSION = "8493c58";
+const CODE_VERSION = "59eed83";
 
 // ---------------------------------------------------------------------
 // i18n — EN/PL. Static labels are marked with data-i18n="key" in
@@ -2606,57 +2606,53 @@ function updateAlarms(state) {
 
 // ---------------------------------------------------------------------
 // Wake trail (P4.4, ROUND5_CONSOLIDATED_work_order.md) — UI-layer only, no
-// core changes: a preallocated ring buffer of WORLD positions, sampled
-// every ~0.15s of SIM time (not per frame, so the track's spacing doesn't
-// depend on frame rate). Sampling itself is independent of the checkbox
-// (it keeps recording while hidden, so re-enabling resumes seamlessly with
-// no gap) and continues through shunts — the proa's characteristic
-// reciprocal-leg "zigzag" is the whole point. Drawn as a world-space
-// polyline so the camera-follows-boat pan doesn't drag the trail along.
+// core changes: a growable array of WORLD positions, sampled every ~0.15s
+// of SIM time (not per frame, so the track's spacing doesn't depend on
+// frame rate). Sampling itself is independent of the checkbox (it keeps
+// recording while hidden, so re-enabling resumes seamlessly with no gap)
+// and continues through shunts — the proa's characteristic reciprocal-leg
+// "zigzag" is the whole point. Drawn as a world-space polyline so the
+// camera-follows-boat pan doesn't drag the trail along.
+//
+// No fade and no capacity cap (2026-07 request): the whole trail is drawn
+// at constant opacity from the start of the current cruise to its end —
+// a reset clears it, and a capsize simply stops sampling (see the
+// !state.capsized guard at the call site) so the frozen trail stays fully
+// visible until reset. Growing via push (not a fixed-size ring buffer)
+// costs nothing noticeable at the ~0.15s sampling rate — this isn't a
+// per-frame allocation, and even an hour-long cruise is only a few
+// thousand points.
 // ---------------------------------------------------------------------
-const WAKE_CAPACITY = 600;
 const WAKE_SAMPLE_INTERVAL = 0.15; // seconds of SIM time
-const wakeX = new Float64Array(WAKE_CAPACITY);
-const wakeY = new Float64Array(WAKE_CAPACITY);
-let wakeCount = 0; // valid points, <= WAKE_CAPACITY
-let wakeHead = 0; // ring index the NEXT sample writes to
+let wakeX = [];
+let wakeY = [];
 let wakeLastSampleT = -Infinity;
 
 function wakeReset() {
-  wakeCount = 0;
-  wakeHead = 0;
+  wakeX = [];
+  wakeY = [];
   wakeLastSampleT = -Infinity;
 }
 
 function wakeSample(state) {
   if (state.t - wakeLastSampleT < WAKE_SAMPLE_INTERVAL) return;
   wakeLastSampleT = state.t;
-  wakeX[wakeHead] = state.x;
-  wakeY[wakeHead] = state.y;
-  wakeHead = (wakeHead + 1) % WAKE_CAPACITY;
-  wakeCount = Math.min(wakeCount + 1, WAKE_CAPACITY);
+  wakeX.push(state.x);
+  wakeY.push(state.y);
 }
 
 function drawWakeTrail(cam) {
-  if (!wakeTrailCheckbox.checked || wakeCount < 2) return;
+  if (!wakeTrailCheckbox.checked || wakeX.length < 2) return;
   ctx.save();
   ctx.lineWidth = Math.max(1, 1.4 * dpr);
   ctx.lineCap = 'round';
-  const start = (wakeHead - wakeCount + WAKE_CAPACITY) % WAKE_CAPACITY;
-  let prevX, prevY;
-  for (let i = 0; i < wakeCount; i++) {
-    const idx = (start + i) % WAKE_CAPACITY;
-    const p = worldToScreen(wakeX[idx], wakeY[idx], cam);
-    if (i > 0) {
-      const frac = i / (wakeCount - 1); // 0 oldest .. 1 newest
-      ctx.strokeStyle = `rgba(170,225,215,${(0.5 * frac).toFixed(3)})`;
-      ctx.beginPath();
-      ctx.moveTo(prevX, prevY);
-      ctx.lineTo(p.x, p.y);
-      ctx.stroke();
-    }
-    prevX = p.x; prevY = p.y;
+  ctx.strokeStyle = 'rgba(170,225,215,0.35)';
+  ctx.beginPath();
+  for (let i = 0; i < wakeX.length; i++) {
+    const p = worldToScreen(wakeX[i], wakeY[i], cam);
+    if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
   }
+  ctx.stroke();
   ctx.restore();
 }
 
