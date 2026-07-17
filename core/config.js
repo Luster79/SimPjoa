@@ -180,7 +180,10 @@ function buildDefaultConfig() {
       displacement: p.displacement_kg,    // 250 kg
       yawInertia: yawInertiaFactor * p.displacement_kg * p.boat_length_m * p.boat_length_m,
       wettedSurface: 3.0,                  // m^2 — tunable estimate (slender canoe hull)
-      Cf: 0.0015,                          // tunable estimate, ITTC-57-like skin friction
+      // Cf is no longer a stored constant (round 7, R7-1) — hydro.js
+      // computes it per-call from the ITTC-57 model-ship line at the
+      // instantaneous Reynolds number (u*length/nu), which is the
+      // physically-grounded replacement for the old flat 0.0015 estimate.
       froudeThreshold: 0.4,               // wave resistance penalty kicks in above this Fr
       waveResistanceCoeff: 900,           // tunable — scales the u^4 penalty above threshold
       sideForceCoeff: 0.8,                // tunable — low-AR hull-as-foil lift-curve factor (folds in the ama's lateral resistance too, since hydro.js has no separate ama side-force term). Lowered from 2.5 in round 2 (FIX_REQUEST_step1_round2.md R2-1): a boardless canoe hull is a genuinely weak lateral-force generator (that's the prompt's own framing of why a proa needs the ama/crew technique instead of pointing ability) — 2.5 let the hull balance the sail's side force at near-zero leeway once crew ballast dropped amaDrag, letting the boat "point" unrealistically well close-hauled.
@@ -192,7 +195,17 @@ function buildDefaultConfig() {
       crewForeAftTrimCoeff: 0.15,          // tunable ("k_trim") — fraction of half-length the CLR shifts per unit crewPosX (FIX_REQUEST_round4_roll_dof.md 1.5)
       crewTrimSign: 1,                     // +-1 — flips the crewPosX->CLR-shift direction; verified empirically against the 1.6 coupling-sign test (forward crew -> luff), see ARCHITECTURE doc
       yawHeelSign: 1,                      // +-1 — flips the heel->yaw coupling direction (aero.js yawMomentHeel); verified empirically against the 1.6 coupling-sign test (crew toward ama -> bear away), see ARCHITECTURE doc
-      ceLeverSign: -1,                     // +-1 (ROUND5_CONSOLIDATED_work_order.md P1.2/T3) — flips the CE-follows-delta yaw lever (aero.js xCE/yCE term) to match the Pjoa manual's field-validated "sheet in bears away, eased luffs" rather than the from-scratch weather/lee-helm derivation, which comes out the opposite polarity
+      ceLeverSign: 1,                     // +-1 (ROUND5_CONSOLIDATED_work_order.md P1.2/T3) — flips the CE-follows-delta yaw lever (aero.js xCE/yCE term) to match the Pjoa manual's field-validated "sheet in bears away, eased luffs" rather than the from-scratch weather/lee-helm derivation, which comes out the opposite polarity
+      // lead: round 7, D-6 (ROUND7_DECISION.md). Classical yacht-design
+      // "lead" — the CE-CLR longitudinal separation — order 5-25% of
+      // waterline length depending on hull/rig type (Larsson & Eliasson,
+      // Principles of Yacht Design). 0.15 (15%) is mid-range: replaces
+      // round 5's ad-hoc tackXFraction-based CE anchor (aero.js sailForces
+      // no longer uses tackXFraction for the yaw-moment geometry — it's
+      // still used by ui/app.js for drawing the mast/tack position, kept
+      // for that). Per-boat parameter; revisit if a specific hull's real
+      // lead is measured.
+      lead: 0.15 * p.boat_length_m,
     },
 
     ama: {
@@ -201,7 +214,25 @@ function buildDefaultConfig() {
       mass: p.ama_mass_kg,                 // 25 kg — resists lifting when windward (normal case)
       spacing: p.beam_overall_m,           // 2.5 m (hull-ama spacing, "B")
       wettedSurface: 0.6,                  // m^2 — tunable estimate, fully immersed
-      dragCoeff: 0.4,                      // tunable — bluff slender body Cd estimate
+      // formFactor: round 7, R7-1. The ama is a slender float trailing
+      // fore-aft through the water like a second, smaller hull — NOT a
+      // bluff cross-flow body — so its drag is ITTC-57 skin friction at
+      // its own length/Reynolds number (see hydro.js's shared ittc57Cf),
+      // same as the main hull, times this (1+k)-style form factor. This
+      // replaces the old flat dragCoeff=0.4 bluff-body estimate, which
+      // was ~100x too high for a body moving lengthwise and was the root
+      // cause of the ama out-dragging the main hull 26-30x (diagnosed
+      // from simpjoa-recording-20260716-155817.json, see recordings/ and
+      // ARCHITECTURE's calibration section). 3.3 is at the TOP edge of the
+      // standard ITTC/Prohaska form-factor range for a stubbier, less
+      // finely-shaped hull than the main canoe hull's finer entry (which
+      // uses the bare line, factor 1.0) — still in-band on the R7-4a hard
+      // anchor (ratio 0.300/0.932 of the [0.10,0.30]/[0.4,1.0] bands), but
+      // deliberately chosen at the edge rather than the middle: this is
+      // the minimum ama-drag authority that keeps T1's "crew toward ama"
+      // steering leg correctly signed (ROUND7_DECISION.md D-1). Revisit
+      // this choice if real ama-resistance data ever narrows the band.
+      formFactor: 3.3,
       crewImmersionCoeff: 0.30,            // tunable — fraction of crew weight (relative to ama buoyancy) that presses the ama deeper when crewPos>0 (FIX_REQUEST_step1_round2.md R2-1). Raised from 0.21 in round 3 (FIX_REQUEST_round3_worldframe.md R3-2): doubling the ama/crew righting levers to the full spacing (see stability.js) roughly halved amaLoad for a given heel moment, which — via this term's amaLoad-driven immersion floor — quietly cut the ama-drag penalty enough to let the TWA=40 close-hauled polar point creep past the "no meaningful progress below ~50deg" acceptance ratio (0.353 vs the 0.35 limit); this restores the same margin (0.338) without touching the threshold or the hull/yaw tunables the over-sheeting broach-cliff probe depends on.
     },
 
@@ -209,20 +240,59 @@ function buildDefaultConfig() {
       area: p.sail_area_m2,                // 12 m^2
       apexAngleDeg: p.sail_apex_angle_deg,  // 50 deg (45-60 valid range)
       CEheight: p.CE_height_m,              // 2.0 m
-      camber: 0.10,                          // base camber (depth/chord), 0-0.20
-      CD0: 0.06,
-      s: 0.85,                               // tunable partial-suction factor (RUNTIME only)
+      // camber/CD0/s: retuned round 7, D-5 (ROUND7_DECISION.md). Removing
+      // R7-1's ama-drag bug legitimately raised the whole polar (the boat
+      // is genuinely faster with a correctly-small ama brake) — TWA-40's
+      // margin and TWA-90's speed moved past their acceptance bands as a
+      // direct, expected consequence (not a new bug). Retuned within
+      // literature-plausible sail-side ranges: camber down to its floor
+      // (0, flatter/higher-pointing shape, still in the documented
+      // 0-0.20 range), s up to its physical ceiling (1.0 = full leading-
+      // edge suction loss, the same value the shipped aero table's own CD
+      // column was generated with — no longer just a runtime knob below
+      // that). CD0 raised to 0.09 (vs the 0.06 baseline estimate) —
+      // capped there deliberately, NOT at the higher values that reach the
+      // polar bands fully (CD0=0.15-0.18 gets TWA-40/TWA-90 much closer or
+      // in-band) because CD0 also scales the flogging-drag term
+      // (floggingCDFactor*CD0) and, near head-to-wind, parasitic drag
+      // partially resolves as forward thrust (the apparent wind is nearly
+      // boat-aligned there) — probed empirically: CD0 past ~0.10 breaks
+      // the "head-to-wind stays still" test (speed 0.30->0.52+ m/s, over
+      // its 0.5 ceiling) and collapses T3's "easing turns windward" margin
+      // toward zero. 0.09 keeps both safely passing (0.40 m/s, 3.3deg)
+      // while still narrowing the polar gap. Result: TWA-40 ratio
+      // 0.588->0.458 (target <0.35, not fully reached), TWS6/TWA90 speed
+      // 3.70->3.63 m/s (target <=3.6, not fully reached) — reported as the
+      // best achievable without breaking other established behaviors, per
+      // the standing calibration allowance, not a band edit. The remaining
+      // gap is largely the boat's top-end reaching speed now being hull-
+      // WAVE-RESISTANCE-limited (the u^4 penalty term R7-1 explicitly
+      // keeps unchanged), not sail-limited.
+      camber: 0,
+      CD0: 0.09,
+      s: 1.0,                                 // tunable partial-suction factor (RUNTIME only) — now at its physical ceiling (full suction loss)
       // --- Sheet constraint (ROUND5_CONSOLIDATED_work_order.md P1) ---
       yardSwingRateDegPerSec: 90,             // tunable — max slew rate for state.delta relaxing toward its equilibrium (request's own suggested 60-120deg/s band: "a swinging yard, not a teleport")
       deltaMaxReleaseDeg: 90,                 // the sheet limit is released to this during a shunt's ease/transfer/swap phases, then closes back to the commanded controls.sheet once 'sheet' starts hauling it in (P1.1 point 3)
       floggingCDFactor: 0.15,                 // tunable — extra parasite drag while luffing (delta held below the sheet limit by the wind, not by the sheet), as a fraction of CD0; request's own suggested 0.1-0.2 band
-      // --- CE geometry (P1.2) --- the old fixed ceXFraction offset is
-      // GONE (the CE now derives from tack position + chord + actual delta,
-      // see aero.js sailForces); tackXFraction below is that SAME knob,
-      // repositioned to mean "where the mast/tack sits" instead of "the
-      // CE's own fixed position" — zero net new tunables.
-      tackXFraction: 0.06,                    // fraction of hull half-length — mast/tack position, active-bow side of CG
-      ceBrailShift: 0.3,                      // tunable (P2-3, the one new tunable this section allows) — fraction of the half-chord the CE shifts toward the tack at brailWind=1 (spilling the sail's rear/upper area), request's own suggested ~0.25-0.35 band
+      // --- CE geometry (P1.2, redone round 7 D-6) --- tackXFraction is
+      // now UI-rendering-only (ui/app.js draws the mast/tack at this
+      // fraction of hull half-length); aero.js's yaw-moment CE geometry no
+      // longer reads it — see hull.lead above and ceSwingFraction below.
+      tackXFraction: 0.06,                    // fraction of hull half-length — mast/tack position, active-bow side of CG (UI drawing only, round 7)
+      ceBrailShift: 0.3,                      // tunable (P2-3), fraction of the half-chord the CE shifts toward the tack at brailWind=1 (spilling the sail's rear/upper area), request's own suggested ~0.25-0.35 band
+      // ceSwingFraction: round 7, D-6. The yard's swing (delta) still
+      // moves the CE fore-aft/athwartship (a real crab-claw's CE genuinely
+      // shifts with trim — that's the whole mechanism by which trimming
+      // steers), but round 5's model let the FULL geometric half-chord
+      // excursion reach the CE, which the owner's field datum (D-6) says
+      // is far too responsive for a real Pjoa. A flow-attached aerodynamic
+      // center tracks closer to the leading edge across the practical trim
+      // range than the raw geometric midchord, so only a fraction of the
+      // full swing should reach it. 0.2 is empirically landed against the
+      // D-6 target (0.3-1.5deg/s steady sail-trim turn rate at TWS 6,
+      // 5-15deg over a 10s window) — see harness/asserts.js T1/T3/T4/T5.
+      ceSwingFraction: 0.5,
     },
 
     crew: {

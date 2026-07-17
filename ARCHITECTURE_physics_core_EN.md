@@ -2,6 +2,20 @@
 
 *Last reviewed: 2026-07-16*
 
+**Round 7 note:** `ROUND7_drag_calibration.md`/`ROUND7_DECISION.md`
+recalibrated hull/ama drag from ITTC-57 physics (fixing a ~26-30x
+ama-over-hull drag bug — a diagnosed uncommanded-round-up cause) and
+rebuilt the sail's CE-lever geometry around a classical yacht-design
+"lead" parameter (D-6) after the drag fix falsified round 5's steering
+directions. Full derivation, before/after evidence, and what's still open
+(two `xfail:STEERING`, two `xfail:STABILITY` known limitations) live in
+`ROUND7_steering_regression_findings.md` — this doc only carries the
+resulting function-signature/calibration changes, not the diagnosis
+itself. **This file is now ~690 lines, well past the project's own
+~500-line anti-bloat guideline** (flagged in round 6 too) — splitting
+per-module sections into `docs/<module>.md` is recommended before the
+next round adds to it further.
+
 **Round 6 note:** `ROUND6_flight_recorder.md` added a session recorder
 (UI) and offline replay tool (`harness/replay.js`), both resting entirely
 on a now-TESTED determinism guarantee (`harness/asserts.js`'s R6-1
@@ -186,41 +200,69 @@ cross-check at startup as required by the main prompt. Fixed schema version: a
       // measurably bears the boat away on a steady reach with the rudder
       // locked, matching the extension request's expected direction with
       // yawHeelSign=+1 — no flip needed.
-      // Round 5 (ROUND5_CONSOLIDATED_work_order.md P1.2/P2-3): yawMoment is
-      // now `ceLeverSign * (x_CE*Fy - y_CE*Fx) + yawMomentHeel` — the OLD
-      // fixed ceXFraction offset is gone. x_CE/y_CE are real tack-to-CE
-      // geometry that SLIDES with the actual delta:
-      //   x_CE = tackX - (chord/2)*cos(delta), y_CE = -end*(chord/2)*sin(delta)
-      // tackX = config.sail.tackXFraction*(hull.length/2) — that fraction
-      // IS the old ceXFraction, repositioned to mean "mast/tack position"
-      // instead of "the CE's own fixed position" (zero net new tunables).
-      // chord reuses config.sail.CEheight/2 — a full aerodynamic yard span
-      // (area/apex-angle derived) was also probed and let the y_CE*Fx term
-      // dominate and REVERSE the qualitative "ease -> luffs to windward"
-      // trend x_CE*Fy alone already gets right (Fx itself changes sign
-      // across a normal trim sweep). config.hull.ceLeverSign (+-1) is a
-      // verified-empirically flip knob, same pattern as yawHeelSign: the
-      // from-scratch weather/lee-helm derivation (CE aft when trimmed in =
-      // weather helm, forward when eased = lee helm) comes out the
-      // OPPOSITE polarity from the Pjoa manual's field-validated rule
-      // III.3/4 ("sheet in bears away, eased luffs"), so it's flipped
-      // (ceLeverSign=-1) to match documented practice rather than the
-      // unaided derivation. P2-3: config.sail.ceBrailShift (the one new
-      // tunable this section allows, default 0.3) shrinks the along-yard
-      // distance used for BOTH x_CE and y_CE proportionally to brailWind —
-      // spilling the sail's rear moves the effective CE toward the tack,
-      // damping yaw sensitivity (verified: lowers mean|rudder| deep
-      // downwind, harness/asserts.js T5) rather than just relocating it
-      // (probed: shrinking only one of x_CE/y_CE didn't help).
+      // Round 5 introduced `yawMoment = ceLeverSign * (x_CE*Fy - y_CE*Fx) +
+      // yawMomentHeel` with x_CE/y_CE derived from a tack position
+      // (config.sail.tackXFraction) and the yard's own swing. Round 7
+      // (D-6, ROUND7_DECISION.md) rebuilt x_CE/y_CE around a classical
+      // yacht-design "lead" instead — round 5's version measured the CE as
+      // a small, standalone CG-relative offset and got the SCALE of
+      // sail-trim-induced steering badly wrong (a real Pjoa's sail-trim
+      // response is slow — an owner field datum, D-6 — but round 5's model
+      // turned a modest sheet/brail change into several deg/s of turn
+      // rate, and once R7-1 fixed the oversized ama-drag term that used to
+      // dominate/override it, this got tested and directly falsified: T3
+      // and T4's directions were reversed or capsized under the corrected
+      // drag). The new geometry:
+      //   x_CE = clrXPosition(0, config) + hull.lead - halfChordEffX*cos(delta)
+      //   y_CE = -end * halfChord * ceSwingFraction * sin(delta)
+      //   halfChordEffX = halfChord * ceSwingFraction * (1 - ceBrailShift*brailWind)
+      //   halfChord = CEheight/4
+      // hull.lead (order 5-25% of hull.length, Larsson & Eliasson,
+      // Principles of Yacht Design) anchors the CE's NEUTRAL point against
+      // the hull's own CLR (hydro.js's clrXPosition, at crewPosX=0 — fixed,
+      // so crew fore-aft only moves the hull's CLR for T2, not the sail's
+      // CE too, which would cancel that mechanism). sail.ceSwingFraction
+      // (~0.5) scales down how far the yard's OWN swing still moves the
+      // CE from that neutral point — round 5's model let the FULL
+      // geometric half-chord reach the CE; a real, flow-attached
+      // aerodynamic center tracks closer to the leading edge across the
+      // practical trim range, so only a fraction should. Both values are
+      // empirically landed against D-6's target (0.3-1.5deg/s steady
+      // sail-trim turn rate at TWS 6, i.e. harness/asserts.js's
+      // steeringOk() 2-20deg/10s-window direction-strict/magnitude-loose
+      // check — see D-6's own "assertion philosophy" note: real Pjoa
+      // sail-trim response varies with wind/boat, so these tests assert
+      // direction strictly and magnitude loosely, not a tight number).
+      // config.hull.ceLeverSign flipped from -1 (round 5) to +1 (round 7):
+      // the lead-dominated x_CE is now typically POSITIVE (round 5's was
+      // typically negative, swing-dominated) — same underlying "match the
+      // Pjoa manual's field-validated sheet-in-bears-away/eased-luffs
+      // direction" empirical flip knob, just re-verified against the new
+      // geometry's sign. ceBrailShift (config.sail, ~0.3) is unchanged
+      // from round 5: shrinks x_CE's along-yard swing proportionally to
+      // brailWind (spilling the sail's rear moves the effective CE toward
+      // the tack), damping yaw sensitivity downwind (T5) without needing
+      // its own lead-style anchor.
 
 ### hydro.js
-    hullResistance(u, config) -> Fx        // friction + wave penalty Fr>0.4
+    hullResistance(u, config) -> Fx        // friction (round 7, R7-1: ITTC-57
+                                            // model-ship Cf at the instantaneous
+                                            // Reynolds number, ittc57Cf(u,
+                                            // hull.length) — replaces the old
+                                            // flat hull.Cf=0.0015 estimate) +
+                                            // wave penalty Fr>0.4 (unchanged)
+    clrXPosition(crewPosX, config) -> x offset from CG
+                                            // Round 7, D-6: factored out of
+                                            // hullSideForce so aero.js's sail
+                                            // CE geometry can reference the
+                                            // SAME CLR point (see aero.js
+                                            // sailForces' `lead` note below).
     hullSideForce(u, v, crewPosX, config) -> { Fx, Fy, yawMoment }  // low-AR
                                             // foil, saturation ~15 deg leeway,
                                             // then degrades (mushing); Fx is
                                             // the induced drag cost of Fy.
                                             // crewPosX (round 4, 1.5) shifts
-                                            // the CLR fore/aft:
+                                            // the CLR fore/aft via clrXPosition:
                                             // clrX += hull.crewTrimSign *
                                             // hull.crewForeAftTrimCoeff *
                                             // crewPosX * (hull.length/2).
@@ -238,14 +280,22 @@ cross-check at startup as required by the main prompt. Fixed schema version: a
                                             // r x F, no flip knob needed
                                             // (the sign already comes out so
                                             // MORE ama drag turns the bow
-                                            // TOWARD the ama side). Wired
-                                            // into integrator.js's M sum;
-                                            // this is what lets P2-2's
-                                            // coupling-sign reversal happen
-                                            // with zero new controls (the
-                                            // existing crewPos-driven
-                                            // immersion term already
-                                            // modulates it).
+                                            // TOWARD the ama side). Round 7
+                                            // (R7-1): Fx itself is now
+                                            // ittc57Cf(u, ama.length) *
+                                            // ama.formFactor (a slender-body
+                                            // skin-friction model, form
+                                            // factor 3.3 — see config.js's
+                                            // comment for the drag-ratio hard
+                                            // anchor this satisfies) —
+                                            // replaces the old bluff-body
+                                            // dragCoeff=0.4 estimate, which
+                                            // was ~100x too high and the root
+                                            // cause of a diagnosed
+                                            // uncommanded-round-up bug (see
+                                            // ROUND7_drag_calibration.md,
+                                            // ROUND7_steering_regression_
+                                            // findings.md).
     yawDamping(r, u, config) -> moment
 
 ### rudder.js
@@ -511,7 +561,10 @@ either way.
     - CL(35 deg) in [1.6, 1.8]; CL_max in [1.75, 2.0] at alpha 38-46 deg
     - polar: no progress below ~50 deg TWA; maximum at 90-135 deg;
       speed at TWS 6 m/s, TWA 90 deg within [2.0, 3.6] m/s; bestSheetAngle
-      and the settled delta coincide on driving (taut-sheet) rows
+      and the settled delta coincide on driving (taut-sheet) rows. Round 7
+      (D-5): both the TWA-40 and TWA-90 checks report as best-achievable
+      rather than pass — see ROUND7_steering_regression_findings.md sec 8
+      and config.js's sail.camber/CD0/s comment.
     - no NaN/Inf in any scenario; energy does not grow with zero wind
       (damping test)
     - the squall scenario ends without capsize; the aback scenario ends
@@ -521,20 +574,34 @@ either way.
     - round 5, T1-T10 (ROUND5_CONSOLIDATED_work_order.md P5 — a shared
       steeringDrift() helper: settle on course with the heading-hold
       autopilot, LOCK the rudder at its settled deflection, apply ONE
-      control change, measure signed heading drift over ~20s with no
-      further correction; asserts DIRECTION and a >=3deg minimum
-      magnitude, never exact values):
+      control change, measure signed heading drift over a lock window
+      with no further correction). Round 7 (D-6, ROUND7_DECISION.md)
+      changed the lock window to 10s and the pass criterion to
+      steeringOk(): DIRECTION strict, MAGNITUDE loose (2-20deg over that
+      window) — the owner's field datum says real Pjoa sail-trim response
+      varies with wind/boat, so a tight number is the wrong thing to
+      assert:
       - T1 (THE ONE SANCTIONED REVERSAL, P2-2): crew toward the ama turns
-        to windward (round-4 demanded the opposite; P2-1's ama-drag
-        moment now dominates the CE-heel coupling term at this trim)
+        to windward (round-4 demanded the opposite). Round 7: restored by
+        R7-1's ama-drag recalibration at formFactor=3.3 (the R7-4a band's
+        ceiling — the minimum authority that keeps this leg signed
+        correctly); the "away from ama" leg stays xfail:STEERING (a
+        restingImmersion-floor asymmetry, not fixable within the R7-4a
+        band — see the findings doc sec 3).
       - T2 (kept, now practice-validated): crewPosX forward luffs, aft
-        bears away
-      - T3 (needs P1.2): easing the sheet (still taut) turns to windward,
-        trimming in turns to leeward
-      - T4 (needs P2-3): windward brail on a beam reach turns to leeward
-        AND lowers ama load simultaneously
+        bears away — runs through hullSideForce's own clrX shift, not the
+        sail's CE geometry, so unaffected by round 7's CE-lever rework.
+      - T3 (needs P1.2, redone round 7 D-6 — see aero.js's CE-lever/`lead`
+        note above): easing the sheet (still taut) turns to windward,
+        trimming in turns to leeward. A THIRD check (60s lock, not just
+        the 10s direction/magnitude window) is xfail:STABILITY — this
+        exact trim genuinely overloads and capsizes now that the ama-drag
+        brake is gone (see findings doc sec 6) — a stability finding, not
+        a steering one.
+      - T4 (needs P2-3, redone round 7 D-6): windward brail on a beam
+        reach turns to leeward AND lowers ama load simultaneously.
       - T5 (needs P2-3): windward brail lowers mean |rudder| deep downwind
-        (TWA 165) — the "carrot" stabilizes
+        (TWA 165) — the "carrot" stabilizes.
       - T6 (needs P1): releasing the sheet fully at amaLoad~0.9 in a gust
         saves the boat that a held-in sheet would capsize (the panic rule)
       - T7 (needs P1): sheet limit 90deg on a beam reach settles delta at
@@ -547,9 +614,31 @@ either way.
         thereafter); past phiCapsizeDeg, heel gains a fixed increment
         faster than at the old (round-4) threshold — genuinely
         accelerating, not just waiting out the timer
+      - broach-cliff probe (section 8, over-sheeting a close course): the
+        "past the cliff" leg is xfail:STEERING as of round 7 — it now
+        holds course cleanly instead of broaching (same family as T1/T4,
+        NOT a capsize/stability finding — corrects an earlier assumption,
+        see findings doc sec 6).
     - round 6: determinism self-test (see "Determinism contract" above) —
       run scenarioSquall() twice from the same initial state, hash every
       step, assert zero divergence
+    - round 7 (R7-4, ROUND7_drag_calibration.md/ROUND7_DECISION.md):
+      R7-4a, the drag-ratio hard anchor (amaDrag/hullResistance in
+      [0.10,0.30] at static immersion, [0.4,1.0] at max, u=1.6m/s);
+      R7-4b, a replay-fixture test consuming recordings/simpjoa-recording-
+      20260716-155817.json (the session that diagnosed the ama-drag bug)
+      against the live core, NO checksum verification (cross-engine ULP —
+      see "Determinism contract"); one of its two sub-checks is
+      xfail:STABILITY (same overload mechanism as T3, confirmed in the
+      real recording — findings doc sec 7). R7-4c, a general uncommanded-
+      round-up bound (steady reach, rudder locked, |r|<2deg/s over 30s).
+    - xfail mechanism (round 7, D-3/D-4): check()'s 4th argument tags a
+      known, diagnosed, EXPECTED-to-fail assertion ('STEERING' |
+      'STABILITY'). run_tests.js reports these separately under "KNOWN
+      MODEL LIMITATIONS", excludes them from the main pass count, and
+      fails the build if one unexpectedly starts passing (a "promotion
+      candidate" — the model changed and the mark needs a human decision
+      to lift, not a silent pass).
 
 ### checksum.js (round 6)
     hashState(value) -> string

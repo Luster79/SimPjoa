@@ -62,7 +62,7 @@ const TRANSLATIONS = {
     'lbl.crewPosX': 'Crew fore-aft', 'hint.crewPosX': 'I moves forward, K moves aft',
     'h.shunt': 'Shunt', 'btn.shunt': 'SHUNT (space)',
     'h.amaLoad': 'Ama load', 'hud.heel': 'Heel', 'hint.heelBar': 'Heel (centered = upright)', 'h.reset': 'Reset',
-    'h.display': 'Display', 'lbl.wakeTrail': 'Wake trail (kilwater)', 'hud.luffing': 'LUFFING',
+    'h.display': 'Display', 'lbl.wakeTrail': 'Wake trail (kilwater)', 'hud.luffing': 'LUFFING', 'hud.stalled': 'STALLED',
     'h.polarDiagram': 'Polar diagram',
     'hint.polar': "Runs the headless polar sweep against the current config (TWS 4/6/8/10 m/s) and plots it. The boat's live (TWA, speed) point is overlaid once you return to sailing.",
     'btn.runPolar': 'Run polar', 'btn.exportCsv': 'Export CSV', 'btn.backToSailing': 'Back to sailing',
@@ -98,7 +98,7 @@ const TRANSLATIONS = {
     'lbl.crewPosX': 'Załoga wzdłuż', 'hint.crewPosX': 'I w stronę dziobu, K w stronę rufy',
     'h.shunt': 'Zwrot', 'btn.shunt': 'ZWROT (spacja)',
     'h.amaLoad': 'Obciążenie amy', 'hud.heel': 'Przechył', 'hint.heelBar': 'Przechył (środek = pion)', 'h.reset': 'Reset',
-    'h.display': 'Widok', 'lbl.wakeTrail': 'Kilwater', 'hud.luffing': 'ŁOPOCZE',
+    'h.display': 'Widok', 'lbl.wakeTrail': 'Kilwater', 'hud.luffing': 'ŁOPOCZE', 'hud.stalled': 'PRZECIĄGNIĘTY',
     'h.polarDiagram': 'Diagram polarny',
     'hint.polar': 'Uruchamia pomiar polary (bezekranowy silnik fizyki) dla bieżącej konfiguracji (TWS 4/6/8/10 m/s) i rysuje wykres. Po powrocie do żeglugi na wykresie pojawia się bieżący punkt (TWA, prędkość) łódki.',
     'btn.runPolar': 'Uruchom polarę', 'btn.exportCsv': 'Eksportuj CSV', 'btn.backToSailing': 'Powrót do żeglugi',
@@ -315,7 +315,7 @@ let polarMode = false;
 
 function togglePause() { paused = !paused; document.getElementById('btnPause').classList.toggle('active', paused); }
 function toggleForces() { showForces = !showForces; document.getElementById('btnForces').classList.toggle('active', showForces); }
-function doReset() { recEndForReset(); sim.reset(); capsizeOverlay.classList.remove('show'); wakeReset(); }
+function doReset() { recEndForReset(); sim.reset(); capsizeOverlay.classList.remove('show'); wakeReset(); stalledTimer = 0; }
 
 document.getElementById('btnPause').addEventListener('click', togglePause);
 document.getElementById('btnStep').addEventListener('click', () => { stepOnce = true; });
@@ -751,6 +751,7 @@ const hud = {
   sheet: document.getElementById('hudSheet'),
   yard: document.getElementById('hudYard'),
   luffing: document.getElementById('hudLuffing'),
+  stalled: document.getElementById('hudStalled'),
 };
 
 function normalizeAngle(a) { return Math.atan2(Math.sin(a), Math.cos(a)); }
@@ -786,6 +787,7 @@ function updateHud(state, forces) {
   hud.sheet.textContent = `${Math.round(controls.sheet / DEG)}`;
   hud.yard.textContent = `${Math.round((state.delta ?? 0) / DEG)}`;
   hud.luffing.textContent = forces.luffing ? t('hud.luffing') : '';
+  hud.stalled.textContent = stalledTimer > STALLED_HOLD_SECONDS ? t('hud.stalled') : '';
 
   const loadFrac = clamp(forces.amaLoadDisplay, 0, 3) / 3;
   amaBar.style.width = `${clamp(forces.amaLoadDisplay, 0, 1) * 100}%`;
@@ -856,6 +858,16 @@ const WAKE_SAMPLE_INTERVAL = 0.15; // seconds of SIM time
 let wakeX = [];
 let wakeY = [];
 let wakeLastSampleT = -Infinity;
+
+// STALLED HUD cue (round 7, R7-3) — symmetric to LUFFING: the sail is
+// actively driving (not luffing) but at an angle of attack past its
+// useful range (alphaSailor > STALLED_ALPHA_DEG), sustained for more than
+// STALLED_HOLD_SECONDS. A UI-layer timer, same pattern as the recorder's
+// own timers — the core only exposes the instantaneous alphaSailor/
+// luffing readouts, not a stall duration.
+const STALLED_ALPHA_DEG = 50;
+const STALLED_HOLD_SECONDS = 1;
+let stalledTimer = 0;
 
 function wakeReset() {
   wakeX = [];
@@ -1092,6 +1104,17 @@ function frame(now) {
     // same condition the sim itself advances under) and capsize stops it;
     // shunts are NOT excluded — the zigzag through them is the point.
     if (stepped && !state.capsized) wakeSample(state);
+
+    // STALLED cue timer (round 7, R7-3): accumulates only while actively
+    // driving (not luffing, not capsized) at alphaSailor past the
+    // threshold; resets the instant either condition lapses.
+    if (stepped) {
+      if (!state.capsized && !forces.luffing && forces.alphaSailor > STALLED_ALPHA_DEG * DEG) {
+        stalledTimer += usedDt;
+      } else {
+        stalledTimer = 0;
+      }
+    }
 
     // Session recorder (round 6): called unconditionally whenever a step
     // actually happened (pause -> no call -> "pause frames are simply

@@ -3,10 +3,27 @@
 // All coefficients not directly given by the prompt are tunable estimates
 // (see data/README_input_data_EN.md for the calibrated-vs-estimated split).
 
+// ITTC-57 model-ship correlation line, shared by the main hull and the ama:
+// both are slender bodies moving lengthwise through the water (the ama is
+// NOT a bluff cross-flow body — it trails fore-aft like a second, smaller
+// hull), so both get skin-friction resistance from the same formula, just
+// at their own length/Reynolds number (round 7, R7-1 — replaces the old
+// hull.Cf constant and the ama's unrelated bluff-body dragCoeff=0.4, which
+// was the root cause of the ama out-dragging the main hull 26-30x).
+const NU_SEAWATER = 1.19e-6; // m^2/s, kinematic viscosity of seawater at ~15degC (ITTC standard condition)
+
+function ittc57Cf(u, length) {
+  const uAbs = Math.max(Math.abs(u), 0.05); // floor avoids the Re->0 singularity near rest
+  const Re = (uAbs * length) / NU_SEAWATER;
+  const logRe = Math.log10(Re);
+  return 0.075 / ((logRe - 2) * (logRe - 2));
+}
+
 export function hullResistance(u, config) {
   const { hull, rho_w, g } = config;
   const uAbs = Math.abs(u);
-  const friction = 0.5 * rho_w * hull.wettedSurface * hull.Cf * uAbs * uAbs;
+  const Cf = ittc57Cf(u, hull.length);
+  const friction = 0.5 * rho_w * hull.wettedSurface * Cf * uAbs * uAbs;
 
   const Fr = uAbs / Math.sqrt(g * hull.length);
   const uThreshold = hull.froudeThreshold * Math.sqrt(g * hull.length);
@@ -31,6 +48,17 @@ export function hullResistance(u, config) {
 //   effectively aft of the CLR, which should luff the boat (verified
 //   empirically against the 1.6 coupling-sign test; config.hull.crewTrimSign
 //   is a flip knob if the physical rig runs the other way).
+// clrXPosition(crewPosX, config) -> x offset from CG (boat frame, +fwd)
+//   Shared by hullSideForce (below) and aero.js's sail CE geometry (round
+//   7, D-6, ROUND7_DECISION.md): the CE-CLR "lead" concept only means
+//   anything if both sides of it reference the SAME point.
+export function clrXPosition(crewPosX, config) {
+  const { hull } = config;
+  const crewTrimSign = hull.crewTrimSign ?? 1;
+  return -(hull.clrXFraction ?? 0.1) * (hull.length / 2)
+    + crewTrimSign * (hull.crewForeAftTrimCoeff ?? 0) * crewPosX * (hull.length / 2);
+}
+
 export function hullSideForce(u, v, crewPosX, config) {
   const { hull, rho_w } = config;
   const satRad = (hull.leewaySaturationDeg * Math.PI) / 180;
@@ -60,9 +88,7 @@ export function hullSideForce(u, v, crewPosX, config) {
   // a modest weather-helm-like turning tendency rather than zero yaw coupling.
   // crewTrimSign*crewForeAftTrimCoeff*crewPosX shifts it fore/aft with
   // fore-aft crew position (FIX_REQUEST_round4_roll_dof.md 1.5).
-  const crewTrimSign = hull.crewTrimSign ?? 1;
-  const clrX = -(hull.clrXFraction ?? 0.1) * (hull.length / 2)
-    + crewTrimSign * (hull.crewForeAftTrimCoeff ?? 0) * crewPosX * (hull.length / 2);
+  const clrX = clrXPosition(crewPosX, config);
   const yawMoment = clrX * Fy;
 
   return { Fx, Fy, yawMoment };
@@ -107,7 +133,16 @@ export function amaDrag(u, amaLoad, crewPos, end, config) {
   const immersion = Math.min(heelImmersion + crewImmersion, 1.3);
   const outboardRelief = 1 - 0.15 * (Math.max(0, -crewPos) / 0.3);
   const Seff = ama.wettedSurface * immersion * outboardRelief;
-  const Fx = -Math.sign(u) * 0.5 * rho_w * ama.dragCoeff * Seff * u * u;
+  // Skin friction at the ama's own (shorter) length, same ITTC-57 line the
+  // main hull uses above, times a form factor (1+k) — standard ITTC/Prohaska
+  // ship-resistance practice for a body that isn't as finely-shaped as the
+  // main hull's canoe entry (a stubbier slender float, more curvature per
+  // unit length). Round 7 R7-1's hard anchor (10-25% of hull drag at static
+  // immersion, rising to 50-80% at max, never above parity) is the check
+  // this must satisfy — see harness/asserts.js and ARCHITECTURE's
+  // calibration section for the derivation.
+  const Cf = ittc57Cf(u, ama.length) * ama.formFactor;
+  const Fx = -Math.sign(u) * 0.5 * rho_w * Cf * Seff * u * u;
 
   const yAma = ama.spacing * end;
   const yawMoment = -yAma * Fx;

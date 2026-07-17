@@ -36,6 +36,7 @@
 //   only the CL/CD table lookup magnitude, not by reflecting alpha itself.
 
 import { polhamusAR, polhamusKp, polhamusKv, polhamusCL } from './config.js';
+import { clrXPosition } from './hydro.js';
 
 const DEG = Math.PI / 180;
 // Flogging-drag window (R5-1): how close to a genuine zero-AoA weathervane
@@ -194,55 +195,51 @@ export function sailForces(state, controls, config) {
   const brailWind = controls.brailWind ?? 0;
   const heelMoment = Fy * config.sail.CEheight * (1 - 0.9 * brailWind);
 
-  // CE geometry (ROUND5_CONSOLIDATED_work_order.md P1.2 — replaces the old
-  // fixed ceXFraction offset with a delta-dependent lever, same physical
-  // scale as before): the tack sits toward the active-bow SIDE of CG —
-  // tackX = tackXFraction*(hull.length/2), no `end` factor needed since the
-  // boat frame's own +x axis is already "toward the active bow" by
-  // construction (state.js Conventions). tackXFraction reuses the exact
-  // value (0.06) the old, now-removed ceXFraction tunable had — this is
-  // that same knob, repositioned to mean "where the mast/tack sits" instead
-  // of "the CE's own fixed position" (zero net new tunables). Numerically
-  // probed against literally placing the tack at the hull's physical tip
-  // (tackX = hull.length/2, ~16x larger): that let x_CE*Fy alone dwarf
-  // every other yaw source in the model (rudder, hull side force, and
-  // P2-1's ama-drag moment alike), which is inconsistent with the rest of
-  // the tuned model and, in particular, defeats P2-2's requirement that the
-  // ama-drag moment be able to dominate at moderate heel — a real mast
-  // step sits near midships on a canoe this size, not at the bow tip.
+  // CE geometry — round 7, D-6 (ROUND7_DECISION.md): rebuilt around a
+  // classical yacht-design "lead" (the CE-CLR longitudinal separation,
+  // a standard order-5-25%-of-waterline-length quantity — Larsson &
+  // Eliasson, Principles of Yacht Design) instead of round 5's from-
+  // scratch tack/chord geometry. That round-5 model measured the CE
+  // directly as a small CG-relative offset (~0.15-0.25m) and got the
+  // *scale* of sail-trim-induced steering badly wrong: real Pjoa sail-trim
+  // response is slow (owner's field datum, D-6) — the net helm is the
+  // SMALL DIFFERENCE of two large, nearly-matched levers (CE and CLR each
+  // measured from a common reference, not two independent small numbers),
+  // which is precisely why it's insensitive to trim. `hull.lead` anchors
+  // that difference directly: xCE's neutral point is the hull's own CLR
+  // (hydro.js's clrXPosition, at the neutral crewPosX=0 — moving crew
+  // fore-aft shifts the hull's CLR for T2's benefit, it does NOT drag the
+  // sail's CE around too, which would cancel that mechanism) plus `lead`.
   //
-  // The CE slides aft along the yard from the tack as delta swings the
-  // sail out, landing on the leeward (-end) side:
-  //   x_CE = tackX - (chord/2)*cos(delta)
-  //   y_CE = -end * (chord/2)*sin(delta)
-  // Chord scale reuses config.sail.CEheight/2 (zero new tunables): a full
-  // aerodynamic yard span (~5.6m, from the area/apex-angle triangle
-  // relation) was also probed and makes the y_CE*Fx term (Fx itself
-  // changes SIGN across a normal trim sweep, from drive to net aft thrust
-  // near alignment) dominate and REVERSE the qualitative trend x_CE*Fy
-  // alone already gets right, flipping "ease -> luffs to windward" (Pjoa
-  // manual III.3, T3) into its opposite.
+  // The yard's OWN swing (delta) still moves the CE further, same
+  // direction as round 5 (aft along the yard from the tack, landing to
+  // leeward) — a real crab-claw's CE does shift with trim, that's the
+  // whole reason trimming steers at all — but the excursion is scaled by
+  // `sail.ceSwingFraction` (round 7, new tunable, ~0.5): a real, flow-
+  // attached aerodynamic center tracks much closer to the leading
+  // edge/tack across the practical trim range than the raw geometric
+  // half-chord midpoint the round-5 model assumed, so only a FRACTION of
+  // the full geometric swing should reach the CE. Empirically landed
+  // (D-6's target: 0.3-1.5deg/s steady sail-trim turn rate at TWS 6,
+  // 5-15deg over a 10s window) — see harness/asserts.js's T1/T3/T4/T5.
   //
-  // P2-3 (brail-induced CE shift): spilling the sail's rear/upper area
-  // (windward brail) moves the effective CE toward the tack — shrink the
-  // along-yard FORE-AFT distance from the tack proportionally to brailWind
-  // (config.sail.ceBrailShift, default ~0.3: full brailWind moves x_CE
-  // ~30% of the half-chord toward the tack). Only x_CE shifts, not y_CE —
-  // probed both ways (T5, downwind rudder-workload investigation): shrinking
-  // BOTH shrinks the whole lever uniformly and leaves the net yaw-moment
-  // magnitude essentially unchanged (or slightly larger, since x_CE and
-  // y_CE partly cancel through the ceLeverSign flip above), whereas shifting
-  // only x_CE genuinely reduces the yaw moment's magnitude — the "carrot"
-  // (a spilled sail bunched near the tack) damping the boat's yaw
-  // sensitivity downwind, not just relocating it.
+  // P2-3 (brail-induced CE shift, unchanged from round 5): spilling the
+  // sail's rear/upper area (windward brail) moves the effective CE toward
+  // the tack — shrink the along-yard FORE-AFT distance from the tack
+  // proportionally to brailWind (config.sail.ceBrailShift, ~0.3). Only
+  // x_CE shifts, not y_CE (round-5 finding: shrinking both leaves the net
+  // magnitude roughly unchanged, since they partly cancel through
+  // ceLeverSign; shifting only x_CE genuinely damps the yaw moment — the
+  // "carrot" that lowers rudder workload deep downwind, T5).
   const chord = config.sail.CEheight / 2;
   const halfChord = chord / 2;
-  const tackXFraction = config.sail.tackXFraction ?? 0.06;
-  const tackX = tackXFraction * (config.hull.length / 2);
+  const lead = config.hull.lead ?? 0.15 * config.hull.length;
+  const clrXNeutral = clrXPosition(0, config);
+  const ceSwingFraction = config.sail.ceSwingFraction ?? 0.5;
   const ceBrailShift = config.sail.ceBrailShift ?? 0.3;
-  const halfChordEffX = halfChord * (1 - ceBrailShift * brailWind);
-  const xCE = tackX - halfChordEffX * Math.cos(delta);
-  const yCE = -state.end * halfChord * Math.sin(delta);
+  const halfChordEffX = halfChord * ceSwingFraction * (1 - ceBrailShift * brailWind);
+  const xCE = clrXNeutral + lead - halfChordEffX * Math.cos(delta);
+  const yCE = -state.end * halfChord * ceSwingFraction * Math.sin(delta);
 
   // Heel-course coupling (pure geometry, FIX_REQUEST_round4_roll_dof.md
   // 1.4): heeling tips the mast, offsetting the CE laterally by

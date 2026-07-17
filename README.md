@@ -18,6 +18,17 @@ and (re)writes scenario + polar CSVs to `/out`. Exit code is non-zero on
 any failure. `/core` and `/harness` are frozen as of the Step 1 sign-off
 — Step 2 only reads from them.
 
+Round 7 added a "KNOWN MODEL LIMITATIONS" section to the output: a small
+set of diagnosed, evidenced regressions (tagged `xfail:STEERING` /
+`xfail:STABILITY` in `harness/asserts.js`) that are EXPECTED to keep
+failing — they still run every time, are excluded from the main pass
+count, and are reported separately with a one-line diagnosis pointing at
+`ROUND7_steering_regression_findings.md`. If one of these ever starts
+passing, the run fails loudly as a "promotion candidate" instead of
+silently going green — that's deliberate: an xfail flipping to green
+means the model changed and needs a human decision to lift the mark, not
+an automatic pass.
+
 ## Step 2 — browser UI
 
 Two ways to run it, both driving the exact same unmodified core:
@@ -198,13 +209,20 @@ Step 2, since the UI doesn't change them):
 Carried forward from the round-2 sign-off (`STEP1_SIGNOFF_and_STEP2_instructions.md`
 Part A) as calibration watch items, not bugs:
 
-- The polar is globally on the low side of the tuning that fixed the
-  round-2 upwind-pointing finding: `speed(TWS 6, TWA 90)` sits near the
-  bottom of the prompt's `[2.0, 3.6] m/s` acceptance band, and the
-  speed peak sits further aft (~TWA 140) than a typical reaching boat.
-  Both pass the acceptance criteria as written; final numbers await
-  calibration against real-boat reference data (Dierking designs, Di
-  Piazza wind-tunnel tables) mentioned in `data/README_input_data_EN.md`.
+- Round 7 (`ROUND7_drag_calibration.md`/`ROUND7_DECISION.md`) flipped this
+  item to the OTHER edge: fixing the ama-drag bug (it had been acting as
+  an unphysical brake across the whole polar) legitimately raised
+  achievable speed everywhere. Sail-side parameters were retuned within
+  literature-plausible ranges as far as they safely could be
+  (`core/config.js`'s `sail.camber/CD0/s` comment), but two acceptance
+  checks (`speed(TWA 40) < 0.35*globalMax`, `speed(TWS 6, TWA 90)
+  <= 3.6 m/s`) now report as the best achievable rather than pass —
+  `TWS6/TWA90` is hull-wave-resistance-limited at this near-hull-speed
+  condition (the Froude-penalty term, deliberately left untouched by
+  R7-1), not sail-limited, so this needs either real-boat reference data
+  or a wave-resistance recalibration to close, same as the round-2 item
+  below. See `ROUND7_steering_regression_findings.md` sec 8 for the full
+  before/after and what was tried.
 - `bestSheetAngle` jitters at TWA 160 in the polar (a flat downwind
   optimum where several trims give near-identical speed) — cosmetic,
   the speed curve itself is smooth there.
@@ -227,6 +245,12 @@ harness/               Step 1 test harness (asserts.js, scenarios.js, polar.js, 
                        plus round-6 checksum.js (shared state hash) and replay.js (offline CLI)
 run_tests.js           Step 1 entry point
 out/                    Step 1 scenario/polar CSV output
+recordings/             Committed session recordings used as regression-test
+                        fixtures (round 7, R7-4b) — replayed by
+                        harness/asserts.js against the live core, no
+                        checksum verification (see "Session recorder &
+                        replay" above for why cross-engine verify isn't
+                        meaningful)
 ui/
   index.html            Step 2 dev entry point (ESM, needs an HTTP server)
   app.js                All UI logic: rendering, controls, HUD, alarms, polar mode

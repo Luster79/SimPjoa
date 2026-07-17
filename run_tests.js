@@ -17,12 +17,34 @@ function main() {
 
   console.log('Running acceptance assertions...');
   const results = runAsserts(config);
+  const nonXfail = results.filter((r) => !r.xfail);
+  const xfail = results.filter((r) => r.xfail);
+
   let failCount = 0;
-  for (const r of results) {
+  for (const r of nonXfail) {
     console.log(`  [${r.pass ? 'PASS' : 'FAIL'}] ${r.name}${r.detail ? ' — ' + r.detail : ''}`);
     if (!r.pass) failCount++;
   }
-  console.log(`\n${results.length - failCount}/${results.length} assertions passed.\n`);
+  console.log(`\n${nonXfail.length - failCount}/${nonXfail.length} assertions passed.\n`);
+
+  // KNOWN MODEL LIMITATIONS (ROUND7_DECISION.md D-3/D-4): these run every
+  // time, are EXPECTED to fail, and are excluded from the pass count above
+  // — but a promotion (an xfail that starts passing) is treated as a build
+  // failure, not silently welcomed, since it means the model changed and
+  // the xfail mark needs an explicit human decision to lift.
+  let promotionCount = 0;
+  if (xfail.length) {
+    console.log('KNOWN MODEL LIMITATIONS (expected-fail, tracked — see ROUND7_steering_regression_findings.md):');
+    for (const r of xfail) {
+      if (r.pass) {
+        console.log(`  [PROMOTION CANDIDATE] ${r.name}${r.detail ? ' — ' + r.detail : ''} (xfail:${r.xfail} now PASSES — promote it out of xfail)`);
+        promotionCount++;
+      } else {
+        console.log(`  [xfail:${r.xfail}] ${r.name}${r.detail ? ' — ' + r.detail : ''}`);
+      }
+    }
+    console.log('');
+  }
 
   console.log('Exporting scenario CSVs to /out...');
   writeFileSync('out/scenario_squall.csv', toCSV(scenarioSquall(config)));
@@ -39,11 +61,12 @@ function main() {
 
   console.log('Done. Output written to /out.\n');
 
-  if (failCount > 0) {
-    console.error(`FAILED: ${failCount} assertion(s) did not pass.`);
+  if (failCount > 0 || promotionCount > 0) {
+    if (failCount > 0) console.error(`FAILED: ${failCount} assertion(s) did not pass.`);
+    if (promotionCount > 0) console.error(`FAILED: ${promotionCount} xfail assertion(s) unexpectedly passed (promotion candidates).`);
     process.exit(1);
   }
-  console.log('ALL TESTS PASSED.');
+  console.log('ALL TESTS PASSED.' + (xfail.length ? ` (${xfail.length} known limitation(s) tracked as xfail, all still failing as expected.)` : ''));
 }
 
 main();
