@@ -1,6 +1,28 @@
 # PROMPT SUPPLEMENT: Physics core architecture (Step 1 — headless)
 
-*Last reviewed: 2026-07-16*
+*Last reviewed: 2026-07-18*
+
+**Round 9 note:** `ROUND9_physics_fidelity_work_order.md` closed the
+"heavy displacement monohull, not a light apparent-wind multihull" gap
+Round 7 identified but didn't have authorization to fix. R9-1
+(`docs/adr/0001`) replaced the wave-resistance wall (a monohull "hull
+speed" model wrong for this slender L/B=10:1 hull) with a bounded,
+ITTC-order residuary hump — boat/wind speed ratio no longer collapses as
+wind builds (0.77 at TWS=4 up to ~1.0 at TWS=10). R9-2 undid Round 7's
+D-5 sail-detune (it was compensating for the wave wall, not a sail
+problem) — both `xfail:CALIBRATION` polar bands were re-derived against
+the new, faster polar and now PASS. R9-3 (`docs/adr/0002`) corrected
+`ama.formFactor` from an admitted 3.3 (2-3x the physical ITTC/Prohaska
+range, kept there solely to keep T1 signed) to the genuinely physical
+1.2 — T1 (both legs) and T5 lost their signal as a direct result (ama-drag
+and the downwind "carrot" were never legitimate mechanisms once physically
+scaled) and are now `xfail:STEERING` with fresh diagnoses; the R7-4a
+drag-ratio bands were likewise re-derived. R9-4 (vertical lift) was
+implemented but found to destabilize established capsize-safety scenarios
+at even a tiny nonzero value post R9-1/2/3's higher sail power — defaulted
+to 0 (mechanism present, inactive), deferred rather than force-fit. R9-5
+(roll damping) applied a small, independent zeta bump (0.152 -> ~0.19).
+Full evidence in `ROUND9_physics_fidelity_findings.md`.
 
 **Round 8 note:** `ROUND8_physical_capsize.md` retired the v0.1
 amaLoad>1-for-2s "overload timer" as a capsize trigger on the flying
@@ -200,7 +222,13 @@ cross-check at startup as required by the main prompt. Fixed schema version: a
       // "sail flogging" depower path, not active in normal driving trims.
     sailForces(state, controls, config)
       -> { Fx, Fy, heelMoment, yawMoment, yawMomentHeel, alpha, alphaSailor, aw }
-      // Fx, Fy in the boat frame; heelMoment already reduced by brailWind;
+      // Fx, Fy in the boat frame; heelMoment already reduced by brailWind
+      // and by sail.verticalLiftFraction (round 9, R9-4: Marchaj's
+      // crab-claw vertical-lift claim, conservatively modeled — see
+      // aero.js's own comment; defaulted to 0/inactive, see config.js's
+      // comment for why: it broke established capsize-safety scenarios
+      // at even a tiny nonzero value once R9-1/2/3's higher sail power
+      // was in place);
       // alpha is the raw, internal chord-flow angle (not acute on normal
       // courses); alphaSailor [0, pi/2] is the UI-facing angle of attack.
       // The yard trims to the side opposite the ama (leeward) — the chord
@@ -269,7 +297,14 @@ cross-check at startup as required by the main prompt. Fixed schema version: a
                                             // Reynolds number, ittc57Cf(u,
                                             // hull.length) — replaces the old
                                             // flat hull.Cf=0.0015 estimate) +
-                                            // wave penalty Fr>0.4 (unchanged)
+                                            // residuary (round 9, R9-1: a
+                                            // bounded Gaussian Cr(Fr) hump,
+                                            // same nondimensional form as
+                                            // friction — replaces the old
+                                            // u^4-above-Fr-0.4 "wave wall",
+                                            // a displacement-monohull model
+                                            // wrong for this slender L/B=10:1
+                                            // hull; see docs/adr/0001)
     clrXPosition(crewPosX, config) -> x offset from CG
                                             // Round 7, D-6: factored out of
                                             // hullSideForce so aero.js's sail
@@ -303,18 +338,24 @@ cross-check at startup as required by the main prompt. Fixed schema version: a
                                             // (R7-1): Fx itself is now
                                             // ittc57Cf(u, ama.length) *
                                             // ama.formFactor (a slender-body
-                                            // skin-friction model, form
-                                            // factor 3.3 — see config.js's
-                                            // comment for the drag-ratio hard
-                                            // anchor this satisfies) —
-                                            // replaces the old bluff-body
+                                            // skin-friction model — replaces
+                                            // the old bluff-body
                                             // dragCoeff=0.4 estimate, which
                                             // was ~100x too high and the root
                                             // cause of a diagnosed
-                                            // uncommanded-round-up bug (see
+                                            // uncommanded-round-up bug; see
                                             // ROUND7_drag_calibration.md,
                                             // ROUND7_steering_regression_
-                                            // findings.md).
+                                            // findings.md). Form factor 1.2
+                                            // (round 9, R9-3, docs/adr/0002)
+                                            // — the genuinely physical
+                                            // ITTC/Prohaska value; round 7
+                                            // had run 3.3 (2-3x that range)
+                                            // as an admitted crutch to keep
+                                            // one steering test signed — see
+                                            // config.js's comment and the
+                                            // re-derived R7-4a drag-ratio
+                                            // bands this now satisfies.
     yawDamping(r, u, config) -> moment
 
 ### rudder.js
@@ -596,11 +637,15 @@ either way.
 ### asserts.js — the prompt's acceptance criteria as tests, incl.:
     - CL(35 deg) in [1.6, 1.8]; CL_max in [1.75, 2.0] at alpha 38-46 deg
     - polar: no progress below ~50 deg TWA; maximum at 90-135 deg;
-      speed at TWS 6 m/s, TWA 90 deg within [2.0, 3.6] m/s; bestSheetAngle
-      and the settled delta coincide on driving (taut-sheet) rows. Round 7
-      (D-5): both the TWA-40 and TWA-90 checks report as best-achievable
-      rather than pass — see ROUND7_steering_regression_findings.md sec 8
-      and config.js's sail.camber/CD0/s comment.
+      bestSheetAngle and the settled delta coincide on driving (taut-sheet)
+      rows. Round 9 (R9-1/R9-2, docs/adr/0001): the wave-wall removal +
+      sail-detune reversal legitimately raised the whole polar (globalMax
+      ~7 m/s at TWS=6, up from ~3.7) — both the TWA-40 ratio band and the
+      TWA-90 absolute-speed band were re-derived against the new polar
+      shape/realistic absolute speeds (ratio <0.55 and [3.0,6.5] m/s
+      respectively) rather than the old wave-wall-calibrated numbers, and
+      now PASS — see ROUND9_physics_fidelity_findings.md and
+      harness/asserts.js's own comment at that check.
     - no NaN/Inf in any scenario; energy does not grow with zero wind
       (damping test)
     - the squall scenario ends without capsize; the aback scenario ends
@@ -618,12 +663,16 @@ either way.
       varies with wind/boat, so a tight number is the wrong thing to
       assert:
       - T1 (THE ONE SANCTIONED REVERSAL, P2-2): crew toward the ama turns
-        to windward (round-4 demanded the opposite). Round 7: restored by
-        R7-1's ama-drag recalibration at formFactor=3.3 (the R7-4a band's
-        ceiling — the minimum authority that keeps this leg signed
-        correctly); the "away from ama" leg stays xfail:STEERING (a
-        restingImmersion-floor asymmetry, not fixable within the R7-4a
-        band — see the findings doc sec 3).
+        to windward (round-4 demanded the opposite). Round 7 restored it
+        by running ama.formFactor at 3.3 — an admitted crutch, 2-3x the
+        physical ITTC/Prohaska range (D-1: "the minimum ama-drag authority
+        that keeps this leg signed"). Round 9 (R9-3, docs/adr/0002)
+        corrected formFactor to the genuinely physical 1.2 — BOTH T1 legs
+        now fail outright (not just weaker, backwards), confirming
+        ama-drag was never a legitimate mechanism for this maneuver; both
+        retagged xfail:STEERING pending real reference data (Irwin/Flay
+        et al. 2023) to find the actual mechanism, if any — see
+        ROUND9_physics_fidelity_findings.md.
       - T2 (kept, now practice-validated): crewPosX forward luffs, aft
         bears away — runs through hullSideForce's own clrX shift, not the
         sail's CE geometry, so unaffected by round 7's CE-lever rework.
@@ -641,7 +690,12 @@ either way.
       - T4 (needs P2-3, redone round 7 D-6): windward brail on a beam
         reach turns to leeward AND lowers ama load simultaneously.
       - T5 (needs P2-3): windward brail lowers mean |rudder| deep downwind
-        (TWA 165) — the "carrot" stabilizes.
+        (TWA 165) — the "carrot" stabilizes. Round 9 (R9-1/R9-2/R9-3):
+        xfail:STEERING — the yaw-hunting baseline this measured against
+        is noise-level (~0.0003-0.002) now that the ama-drag/CE-lever
+        terms it compensated for are physically scaled; a sweep of
+        TWS/sheet/crewPos found no trim with a meaningful, reliably-signed
+        baseline — see ROUND9_physics_fidelity_findings.md.
       - T6 (needs P1): releasing the sheet fully at amaLoad~0.9 in a gust
         saves the boat that a held-in sheet would capsize (the panic rule)
       - T7 (needs P1): sheet limit 90deg on a beam reach settles delta at

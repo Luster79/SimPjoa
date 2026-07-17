@@ -203,27 +203,26 @@ Step 2, since the UI doesn't change them):
   round 2 to close a ballast exploit — see
   `FIX_REQUEST_step1_round2.md` R2-1); this is a straight-line fraction
   of crew mass vs. ama buoyancy, not a hull-shape-aware immersion curve.
-- **No waves or current.** Water is a still reference frame; wave
-  resistance is a Froude-number penalty term on the hull only, not a
-  simulated sea state.
+- **No waves or current.** Water is a still reference frame; residuary
+  (wave-making) resistance is a bounded Froude-number-dependent term on
+  the hull only (round 9, `ROUND9_physics_fidelity_work_order.md` R9-1 —
+  a slender-hull hump, not a simulated sea state).
 
 Carried forward from the round-2 sign-off (`STEP1_SIGNOFF_and_STEP2_instructions.md`
 Part A) as calibration watch items, not bugs:
 
 - Round 7 (`ROUND7_drag_calibration.md`/`ROUND7_DECISION.md`) flipped this
-  item to the OTHER edge: fixing the ama-drag bug (it had been acting as
-  an unphysical brake across the whole polar) legitimately raised
-  achievable speed everywhere. Sail-side parameters were retuned within
-  literature-plausible ranges as far as they safely could be
-  (`core/config.js`'s `sail.camber/CD0/s` comment), but two acceptance
-  checks (`speed(TWA 40) < 0.35*globalMax`, `speed(TWS 6, TWA 90)
-  <= 3.6 m/s`) now report as the best achievable rather than pass —
-  `TWS6/TWA90` is hull-wave-resistance-limited at this near-hull-speed
-  condition (the Froude-penalty term, deliberately left untouched by
-  R7-1), not sail-limited, so this needs either real-boat reference data
-  or a wave-resistance recalibration to close, same as the round-2 item
-  below. See `ROUND7_steering_regression_findings.md` sec 8 for the full
-  before/after and what was tried.
+  item to the OTHER edge: fixing the ama-drag bug legitimately raised
+  achievable speed everywhere, but the hull's wave-resistance wall (a
+  displacement-monohull "hull speed" model, wrong for this slender
+  L/B=10:1 hull) then capped top-end speed regardless of sail power — two
+  acceptance checks reported as best-achievable rather than pass. **Round 9
+  resolved this** (`ROUND9_physics_fidelity_work_order.md` R9-1/R9-2,
+  `docs/adr/0001`): replaced the wave wall with a bounded, ITTC-order
+  residuary model and undid the sail detune that had been compensating for
+  it. Both acceptance bands were re-derived against the new, physically
+  faster polar and now genuinely pass — see
+  `ROUND9_physics_fidelity_findings.md` for the full before/after.
 - `bestSheetAngle` jitters at TWA 160 in the polar (a flat downwind
   optimum where several trims give near-identical speed) — cosmetic,
   the speed curve itself is smooth there.

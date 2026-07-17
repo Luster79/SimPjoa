@@ -25,12 +25,19 @@ export function hullResistance(u, config) {
   const Cf = ittc57Cf(u, hull.length);
   const friction = 0.5 * rho_w * hull.wettedSurface * Cf * uAbs * uAbs;
 
+  // Residuary (wave-making) resistance: round 9, R9-1. A slender L/B=10:1
+  // canoe hull makes little wave and has no hard "hull speed" wall the way
+  // a displacement monohull (L/B~3-4) does — expressed in the same
+  // nondimensional form as friction (Cr, not a raw force-scaling constant)
+  // as a bounded Gaussian hump peaking near the main prismatic hump
+  // (residuaryFrPeak), never growing past a few x friction. See config.js
+  // hull.residuaryPeakCr/FrPeak/FrWidth comment for the literature basis.
   const Fr = uAbs / Math.sqrt(g * hull.length);
-  const uThreshold = hull.froudeThreshold * Math.sqrt(g * hull.length);
-  const over = Math.max(0, uAbs - uThreshold);
-  const wavePenalty = Fr > hull.froudeThreshold ? hull.waveResistanceCoeff * over * over * over * over : 0;
+  const z = (Fr - hull.residuaryFrPeak) / hull.residuaryFrWidth;
+  const Cr = hull.residuaryPeakCr * Math.exp(-z * z);
+  const residuary = 0.5 * rho_w * hull.wettedSurface * Cr * uAbs * uAbs;
 
-  return -Math.sign(u) * (friction + wavePenalty);
+  return -Math.sign(u) * (friction + residuary);
 }
 
 // hullSideForce(u, v, crewPosX, config) -> { Fx, Fy, yawMoment }

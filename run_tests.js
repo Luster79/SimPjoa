@@ -34,7 +34,7 @@ function main() {
   // the xfail mark needs an explicit human decision to lift.
   let promotionCount = 0;
   if (xfail.length) {
-    console.log('KNOWN MODEL LIMITATIONS (expected-fail, tracked — see ROUND7_steering_regression_findings.md):');
+    console.log('KNOWN MODEL LIMITATIONS (expected-fail, tracked — see each line\'s own detail for the diagnosing doc):');
     for (const r of xfail) {
       if (r.pass) {
         console.log(`  [PROMOTION CANDIDATE] ${r.name}${r.detail ? ' — ' + r.detail : ''} (xfail:${r.xfail} now PASSES — promote it out of xfail)`);

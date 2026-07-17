@@ -193,7 +193,19 @@ export function sailForces(state, controls, config) {
   Fx *= cosPhi; Fy *= cosPhi;
 
   const brailWind = controls.brailWind ?? 0;
-  const heelMoment = Fy * config.sail.CEheight * (1 - 0.9 * brailWind);
+  // verticalLiftFraction (round 9, R9-4, ROUND9_physics_fidelity_work_
+  // order.md): Marchaj's central claim for the crab claw is that its
+  // twisted delta geometry generates substantial VERTICAL (upward) lift
+  // via leading-edge vortices — a lot of drive for relatively little
+  // heeling moment (the same physical basis the windward-brail mechanism
+  // below already uses, just previously only through that one knob). A
+  // conservative, tunable reduction of the BASE heel moment, deliberately
+  // small: Di Piazza et al. 2014 (also cited by this project) found more
+  // modest crab-claw performance than Marchaj, so the magnitude here is
+  // genuinely contested — this does NOT touch Fx/Fy (drive/side force),
+  // only unloads the heeling arm.
+  const verticalLiftFraction = config.sail.verticalLiftFraction ?? 0;
+  const heelMoment = Fy * config.sail.CEheight * (1 - verticalLiftFraction) * (1 - 0.9 * brailWind);
 
   // CE geometry — round 7, D-6 (ROUND7_DECISION.md): rebuilt around a
   // classical yacht-design "lead" (the CE-CLR longitudinal separation,
@@ -264,6 +276,19 @@ export function sailForces(state, controls, config) {
   // rather than the unaided derivation, exactly as yawHeelSign was already
   // fixed empirically elsewhere in this codebase without a from-scratch
   // proof.
+  //
+  // Round 9 (R9-3, ROUND9_physics_fidelity_work_order.md) was tasked with
+  // removing this flip by deriving the correct sign from geometry — NOT
+  // done: doing so needs real reference data (Irwin/Flay et al. 2023's
+  // Csf/Crm coefficients, cited by the work order for exactly this) to
+  // distinguish "the naive r x F derivation has a sign error somewhere in
+  // this model's geometry" from "a real Pjoa's CE/CLR balance genuinely
+  // works opposite to a standard yacht's for reasons this model doesn't
+  // capture (asymmetric crab-claw rigging, shunting bow/stern instead of
+  // tacking, etc.)" — neither is resolvable from this codebase alone.
+  // Left as an explicit, honest TODO rather than declared "derived":
+  // per the work order's own instruction, "if a sign flip is still needed
+  // after a correct derivation, the geometry is still wrong."
   const ceLeverSign = config.hull.ceLeverSign ?? -1;
   const yawMoment = ceLeverSign * (xCE * Fy - yCE * Fx) + yawMomentHeel;
 

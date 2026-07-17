@@ -184,8 +184,21 @@ function buildDefaultConfig() {
       // computes it per-call from the ITTC-57 model-ship line at the
       // instantaneous Reynolds number (u*length/nu), which is the
       // physically-grounded replacement for the old flat 0.0015 estimate.
-      froudeThreshold: 0.4,               // wave resistance penalty kicks in above this Fr
-      waveResistanceCoeff: 900,           // tunable — scales the u^4 penalty above threshold
+      // residuary (wave-making) resistance: round 9, R9-1
+      // (ROUND9_physics_fidelity_work_order.md). Replaces the old
+      // froudeThreshold/waveResistanceCoeff u^4-above-Fr-0.4 "wave wall",
+      // which was a displacement-monohull hull-speed model (Fr~0.4) applied
+      // to a slender L/B=10:1 canoe hull that has no such wall (Dierking;
+      // Pacific flying proas routinely ran Fr 0.5-1.0). Expressed in the
+      // SAME nondimensional form as skin friction (Cr, not a raw N-scaling
+      // coefficient) and bounded to the same order as Cf (~0.003) rather
+      // than the old term's 100-500x-friction blowup — see hydro.js
+      // hullResistance(). A Gaussian hump centered at the main prismatic
+      // hump (FrPeak) that rises from ~0 well below it and falls away
+      // again at high Fr (semi-planing relief), never growing unbounded.
+      residuaryPeakCr: 0.006,             // tunable — Cr at the hump's peak, ~2x Cf (slender-hull order of magnitude, not a monohull's 100x+)
+      residuaryFrPeak: 0.5,               // tunable — Fr at which residuary resistance peaks (the main prismatic hump)
+      residuaryFrWidth: 0.18,             // tunable — Gaussian width; keeps the hump's rise/fall gentle (naturally ~0 below Fr~0.3, per work order's "~0 below Fr~0.35")
       sideForceCoeff: 0.8,                // tunable — low-AR hull-as-foil lift-curve factor (folds in the ama's lateral resistance too, since hydro.js has no separate ama side-force term). Lowered from 2.5 in round 2 (FIX_REQUEST_step1_round2.md R2-1): a boardless canoe hull is a genuinely weak lateral-force generator (that's the prompt's own framing of why a proa needs the ama/crew technique instead of pointing ability) — 2.5 let the hull balance the sail's side force at near-zero leeway once crew ballast dropped amaDrag, letting the boat "point" unrealistically well close-hauled.
       leewaySaturationDeg: 15,            // side force saturates above this leeway angle
       leewayMushingCoeff: 6,              // tunable — post-saturation side-force falloff, per radian of excess leeway (FIX_REQUEST_step1_round2.md R2-1)
@@ -223,16 +236,23 @@ function buildDefaultConfig() {
       // was ~100x too high for a body moving lengthwise and was the root
       // cause of the ama out-dragging the main hull 26-30x (diagnosed
       // from simpjoa-recording-20260716-155817.json, see recordings/ and
-      // ARCHITECTURE's calibration section). 3.3 is at the TOP edge of the
-      // standard ITTC/Prohaska form-factor range for a stubbier, less
-      // finely-shaped hull than the main canoe hull's finer entry (which
-      // uses the bare line, factor 1.0) — still in-band on the R7-4a hard
-      // anchor (ratio 0.300/0.932 of the [0.10,0.30]/[0.4,1.0] bands), but
-      // deliberately chosen at the edge rather than the middle: this is
-      // the minimum ama-drag authority that keeps T1's "crew toward ama"
-      // steering leg correctly signed (ROUND7_DECISION.md D-1). Revisit
-      // this choice if real ama-resistance data ever narrows the band.
-      formFactor: 3.3,
+      // ARCHITECTURE's calibration section). Round 7 set this to 3.3 — the
+      // TOP edge of the standard ITTC/Prohaska form-factor range (normally
+      // 1.1-1.4 for a slender body; 3.3 is 2-3x that) — specifically
+      // because it was the minimum ama-drag authority that kept T1's "crew
+      // toward ama" steering leg correctly signed (ROUND7_DECISION.md D-1).
+      // Round 9 (R9-3, ROUND9_physics_fidelity_work_order.md) corrects
+      // this to the genuinely physical 1.2 (mid-range): real proa steering
+      // is dominated by the sail CE/hull CLR balance and the steering oar,
+      // not by outrigger drag — T1's ama-drag-lever mechanism regressing
+      // here is the EXPECTED, intended consequence of removing an
+      // unphysical crutch, not a new bug (see ROUND9_physics_fidelity_
+      // findings.md for the resulting re-tag). The R7-4a drag-ratio hard
+      // anchor bands themselves were also re-derived (harness/asserts.js)
+      // since the old [0.4,1.0] max-immersion band is only reachable at
+      // formFactor>=~3 — it was an artifact of accommodating the
+      // unphysical value, not an independent physical constraint.
+      formFactor: 1.2,
       crewImmersionCoeff: 0.30,            // tunable — fraction of crew weight (relative to ama buoyancy) that presses the ama deeper when crewPos>0 (FIX_REQUEST_step1_round2.md R2-1). Raised from 0.21 in round 3 (FIX_REQUEST_round3_worldframe.md R3-2): doubling the ama/crew righting levers to the full spacing (see stability.js) roughly halved amaLoad for a given heel moment, which — via this term's amaLoad-driven immersion floor — quietly cut the ama-drag penalty enough to let the TWA=40 close-hauled polar point creep past the "no meaningful progress below ~50deg" acceptance ratio (0.353 vs the 0.35 limit); this restores the same margin (0.338) without touching the threshold or the hull/yaw tunables the over-sheeting broach-cliff probe depends on.
     },
 
@@ -240,37 +260,27 @@ function buildDefaultConfig() {
       area: p.sail_area_m2,                // 12 m^2
       apexAngleDeg: p.sail_apex_angle_deg,  // 50 deg (45-60 valid range)
       CEheight: p.CE_height_m,              // 2.0 m
-      // camber/CD0/s: retuned round 7, D-5 (ROUND7_DECISION.md). Removing
-      // R7-1's ama-drag bug legitimately raised the whole polar (the boat
-      // is genuinely faster with a correctly-small ama brake) — TWA-40's
-      // margin and TWA-90's speed moved past their acceptance bands as a
-      // direct, expected consequence (not a new bug). Retuned within
-      // literature-plausible sail-side ranges: camber down to its floor
-      // (0, flatter/higher-pointing shape, still in the documented
-      // 0-0.20 range), s up to its physical ceiling (1.0 = full leading-
-      // edge suction loss, the same value the shipped aero table's own CD
-      // column was generated with — no longer just a runtime knob below
-      // that). CD0 raised to 0.09 (vs the 0.06 baseline estimate) —
-      // capped there deliberately, NOT at the higher values that reach the
-      // polar bands fully (CD0=0.15-0.18 gets TWA-40/TWA-90 much closer or
-      // in-band) because CD0 also scales the flogging-drag term
-      // (floggingCDFactor*CD0) and, near head-to-wind, parasitic drag
-      // partially resolves as forward thrust (the apparent wind is nearly
-      // boat-aligned there) — probed empirically: CD0 past ~0.10 breaks
-      // the "head-to-wind stays still" test (speed 0.30->0.52+ m/s, over
-      // its 0.5 ceiling) and collapses T3's "easing turns windward" margin
-      // toward zero. 0.09 keeps both safely passing (0.40 m/s, 3.3deg)
-      // while still narrowing the polar gap. Result: TWA-40 ratio
-      // 0.588->0.458 (target <0.35, not fully reached), TWS6/TWA90 speed
-      // 3.70->3.63 m/s (target <=3.6, not fully reached) — reported as the
-      // best achievable without breaking other established behaviors, per
-      // the standing calibration allowance, not a band edit. The remaining
-      // gap is largely the boat's top-end reaching speed now being hull-
-      // WAVE-RESISTANCE-limited (the u^4 penalty term R7-1 explicitly
-      // keeps unchanged), not sail-limited.
-      camber: 0,
-      CD0: 0.09,
-      s: 1.0,                                 // tunable partial-suction factor (RUNTIME only) — now at its physical ceiling (full suction loss)
+      // camber/CD0/s: round 7 D-5 detuned these (camber->0, s->1.0, CD0->
+      // 0.09) specifically to drag the TWA-40/TWA-90 polar numbers under
+      // acceptance bands that were themselves calibrated against the OLD,
+      // wave-walled hull. Round 9 (R9-2, ROUND9_physics_fidelity_work_
+      // order.md) found that detune was fixing a hull-limited symptom with
+      // a sail-side knob (Round 7 sec 8/D-5 itself confirmed TWA-90 barely
+      // moves even at CD0=0.20 — hull-wave-resistance-limited, not
+      // sail-limited) — now that R9-1 replaced the wave wall with a
+      // physical residuary model, undone: `s` back down to a partial
+      // (rather than full) leading-edge-suction-loss factor —
+      // data/README_input_data_EN.md's own finding that full suction loss
+      // "underestimates L/D at small angles of attack (gives ~3-4, while
+      // practice indicates up to ~8)" and its own recommended fix (s<1);
+      // `camber` restored to the prompt's documented default (a real crab
+      // claw is cambered; raises close-hauled CL ~35% per cited
+      // practitioner reports); `CD0` back to the data-provenance baseline
+      // estimate. Apply AFTER R9-1 (done above) so the two aren't tuned
+      // against each other.
+      camber: 0.10,
+      CD0: 0.06,
+      s: 0.80,                                 // tunable partial-suction factor (RUNTIME only) — partial recovery per data/README_input_data_EN.md, restores small-alpha L/D toward the practical ~6-8 range
       // --- Sheet constraint (ROUND5_CONSOLIDATED_work_order.md P1) ---
       yardSwingRateDegPerSec: 90,             // tunable — max slew rate for state.delta relaxing toward its equilibrium (request's own suggested 60-120deg/s band: "a swinging yard, not a teleport")
       deltaMaxReleaseDeg: 90,                 // the sheet limit is released to this during a shunt's ease/transfer/swap phases, then closes back to the commanded controls.sheet once 'sheet' starts hauling it in (P1.1 point 3)
@@ -293,6 +303,24 @@ function buildDefaultConfig() {
       // D-6 target (0.3-1.5deg/s steady sail-trim turn rate at TWS 6,
       // 5-15deg over a 10s window) — see harness/asserts.js T1/T3/T4/T5.
       ceSwingFraction: 0.5,
+      // verticalLiftFraction: round 9, R9-4. Fraction of the sail's force
+      // treated as vertical (upward) lift on a normally-trimmed crab claw,
+      // unloading the heel arm for the same drive (see aero.js
+      // sailForces()'s heelMoment comment for the Marchaj-vs-Di-Piazza
+      // literature tension). Defaulted to 0 (mechanism present, inactive)
+      // rather than the work order's suggested ~0.15-0.25: empirically,
+      // post R9-1/R9-2/R9-3's already-higher sail power, the established
+      // capsize-safety scenarios (T6's held-sheet gust, T10, the aback
+      // scenario) sit on a genuine knife-edge at this operating point —
+      // even verticalLiftFraction=0.01 flips T6's held-sheet gust from a
+      // clean capsize (maxPhi=65deg) to none (34deg); there is no
+      // meaningful nonzero value that both matches the work order's
+      // ~0.15-0.25 intent and preserves those scenarios' validated
+      // capsize margins. This is a fresh capsize-margin recalibration
+      // exercise (re-deriving gust/trim severity for T6/T10/aback) beyond
+      // this round's scope — deferred, not abandoned; see
+      // ROUND9_physics_fidelity_findings.md.
+      verticalLiftFraction: 0,
     },
 
     crew: {
@@ -317,10 +345,17 @@ function buildDefaultConfig() {
       I_roll: 1500,
       phiLiftoffDeg: 12,          // deg — roll angle at which the ama's weight-restoring moment saturates ("ama just clear of the water", amaLoad == 1.0 exactly here)
       phiSubmergeDeg: 10,         // deg — roll angle (negative side) at which the ama's buoyancy-restoring moment saturates ("ama fully submerged", amaLoad == 1.0 exactly here)
-      // rollDampingCoeff: paired with I_roll=1500 above, tuned so the same
-      // 8deg step settles (|phi|<0.4deg) in ~3.2 oscillation periods —
-      // within the requested 2-4 period, damped-overshoot band.
-      rollDampingCoeff: 900,
+      // rollDampingCoeff: paired with I_roll=1500 above, originally tuned
+      // so an 8deg step settles (|phi|<0.4deg) in ~3.2 oscillation periods
+      // (within the requested 2-4 period, damped-overshoot band), which
+      // Round 7 sec 6 cross-checked as implying a damping ratio zeta~0.152
+      // — plausible but on the low side of the zeta~0.2-0.4 cited for a
+      // beamy multihull form with an ama sweeping through water. Round 9
+      // (R9-5, ROUND9_physics_fidelity_work_order.md): modest bump toward
+      // that range (zeta~0.19 at this value, same I_roll/stiffness) —
+      // independent, small, opportunistic; not re-tuned to any specific
+      // downstream test.
+      rollDampingCoeff: 1100,
       // phiCapsizeDeg (EXTENSION_round5_sheet_constraint.md R5-2.1): past
       // this angle (symmetric on both sides) the ama's restoring arm
       // reverses into a genuine capsizing arm — see stability.js
