@@ -38,6 +38,13 @@ const MS_TO_KN = 1.9438;
 // mismatch) for a downloaded bundle without requiring a build step for
 // plain `python3 -m http.server` development.
 const CODE_VERSION = 'dev';
+// BUILD_TIME: same pattern as CODE_VERSION above — tools/bundle.js
+// replaces this with the COMMIT's timestamp (not wall-clock build time),
+// so it stays stable across re-bundling the same commit and always
+// matches CODE_VERSION's hash. Shown in the bottom-right version footer
+// so a bug report/recording can be tied to an exact, dated build without
+// having to separately ask "which commit was this."
+const BUILD_TIME = 'dev';
 
 // ---------------------------------------------------------------------
 // i18n — EN/PL. Static labels are marked with data-i18n="key" in
@@ -345,6 +352,23 @@ function resize() {
 }
 window.addEventListener('resize', resize);
 resize();
+
+// Version footer (bottom-right): ties a bug report/recording to an exact,
+// dated build without a separate "which commit is this" round-trip — the
+// same codeVersion recordings already carry (harness/replay.js), just
+// visible on-screen too. Set once (not per-frame): CODE_VERSION/BUILD_TIME
+// never change while the page is open.
+{
+  const versionInfo = document.getElementById('versionInfo');
+  if (versionInfo) {
+    if (CODE_VERSION === 'dev') {
+      versionInfo.textContent = 'dev build';
+    } else {
+      const when = BUILD_TIME === 'dev' ? '' : ` · ${BUILD_TIME.replace('T', ' ').slice(0, 16)}`;
+      versionInfo.textContent = `${CODE_VERSION}${when}`;
+    }
+  }
+}
 
 let scale = 24; // px per meter, adjustable via wheel zoom
 stage.addEventListener('wheel', (e) => {

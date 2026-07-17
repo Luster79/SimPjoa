@@ -130,6 +130,20 @@ function currentCodeVersion() {
   }
 }
 
+// The COMMIT's own timestamp, not wall-clock build time: re-running
+// tools/bundle.js against the same commit (e.g. to pick up an unrelated
+// data-file change) shouldn't make the version footer's date drift, and
+// this way it always agrees with CODE_VERSION's hash — "commit X, made at
+// time Y" stays a stable, meaningful pair. ISO 8601 with the commit's own
+// timezone offset (%cI), same best-effort fallback as currentCodeVersion.
+function currentBuildTime() {
+  try {
+    return execSync('git log -1 --format=%cI', { cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+  } catch {
+    return 'unknown';
+  }
+}
+
 // ui/app.js's own `const CODE_VERSION = 'dev';` line survives
 // stripModuleSyntax unchanged (it's not an import/export statement) — this
 // replaces that EXACT, uniquely-worded line with the real version, rather
@@ -141,6 +155,15 @@ function injectCodeVersion(bundleScript, version) {
     throw new Error(`bundle.js: expected to find ${JSON.stringify(needle)} in ui/app.js to inject the code version — did that line change?`);
   }
   return bundleScript.replace(needle, `const CODE_VERSION = ${JSON.stringify(version)};`);
+}
+
+// Same pattern as injectCodeVersion, for the version footer's timestamp.
+function injectBuildTime(bundleScript, buildTime) {
+  const needle = "const BUILD_TIME = 'dev';";
+  if (!bundleScript.includes(needle)) {
+    throw new Error(`bundle.js: expected to find ${JSON.stringify(needle)} in ui/app.js to inject the build time — did that line change?`);
+  }
+  return bundleScript.replace(needle, `const BUILD_TIME = ${JSON.stringify(buildTime)};`);
 }
 
 // ---------------------------------------------------------------------
@@ -195,6 +218,7 @@ function buildHtml(bundleScript) {
 function main() {
   let bundleScript = buildBundleScript();
   bundleScript = injectCodeVersion(bundleScript, currentCodeVersion());
+  bundleScript = injectBuildTime(bundleScript, currentBuildTime());
   const html = buildHtml(bundleScript);
   const outDir = path.join(ROOT, 'dist');
   mkdirSync(outDir, { recursive: true });
