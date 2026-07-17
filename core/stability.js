@@ -1,6 +1,8 @@
 // stability.js — roll as a 4th DOF: sail heel moment, ama restoring moment
 // (weight when lifting, buoyancy when pressed), crew moment, linear
-// damping, and the aback/overload capsize state machine.
+// damping, and the capsize state machine (round 8: purely physical on the
+// flying/phi>=0 side — phi crossing past the capsizing-arm reversal — and
+// a timer on the aback/phi<0 side, unchanged since it's already physical).
 // (FIX_REQUEST_round4_roll_dof.md Part 1 — supersedes the earlier static
 // heel/roll model: "Full roll dynamics are out of scope" no longer holds.)
 
@@ -125,42 +127,58 @@ export function rollDampingMoment(p, config) {
 // over continuously: 0 = upright, exactly 1.0 when the ama just leaves
 // the water (phi=phiLiftoffRad) or just fully submerges
 // (phi=-phiSubmergeRad) — "restoring fully mobilised" either way — and
-// UNBOUNDED past that (grows linearly with phi), so the overload/aback
-// timers below keep the exact "how far past the edge" semantics they
-// always had (a near-zero denominator is no longer possible: phi is a
-// real integrated state, not a moment/capacity ratio).
+// UNBOUNDED past that (grows linearly with phi), so the aback timer and
+// the "AMA FLYING" warning readout below keep the exact "how far past
+// the edge" semantics they always had (a near-zero denominator is no
+// longer possible: phi is a real integrated state, not a moment/capacity
+// ratio).
 export function computeAmaLoad(phi, config) {
   const { stability } = config;
   if (phi >= 0) return phi / (stability.phiLiftoffDeg * DEG);
   return Math.abs(phi) / (stability.phiSubmergeDeg * DEG);
 }
 
-// updateAback(state, amaLoad, dt, config) -> { abackTimer, overloadTimer, capsized }
-//   Both capsize triggers now read the SAME roll-angle-derived amaLoad,
-//   split by the sign of state.phi: phi>=0 past 1.0 is the overload path
-//   (ama flying — config.stability.overloadCapsizeTime, unchanged 2s
-//   semantics); phi<0 past 1.0 is the aback path (ama pressed/submerged
-//   past buoyancy saturation — config.stability.abackCapsizeTime,
-//   unchanged 6s semantics). This is the "physical mechanism instead of a
-//   bare timer" from FIX_REQUEST_round4_roll_dof.md 1.2/1.6: previously
-//   aback was detected purely from the apparent-wind angle (a proxy for
-//   "this will press the ama down"); a backwinded sail drives heelMoment
-//   the wrong way, which now drives phi negative directly through the
-//   roll ODE, so reading state.phi's sign is strictly more direct than
-//   the old proxy. `awAngle` is dropped from the signature — it was only
-//   ever used for that proxy check.
+// updateAback(state, amaLoad, dt, config) -> { abackTimer, capsized }
+//   Round 8 (ROUND8_physical_capsize.md, R8-1) retires the phi>=0
+//   "overload timer" as a capsize trigger. It was a v0.1 proxy from
+//   before roll dynamics existed at all (FIX_REQUEST_step1_review.md) —
+//   real proas fly the ama routinely as a controlled technique, and
+//   round 7's diagnosis (ROUND7_steering_regression_findings.md sec 6-7)
+//   found it firing on trims that were still well short of the actual
+//   physical point of no return (phi~14-18deg, against a phiCapsizeDeg of
+//   50). Capsize on this side is now decided PURELY by phi: past
+//   phiCapsizeDeg the restoring arm has already reversed (see
+//   rollRestoreMoment above) and the dynamics accelerate over on their
+//   own; once phi crosses phiCapsizeDeg + capsizeTriggerMarginDeg (a
+//   config angle safely past the reversal, so integrate()'s freeze-on-
+//   capsize — see its own comment — catches the boat visibly rolling
+//   past the point of no return, not the instant it crosses the
+//   reversal itself), that's an unambiguous capsize. amaLoad>1 on this
+//   side is now purely a WARNING condition (ui/app.js's "AMA FLYING" tag,
+//   derived on the fly from state.phi/amaLoad — no stored timer, nothing
+//   to retire further if the warning's own display logic ever changes).
+//
+//   The aback/pressed path (phi<0) is UNCHANGED (R8-1(b)): counting time
+//   past buoyancy saturation is already a physical mechanism (the ama
+//   fully submerged and still being driven down harder every second is
+//   a genuine, physically-motivated "how long can this go on" question,
+//   not a proxy standing in for something else) — this is the
+//   "physical mechanism instead of a bare timer" from
+//   FIX_REQUEST_round4_roll_dof.md 1.2/1.6: previously aback was
+//   detected purely from the apparent-wind angle (a proxy for "this will
+//   press the ama down"); a backwinded sail drives heelMoment the wrong
+//   way, which now drives phi negative directly through the roll ODE, so
+//   reading state.phi's sign is strictly more direct than the old proxy.
 export function updateAback(state, amaLoad, dt, config) {
-  const { abackCapsizeTime, overloadCapsizeTime } = config.stability;
-
-  const isOverloaded = state.phi >= 0 && amaLoad > 1.0;
-  const overloadTimer = isOverloaded ? state.overloadTimer + dt : 0;
+  const { abackCapsizeTime, phiCapsizeDeg, capsizeTriggerMarginDeg } = config.stability;
 
   const isAback = state.phi < 0 && amaLoad > 1.0;
   const abackTimer = isAback ? state.abackTimer + dt : 0;
 
+  const flyingCapsizeRad = (phiCapsizeDeg + capsizeTriggerMarginDeg) * DEG;
   const capsized = state.capsized
     || abackTimer > abackCapsizeTime
-    || overloadTimer > overloadCapsizeTime;
+    || state.phi >= flyingCapsizeRad;
 
-  return { abackTimer, overloadTimer, capsized };
+  return { abackTimer, capsized };
 }

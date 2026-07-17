@@ -23,7 +23,7 @@ function normalizeAngle(a) { return Math.atan2(Math.sin(a), Math.cos(a)); }
 
 function freshState(deltaStart = 0) {
   return { t: 0, x: 0, y: 0, heading: HEADING0, u: 1, v: 0, r: 0, phi: 0, p: 0, delta: deltaStart, end: 1,
-    amaLoad: 0, abackTimer: 0, overloadTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
+    amaLoad: 0, abackTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
 }
 
 // steeringDrift(config, baseControls, applyChange) -> { drift, capsized }
@@ -109,7 +109,7 @@ export function runAsserts(config) {
   // directional instability instead of the sail's near-wind thrust.
   {
     let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 0, v: 0, r: 0, phi: 0, p: 0, delta: 0, end: 1, amaLoad: 0,
-      abackTimer: 0, overloadTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
+      abackTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
     const controls = { windDirFrom: HEADING0, windSpeed: 6, sheet: 5 * DEG, rudder: 0,
       brailLee: 0, brailWind: 0, crewPos: 0, crewPosX: 0, shuntRequest: false };
     for (let i = 0; i < Math.round(4 / config.dt); i++) {
@@ -131,19 +131,26 @@ export function runAsserts(config) {
   // with a correctly-small ama brake); sail-side parameters were retuned
   // within literature-plausible ranges (config.js sail.camber/CD0/s
   // comment) to bring both bands back as far as possible WITHOUT
-  // breaking other established behavior (head-to-wind, T3) — reported
-  // here as the best achievable with a physically-plausible parameter
-  // set per the standing calibration allowance, not a band edit. Both
-  // remain reported (not xfail-suppressed) FAILs, same treatment as any
-  // prior round's "achievable value, revisit the threshold" finding —
-  // see ROUND7_steering_regression_findings.md sec 8.
+  // breaking other established behavior (head-to-wind, T3) — the D-5
+  // process was followed to exhaustion (sail parameters at their
+  // plausible limits) and the residual gap is structural: TWA-90 is
+  // hull-wave-resistance-limited (the u^4 Froude penalty term, untouched
+  // by R7-1), not sail-limited; TWA-40 sits at 0.458 vs the 0.35 band.
+  // Round 8 (R8-4): tagged xfail-CALIBRATION (a third tag, distinct from
+  // STEERING/STABILITY) rather than left as a bare reported FAIL — bands
+  // stay untouched, and the promotion trap still applies: if a future
+  // physical change (e.g. grounding the ad-hoc wave-penalty coefficient
+  // in slender-body theory, a natural future round) brings them in-band,
+  // we want that flagged, not silently absorbed.
   check('no meaningful progress below ~50deg TWA', bySpeed(40) < 0.35 * globalMax,
-    `speed(40)=${bySpeed(40).toFixed(2)} globalMax=${globalMax.toFixed(2)} (best achievable with plausible sail params, see D-5 report sec 8)`);
+    `speed(40)=${bySpeed(40).toFixed(2)} globalMax=${globalMax.toFixed(2)} -- best achievable with plausible sail params (D-5 exhausted); see ROUND7_steering_regression_findings.md sec 8`,
+    'CALIBRATION');
   check('polar peak lands on a reach (90-135deg near the global max)', maxIn90to135 >= 0.85 * globalMax,
     `max@90-135=${maxIn90to135.toFixed(2)} globalMax=${globalMax.toFixed(2)}`);
   const speed90 = bySpeed(90);
   check('speed at TWS=6, TWA=90 within [2.0, 3.6] m/s', speed90 >= 2.0 && speed90 <= 3.6,
-    `speed=${speed90.toFixed(2)} (hull-wave-resistance-limited, not sail-limited — best achievable, see D-5 report sec 8)`);
+    `speed=${speed90.toFixed(2)} -- hull-wave-resistance-limited, not sail-limited (D-5 exhausted); see ROUND7_steering_regression_findings.md sec 8`,
+    'CALIBRATION');
 
   // Polar mode (P1.1 point 4): the optimizer's search variable is the sheet
   // LIMIT, not the actual yard angle — bestSheetAngle and deltaAngle only
@@ -180,7 +187,7 @@ export function runAsserts(config) {
   // --- 4. Numerical stability + energy damping at zero wind ---
   {
     let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 2, v: 0.5, r: 0.1, phi: 0, p: 0, delta: 0, end: 1, amaLoad: 0,
-      abackTimer: 0, overloadTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
+      abackTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
     const controls = { windDirFrom: 0, windSpeed: 0, sheet: 30 * DEG, rudder: 0,
       brailLee: 0, brailWind: 0, crewPos: 0, crewPosX: 0, shuntRequest: false };
     const keInitial = state.u * state.u + state.v * state.v;
@@ -304,7 +311,7 @@ export function runAsserts(config) {
     // integrate() loop to let the sheet dynamics settle), so the probed
     // angle is set on state.delta directly, matching the old fixed yard=25deg.
     const state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 3, v: 0, r: 0, phi: 0, p: 0, delta: 25 * DEG, end: 1, amaLoad: 0,
-      abackTimer: 0, overloadTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
+      abackTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
     const base = { windDirFrom: HEADING0 + 70 * DEG, windSpeed: 8, rudder: 0, crewPos: 0, crewPosX: 0, shuntRequest: false };
 
     const f0 = sailForces(state, { ...base, brailLee: 0, brailWind: 0 }, config);
@@ -359,39 +366,70 @@ export function runAsserts(config) {
       `drag(crew=-0.3)=${dragLeeCrew.toFixed(2)} drag(crew=0)=${dragCenterCrew.toFixed(2)}`);
   }
 
-  // --- 7b. Ama-overload capsize timer semantics (CRITICAL-1) ---
-  // updateAback's overload trigger is driven purely by a supplied amaLoad
-  // (now split by the sign of state.phi — FIX_REQUEST_round4_roll_dof.md
-  // 1.2/1.6: phi>=0 is the overload/flying path, phi<0 is the aback/
-  // submerged path), so it's tested directly against a synthetic
-  // (non-aback, phi pinned positive) timer state rather than through a
-  // full sail-force simulation.
+  // --- 7b. Physical capsize criterion, flying side (round 8, R8-1/R8-2:
+  // ROUND8_physical_capsize.md — retires the v0.1 overload timer). The
+  // phi>=0 side no longer has a timer at all: capsize is decided purely
+  // by phi crossing phiCapsizeDeg + capsizeTriggerMarginDeg (see
+  // stability.js updateAback). These two checks replace the old
+  // "pinned amaLoad>1.2 capsizes in ~2s" / "1s spike does not capsize"
+  // timer-semantics tests with their physical equivalents, driving the
+  // roll ODE directly (same isolated-mechanism pattern as T10's
+  // settleToGain/section 7's settleRoll) rather than a full sail-force
+  // simulation: ---
   {
-    let timerState = { abackTimer: 0, overloadTimer: 0, capsized: false, phi: 0.2 };
-    let capsizeTime = null;
     const dt = config.dt;
-    for (let i = 0; i < Math.round(5 / dt) && capsizeTime === null; i++) {
-      timerState = { ...updateAback(timerState, 1.2, dt, config), phi: 0.2 };
-      if (timerState.capsized) capsizeTime = (i + 1) * dt;
-    }
-    check('a boat pinned at amaLoad>1.2 capsizes in ~2s (1.5-3.5s window)',
-      capsizeTime !== null && capsizeTime >= 1.5 && capsizeTime <= 3.5,
-      `capsizeTime=${capsizeTime === null ? 'never' : capsizeTime.toFixed(2)}s`);
+    const Mmax = config.ama.mass * config.g * config.ama.spacing; // rollRestoreMoment's liftoff plateau (stability.js)
 
-    let spikeState = { abackTimer: 0, overloadTimer: 0, capsized: false, phi: 0.2 };
-    const spikeSteps = Math.round(1 / dt);
-    const totalSteps = Math.round(6 / dt);
-    for (let i = 0; i < totalSteps; i++) {
-      const load = i < spikeSteps ? 1.1 : 0.5;
-      spikeState = { ...updateAback(spikeState, load, dt, config), phi: 0.2 };
+    // A heel moment pinned beyond the ama's maximum restoring capacity
+    // has no equilibrium short of the capsizing-arm reversal — phi runs
+    // away on its own and crosses the physical trigger. "Physically
+    // plausible time, order seconds given I_roll" (R8-2), not a specific
+    // number to hit: 1.5x Mmax capsizes in ~3.5s here.
+    {
+      let phi = 0, p = 0, timerState = { abackTimer: 0, capsized: false };
+      let capsizeTime = null;
+      for (let i = 0; i < Math.round(20 / dt) && capsizeTime === null; i++) {
+        const Mroll = 1.5 * Mmax + rollRestoreMoment(phi, config) + rollDampingMoment(p, config);
+        p += (Mroll / config.stability.I_roll) * dt;
+        phi += p * dt;
+        const amaLoad = computeAmaLoad(phi, config);
+        timerState = updateAback({ ...timerState, phi }, amaLoad, dt, config);
+        if (timerState.capsized) capsizeTime = (i + 1) * dt;
+      }
+      check('a heel moment pinned beyond max restoring capacity drives phi past the reversal and capsizes, in a physically-plausible time',
+        capsizeTime !== null && capsizeTime >= 1 && capsizeTime <= 10,
+        `capsizeTime=${capsizeTime === null ? 'never' : capsizeTime.toFixed(2)}s (1.5x Mmax=${Mmax.toFixed(0)}N*m)`);
     }
-    check('a brief 1s spike to amaLoad~1.1 followed by unloading does not capsize',
-      !spikeState.capsized, `capsized=${spikeState.capsized}`);
 
-    // Mirror check on the aback/pressed (phi<0) path — same timer
-    // mechanism, driven by state.phi's sign instead of the old apparent-
-    // wind-angle proxy (1.2/1.6).
-    let abackTimerState = { abackTimer: 0, overloadTimer: 0, capsized: false, phi: -0.2 };
+    // A transient gust excursion to amaLoad ~1.3 (comfortably past
+    // liftoff — flying the ama is a normal, controlled technique now,
+    // not an automatic capsize condition) that SUBSIDES must recover
+    // without capsizing: 1.3x Mmax applied for 1.2s peaks amaLoad~1.3,
+    // then the moment is removed and the (still-intact, nowhere near
+    // phiCapsizeDeg) restoring arm pulls it back upright on its own.
+    {
+      let phi = 0, p = 0, timerState = { abackTimer: 0, capsized: false };
+      let maxAmaLoad = 0;
+      const gustSeconds = 1.2;
+      for (let i = 0; i < Math.round(15 / dt); i++) {
+        const t = i * dt;
+        const Msail = t < gustSeconds ? 1.3 * Mmax : 0;
+        const Mroll = Msail + rollRestoreMoment(phi, config) + rollDampingMoment(p, config);
+        p += (Mroll / config.stability.I_roll) * dt;
+        phi += p * dt;
+        const amaLoad = computeAmaLoad(phi, config);
+        maxAmaLoad = Math.max(maxAmaLoad, amaLoad);
+        timerState = updateAback({ ...timerState, phi }, amaLoad, dt, config);
+      }
+      check('a transient gust excursion to amaLoad~1.3 that subsides recovers without capsize',
+        !timerState.capsized && Math.abs(phi / DEG) < 2,
+        `maxAmaLoad=${maxAmaLoad.toFixed(2)} finalPhi=${(phi / DEG).toFixed(2)}deg capsized=${timerState.capsized}`);
+    }
+
+    // Mirror check on the aback/pressed (phi<0) path — UNCHANGED (R8-1(b):
+    // already physical), same timer mechanism, driven by state.phi's sign
+    // instead of the old apparent-wind-angle proxy (1.2/1.6).
+    let abackTimerState = { abackTimer: 0, capsized: false, phi: -0.2 };
     let abackCapsizeTime = null;
     for (let i = 0; i < Math.round(8 / dt) && abackCapsizeTime === null; i++) {
       abackTimerState = { ...updateAback(abackTimerState, 1.2, dt, config), phi: -0.2 };
@@ -402,52 +440,55 @@ export function runAsserts(config) {
       `capsizeTime=${abackCapsizeTime === null ? 'never' : abackCapsizeTime.toFixed(2)}s`);
   }
 
-  // --- 8. Over-sheeting a close course: a broach cliff, not a gradual
-  // heel/speed tradeoff ---
-  // RETUNED for ROUND5_CONSOLIDATED_work_order.md P1.2/P2-1: with the CE now
-  // a genuine, delta-driven lever (and the ama-drag moment added), sheeting
-  // in on a close course no longer trades speed for heel gradually the way
-  // the round-4 static-ceXFraction model did — re-probed extensively (many
-  // TWA/TWS/crewPos combinations) and the new, consistent, physically
-  // emergent behavior is: WITHIN the held-course band, tighter sheet gives
-  // MORE speed and LESS heel (a tight sheet keeps the CE aft, near
-  // balanced helm); sheet in FURTHER, past a sharp threshold, and the boat
-  // doesn't gradually heel up — the helm balance snaps and it broaches
-  // outright. This is a real consequence of P1.2 (verified two independent
-  // ways: T1/T3 above, and this probe), not a bug — a strong, decisive
-  // "boom as a lever" effect is exactly what the Pjoa manual's own framing
-  // (rule III.3) describes, not a subtle one. The old "gradual heel rise"
-  // story is gone; what replaces it (over-sheeting costs you CONTROL, not
-  // just speed) is arguably the more safety-relevant finding anyway.
+  // --- 8. Over-sheeting a beam reach: slower and more heeled, not a
+  // broach (round 8, R8-3, ROUND8_physical_capsize.md) ---
+  // The round-5/7 "broach cliff" assertion expected a broach that only
+  // the bug-era force balance produced (ROUND7_steering_regression_
+  // findings.md sec 6: the boat now holds the old over-trimmed test point
+  // cleanly, which the owner's field description of Pjoa character
+  // — stable, slow-mannered — matches better than a broach would).
+  // Replaced with the honest round-1-style criterion, now measurable with
+  // real dynamics: at matched course/wind, an over-trimmed leg sails
+  // SLOWER and with HIGHER mean heel than a well-trimmed leg, with no
+  // loss of course either way. Re-probed at TWA=90/TWS=6/crewPos=0.3 (the
+  // TWA=50 point from the old test turned out to be a "boom as a lever"
+  // power regime — tighter sheet is BOTH faster and more heeled there,
+  // all the way to its own genuine broach cliff between sheet=15-19deg —
+  // not the gradual pinching/stall tradeoff this criterion describes; a
+  // beam reach shows it cleanly instead, with its own cliff at
+  // sheet=26deg for scale, both probe points held safely clear of it).
   {
-    const twaDeg = 50, tws = 6, crewPos = 0.5;
+    const twaDeg = 90, tws = 6, crewPos = 0.3;
     const windDirFrom = HEADING0 + twaDeg * DEG;
     // delta seeded to the sheet under test (R5-1, see polar.js's
     // makeInitialState for the same reasoning): the yard's own swing time
-    // is otherwise a large low-speed transient in its own right, enough to
-    // kick an otherwise-perfectly-holdable trim into a broached attractor
-    // before the sheet even locks in — a genuine artifact of comparing
-    // startup transients, not of the steady trims this probe means to compare.
+    // is otherwise a large low-speed transient in its own right.
     const runFor = (sheetDeg, seconds = 20) => {
       let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 1, v: 0, r: 0, phi: 0, p: 0, delta: sheetDeg * DEG, end: 1, amaLoad: 0,
-        abackTimer: 0, overloadTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
+        abackTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
       const controls = { windDirFrom, windSpeed: tws, sheet: sheetDeg * DEG, rudder: 0,
         brailLee: 0, brailWind: 0, crewPos, crewPosX: 0, shuntRequest: false };
-      for (let i = 0; i < Math.round(seconds / config.dt); i++) {
+      const dt = config.dt;
+      const tailStart = Math.round((seconds - 5) / dt);
+      let sumSpeed = 0, sumPhi = 0, n = 0;
+      for (let i = 0; i < Math.round(seconds / dt); i++) {
         controls.rudder = headingHoldRudder(state, HEADING0, config);
-        state = integrate(state, controls, config, config.dt);
+        state = integrate(state, controls, config, dt);
+        if (i >= tailStart) { sumSpeed += Math.hypot(state.u, state.v); sumPhi += state.phi; n++; }
       }
-      return state;
+      return { state, meanSpeed: sumSpeed / n, meanPhi: sumPhi / n };
     };
     const headingTolerance = 15 * DEG;
-    const heldCourse = runFor(23); // tightest trim still verified to hold course cleanly
-    const broached = runFor(19); // past the cliff: loses course-holding entirely
-    check('close-hauled trim holds the intended course', Math.abs(normalizeAngle(heldCourse.heading - HEADING0)) < headingTolerance,
-      `heading=${(heldCourse.heading / DEG).toFixed(1)}`);
-    check('sheeting in past the cliff broaches instead of gradually heeling further',
-      Math.abs(normalizeAngle(broached.heading - HEADING0)) > 30 * DEG,
-      `heading=${(broached.heading / DEG).toFixed(1)}deg, capsized=${broached.capsized} -- KNOWN LIMITATION: does not capsize either (contrary to ROUND7_DECISION.md D-4's assumption) -- the boat now holds this trim cleanly instead of broaching, a steering-authority consequence of the R7-1 drag fix (same family as T1/T3/T4), not a stability/capsize finding. See ROUND7_steering_regression_findings.md sec 6 correction.`,
-      'STEERING');
+    const overTrimmed = runFor(27); // pinched close to the beam-reach cliff (26deg)
+    const wellTrimmed = runFor(32); // comfortably into the fast, low-heel plateau
+    check('over-trimmed leg holds the intended course', !overTrimmed.state.capsized && Math.abs(normalizeAngle(overTrimmed.state.heading - HEADING0)) < headingTolerance,
+      `heading=${(overTrimmed.state.heading / DEG).toFixed(1)}`);
+    check('well-trimmed leg holds the intended course', !wellTrimmed.state.capsized && Math.abs(normalizeAngle(wellTrimmed.state.heading - HEADING0)) < headingTolerance,
+      `heading=${(wellTrimmed.state.heading / DEG).toFixed(1)}`);
+    check('over-trimmed leg sails slower than the well-trimmed leg', overTrimmed.meanSpeed < wellTrimmed.meanSpeed,
+      `speed: over=${overTrimmed.meanSpeed.toFixed(3)} well=${wellTrimmed.meanSpeed.toFixed(3)} m/s`);
+    check('over-trimmed leg heels more than the well-trimmed leg', overTrimmed.meanPhi > wellTrimmed.meanPhi,
+      `meanPhi: over=${(overTrimmed.meanPhi / DEG).toFixed(2)} well=${(wellTrimmed.meanPhi / DEG).toFixed(2)}deg`);
   }
 
   // --- 9. Readout hygiene: alphaSailor and amaLoadDisplay (R2-3) ---
@@ -456,7 +497,7 @@ export function runAsserts(config) {
     // sweep on a beam reach, even though the raw `alpha` it's derived from
     // routinely reads ~140-170deg on the very same courses.
     const state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 2, v: 0, r: 0, phi: 0, p: 0, delta: 0, end: 1, amaLoad: 0,
-      abackTimer: 0, overloadTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
+      abackTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
     const controls = { windDirFrom: HEADING0 + 90 * DEG, windSpeed: 6, rudder: 0,
       brailLee: 0, brailWind: 0, crewPos: 0, crewPosX: 0, shuntRequest: false };
     let allInRange = true, worst = 0;
@@ -472,28 +513,28 @@ export function runAsserts(config) {
 
     // amaLoadDisplay must be capped even when the raw amaLoad is far past
     // it (amaLoad is unbounded by construction past liftoff/submersion,
-    // see stability.js computeAmaLoad) — and that capping must NOT leak
-    // into the capsize timer, which has to keep firing off the raw value.
-    // Driven directly from computeAmaLoad for a controlled, reproducible
-    // raw value (a deliberately extreme phi, well past any realistic
-    // roll angle) rather than depending on a full sailForces() call to
-    // happen to produce one.
+    // see stability.js computeAmaLoad). Driven directly from
+    // computeAmaLoad for a controlled, reproducible raw value (a
+    // deliberately extreme phi, well past any realistic roll angle)
+    // rather than depending on a full sailForces() call to happen to
+    // produce one.
     const extremePhi = 5; // rad — absurd, deliberately far past phiLiftoffRad
     const rawLoad = computeAmaLoad(extremePhi, config);
     const cappedLoad = Math.min(rawLoad, config.stability.amaLoadDisplayCap);
     check('amaLoadDisplay caps an extreme raw amaLoad', rawLoad > config.stability.amaLoadDisplayCap && cappedLoad === config.stability.amaLoadDisplayCap,
       `raw=${rawLoad.toFixed(1)} display=${cappedLoad.toFixed(1)} cap=${config.stability.amaLoadDisplayCap}`);
 
-    let timerState = { abackTimer: 0, overloadTimer: 0, capsized: false, phi: extremePhi };
-    let capsizeTime = null;
+    // Round 8 (R8-1): the old "timer still fires from the raw amaLoad,
+    // not the capped display value" test doesn't apply anymore — the
+    // flying side has no timer or amaLoad dependence at all. Physical
+    // equivalent: the capsize trigger reads state.phi directly (not
+    // anything derived from the display-capped amaLoad), so this same
+    // extreme, uncapped phi trips it immediately.
     const dt = config.dt;
-    for (let i = 0; i < Math.round(5 / dt) && capsizeTime === null; i++) {
-      timerState = { ...updateAback(timerState, rawLoad, dt, config), phi: extremePhi }; // raw value, not the capped display one
-      if (timerState.capsized) capsizeTime = (i + 1) * dt;
-    }
-    check('overload capsize timer still fires from the raw (uncapped) amaLoad',
-      capsizeTime !== null && capsizeTime >= 1.5 && capsizeTime <= 3.5,
-      `capsizeTime=${capsizeTime === null ? 'never' : capsizeTime.toFixed(2)}s`);
+    const extremeCheck = updateAback({ abackTimer: 0, capsized: false, phi: extremePhi }, rawLoad, dt, config);
+    check('flying-side capsize trigger fires from the raw phi, unaffected by amaLoadDisplay capping',
+      extremeCheck.capsized === true,
+      `phi=${(extremePhi / DEG).toFixed(1)}deg (>>capsize trigger) capsized=${extremeCheck.capsized}`);
   }
 
   // --- 10. Roll dynamics (4th DOF, FIX_REQUEST_round4_roll_dof.md 1.6) ---
@@ -503,7 +544,7 @@ export function runAsserts(config) {
     // bounded value — restoring + damping with nothing driving it should
     // settle the platform upright.
     let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 0, v: 0, r: 0, phi: 15 * DEG, p: 0, delta: 0, end: 1, amaLoad: 0,
-      abackTimer: 0, overloadTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
+      abackTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
     const zeroWindControls = { windDirFrom: 0, windSpeed: 0, sheet: 0, rudder: 0,
       brailLee: 0, brailWind: 0, crewPos: 0, crewPosX: 0, shuntRequest: false };
     for (let i = 0; i < Math.round(15 / config.dt); i++) state = integrate(state, zeroWindControls, config, config.dt);
@@ -525,7 +566,7 @@ export function runAsserts(config) {
     const twaDeg = 90;
     const windDirFrom = HEADING0 + twaDeg * DEG;
     let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 1, v: 0, r: 0, phi: 0, p: 0, delta: 0, end: 1, amaLoad: 0,
-      abackTimer: 0, overloadTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
+      abackTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
     const controls = { windDirFrom, windSpeed: 5, sheet: 25 * DEG, rudder: 0,
       brailLee: 0, brailWind: 0, crewPos: 0.3, crewPosX: 0, shuntRequest: false };
     let maxPhi = -Infinity;
@@ -608,22 +649,40 @@ export function runAsserts(config) {
     check('T3: trimming the sheet in turns to leeward',
       !trimmed.capsized && steeringOk(trimmed.drift, -1), `drift=${trimmed.drift.toFixed(1)}deg`);
 
-    // T3-capsize (ROUND7_DECISION.md D-4): this same "trimmed" leg, run
-    // long enough (60s locked, not just the 10s direction/magnitude
-    // window above), capsizes at ~36s post-trim regardless of the D-6
-    // CE-lever retune (confirmed: capsize timing barely moves). Diagnosed
-    // in ROUND7_steering_regression_findings.md sec 6 as a genuine
-    // overload-timer trigger (amaLoad sustained >1.0 for
-    // overloadCapsizeTime), not a roll-parameter miscalibration — the
-    // corrected (smaller) ama drag lets the boat sail measurably faster/
-    // more powerfully at this exact trim than it used to, genuinely
-    // overloading the righting budget. xfail-STABILITY pending a dedicated
-    // round (this trim's own parameters, or the stability budget, need
-    // revisiting — not this round's drag/steering fix).
-    const trimmedLong = steeringDrift(config, base, (c) => { c.sheet = (sheetBase - d) * DEG; }, 20, 60);
-    check('T3: trimming the sheet in holds up over a sustained 60s window (no delayed capsize)',
-      !trimmedLong.capsized, `capsized=${trimmedLong.capsized}`,
-      'STABILITY');
+    // T3-capsize, RESOLVED (round 8, R8-1/R8-2, ROUND8_physical_capsize.md):
+    // this same "trimmed" leg used to capsize at ~36s under round 7's
+    // amaLoad>1-for-2s overload timer (ROUND7_steering_regression_
+    // findings.md sec 6) — a v0.1 proxy that fired at phi~14deg, far
+    // short of the actual physical point of no return. Re-run under the
+    // physical trigger (phi crossing phiCapsizeDeg + capsizeTriggerMarginDeg):
+    // traced over 90s locked, the boat genuinely FLIES the ama (amaLoad
+    // cycling up to ~2.0) but finds a bounded, oscillating flying
+    // equilibrium — phi cycles roughly 8-24deg (heading drift correspondingly
+    // bounded around -17 to -22deg), nowhere near phiCapsizeDeg=50, let
+    // alone the 65deg trigger. This is the "finds a flying equilibrium"
+    // outcome R8-2 anticipated, not "slowly escalates toward the
+    // reversal" — the xfail-STABILITY promotion trap fires by design;
+    // tag removed per this document.
+    let trimmedLongMaxPhi = -Infinity;
+    let trimmedLongState = freshState(Math.abs(base.sheet));
+    {
+      const controls = { ...base, rudder: 0 };
+      const dtT3 = config.dt;
+      for (let i = 0; i < Math.round(20 / dtT3); i++) {
+        controls.rudder = headingHoldRudder(trimmedLongState, HEADING0, config);
+        trimmedLongState = integrate(trimmedLongState, controls, config, dtT3);
+      }
+      const lockedRudder = controls.rudder;
+      controls.sheet = (sheetBase - d) * DEG;
+      for (let i = 0; i < Math.round(90 / dtT3); i++) {
+        controls.rudder = lockedRudder;
+        trimmedLongState = integrate(trimmedLongState, controls, config, dtT3);
+        trimmedLongMaxPhi = Math.max(trimmedLongMaxPhi, trimmedLongState.phi);
+      }
+    }
+    check('T3: trimming the sheet in flies the ama but settles into a bounded oscillation, not a delayed capsize',
+      !trimmedLongState.capsized && trimmedLongMaxPhi / DEG < config.stability.phiCapsizeDeg,
+      `capsized=${trimmedLongState.capsized} maxPhi=${(trimmedLongMaxPhi / DEG).toFixed(1)}deg over 90s (phiCapsizeDeg=${config.stability.phiCapsizeDeg}deg)`);
   }
 
   // --- T4 (needs P2-3 — Pjoa rule 5: windward brail spills the sail's rear,
@@ -666,7 +725,13 @@ export function runAsserts(config) {
   }
 
   // --- T6 (needs P1 — the manual's panic rule: letting the sheet go
-  // fully must actually save a boat that's overloading in a gust) ---
+  // fully must actually save a boat that's overloading in a gust). Round
+  // 8 (R8-2, ROUND8_physical_capsize.md): now that capsize on the flying
+  // side is a purely physical phi threshold (not a 2s timer), this test
+  // gains real teeth — releasing at amaLoad~1.2 (past the old timer's own
+  // trigger point, a genuinely marginal/late panic) must arrest phi
+  // growth BEFORE the capsizing-arm reversal, not just avoid whatever the
+  // old timer happened to be counting. ---
   {
     const twaDeg = 60;
     const windDirFrom = HEADING0 + twaDeg * DEG;
@@ -674,6 +739,7 @@ export function runAsserts(config) {
       let state = freshState(30 * DEG);
       const dt = config.dt;
       let sheet = 30 * DEG, released = false;
+      let maxPhi = -Infinity;
       for (let i = 0; i < Math.round(seconds / dt); i++) {
         const t = i * dt;
         const tws = t < 5 ? 6 + (10 - 6) * (t / 5) : 10; // gust ramp then held
@@ -681,15 +747,19 @@ export function runAsserts(config) {
         const controls = { windDirFrom, windSpeed: tws, sheet, rudder: headingHoldRudder(state, HEADING0, config),
           brailLee: 0, brailWind: 0, crewPos: 0.3, crewPosX: 0, shuntRequest: false };
         state = integrate(state, controls, config, dt);
+        maxPhi = Math.max(maxPhi, state.phi);
       }
-      return state;
+      return { state, maxPhi };
     };
     const heldSheet = runGust(null); // never releases: the sheet stays sheeted in through the gust
-    const panicRelease = runGust(0.9); // releases the instant amaLoad passes 0.9, before the overload timer could fire
+    const panicRelease = runGust(1.2); // releases the instant amaLoad passes 1.2 (a late, marginal panic)
     check('T6: a sustained gust with the sheet held in capsizes (establishes the danger this rule answers)',
-      heldSheet.capsized, `capsized=${heldSheet.capsized}`);
-    check('T6: releasing the sheet fully at amaLoad~0.9 saves the boat (the panic rule works)',
-      !panicRelease.capsized, `capsized=${panicRelease.capsized} finalAmaLoad=${panicRelease.amaLoad.toFixed(2)}`);
+      heldSheet.state.capsized, `capsized=${heldSheet.state.capsized} maxPhi=${(heldSheet.maxPhi / DEG).toFixed(1)}deg`);
+    check('T6: releasing the sheet fully at amaLoad~1.2 saves the boat (the panic rule works)',
+      !panicRelease.state.capsized, `capsized=${panicRelease.state.capsized} finalAmaLoad=${panicRelease.state.amaLoad.toFixed(2)}`);
+    check('T6: the release arrests phi growth BEFORE the capsizing-arm reversal (phi_max < phiCapsizeDeg)',
+      !panicRelease.state.capsized && panicRelease.maxPhi / DEG < config.stability.phiCapsizeDeg,
+      `maxPhi=${(panicRelease.maxPhi / DEG).toFixed(1)}deg (phiCapsizeDeg=${config.stability.phiCapsizeDeg}deg)`);
   }
 
   // --- T7 (needs P1 — commanded sheet limit 90deg on a beam reach: delta
@@ -850,6 +920,7 @@ export function runAsserts(config) {
 
       let sustainedBadRunStart = null, worstSustainedBadRun = 0;
       let sustainedCrabStart = null, worstSustainedCrab = 0;
+      let maxPhiInReplay = -Infinity;
 
       for (let i = 0; i < frames.length; i++) {
         const frame = frames[i];
@@ -868,6 +939,7 @@ export function runAsserts(config) {
         } else {
           sustainedBadRunStart = null;
         }
+        maxPhiInReplay = Math.max(maxPhiInReplay, repState.phi);
 
         const speed = Math.hypot(repState.u, repState.v);
         const crabDeg = Math.abs(Math.atan2(repState.v, repState.u)) / DEG;
@@ -879,23 +951,25 @@ export function runAsserts(config) {
         }
       }
 
-      // This check now fails again, but for a DIFFERENT reason than the
-      // round-up bug it was written to catch: replaying the recording
-      // against the D-6-corrected CE-lever (deliberately weaker sail-trim
-      // steering authority, per the owner's field datum) no longer
-      // self-corrects heading enough to cap the sail's loading the way the
-      // old, oversized CE-lever incidentally did — the boat holds course
-      // rigidly, keeps accelerating, and slowly heels up (phi climbs
-      // continuously past 18deg) until the SAME overload-timer mechanism
-      // diagnosed for T3 (ROUND7_steering_regression_findings.md sec 6)
-      // fires and capsizes it at t~118.3s. The sustained |r| growth is a
-      // SYMPTOM of that escalating heel, not an independent round-up —
-      // confirmed same-family evidence for the D-4 stability finding, not
-      // a new bug. xfail-STABILITY pending the same dedicated round.
+      // Round 8 update (R8-1/R8-2, ROUND8_physical_capsize.md): under the
+      // physical capsize trigger this recording no longer capsizes at all
+      // (capsized=false; maxPhi stays well below phiCapsizeDeg=50 — the
+      // same "finds a bounded flying equilibrium" outcome T3 shows, not
+      // "slowly escalates toward the reversal"). This sub-check still
+      // fails on its own narrower terms, though: the sustained-|r| run
+      // (worstSustainedBadRun) is the YAW-RATE symptom of that same
+      // bounded oscillation (phi cycling up through ~23deg and back),
+      // not of an overload/capsize escalation anymore — so it's no longer
+      // a STABILITY finding. Retagged STEERING: it's a genuine, still-
+      // open question about whether the 4deg/s/0.5s bound (round 7,
+      // R7-4b/D-2) is the right shape of assertion for a boat that
+      // legitimately "hunts" a bit while flying the ama, or whether the
+      // bound itself needs revisiting — not attempted here, since round 8
+      // is scoped to the capsize criterion, not yaw-rate bounds.
       check('R7-4b: replay fixture — no sustained (>0.5s) |r|>4deg/s with rudder centered',
         worstSustainedBadRun <= 0.5,
-        `worst sustained run=${worstSustainedBadRun.toFixed(2)}s, final capsized=${repState.capsized} -- same overload-timer mechanism as the T3 xfail above (sec 6 of the findings report), not an independent round-up; see comment`,
-        'STABILITY');
+        `worst sustained run=${worstSustainedBadRun.toFixed(2)}s, capsized=${repState.capsized}, maxPhi=${(maxPhiInReplay / DEG).toFixed(1)}deg -- no longer a capsize/overload issue (round 8: bounded flying equilibrium, same as T3); yaw-rate symptom of that oscillation, bound may need its own revisit — see ROUND8_physical_capsize.md`,
+        'STEERING');
       check('R7-4b: replay fixture — no sustained (>2s) |crab angle|>60deg at speed>1m/s',
         worstSustainedCrab <= 2, `worst sustained crab run=${worstSustainedCrab.toFixed(2)}s`);
     } else {

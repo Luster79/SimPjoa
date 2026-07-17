@@ -244,7 +244,6 @@ function createInitialState(config) {
     end: 1,
     amaLoad: 0,
     abackTimer: 0,
-    overloadTimer: 0,
     capsized: false,
     shunt: { phase: 'none', progress: 0 },
   };
@@ -571,9 +570,8 @@ function buildDefaultConfig() {
     },
 
     stability: {
-      abackCapsizeTime: 6,       // s — sustained aback before capsize (acceptance criterion 3)
-      overloadCapsizeTime: 2.0,  // s — sustained amaLoad > 1.0 (ama flying) before capsize
-      amaLoadDisplayCap: 3.0,    // UI-safe ceiling for amaLoad readouts (FIX_REQUEST_step1_round2.md R2-3); the raw value stays unclamped for the overload timer above
+      abackCapsizeTime: 6,       // s — sustained aback before capsize (acceptance criterion 3; unchanged, R8-1(b): already physical)
+      amaLoadDisplayCap: 3.0,    // UI-safe ceiling for amaLoad readouts (FIX_REQUEST_step1_round2.md R2-3); the raw value stays unclamped for the aback timer above
       // --- Roll as a 4th DOF (FIX_REQUEST_round4_roll_dof.md Part 1) ---
       // I_roll: the extension request's own suggested starting estimate
       // (displacement*(0.4*ama.spacing)^2 = 250*1.0^2 = 250 kg*m^2) gave a
@@ -598,6 +596,21 @@ function buildDefaultConfig() {
       // runaway heel the round-4 review found holding as a spurious stable
       // equilibrium (verified fixed — see ARCHITECTURE doc).
       phiCapsizeDeg: 50,
+      // capsizeTriggerMarginDeg (round 8, R8-1): the flying-side (phi>=0)
+      // capsize trigger is now purely physical — phi crossing
+      // phiCapsizeDeg + this margin, not a timer. The margin exists so
+      // the boat visibly rolls PAST the capsizing-arm reversal before
+      // integrate()'s freeze-on-capsize catches it (R5-2.2) — freezing
+      // exactly AT the reversal would look like the state stopping the
+      // instant it goes unstable, not "rolling over". 15deg (round doc's
+      // own suggested value) is comfortably inside the capped capsizing-
+      // arm's own span (stability.js's rollRestoreMoment ramps to zero
+      // and on into the capped reversed arm over the SAME span past
+      // phiCapsizeDeg used to hold the old timer-based trigger, HOLD_FRAC
+      // through to phiCapsizeDeg + (phiCapsizeDeg-phiLiftoffDeg)), so the
+      // boat is already accelerating hard under a genuine capsizing
+      // moment for the whole 15deg, not coasting on residual momentum.
+      capsizeTriggerMarginDeg: 15,
     },
 
     rudder: {
@@ -629,7 +642,7 @@ function validateConfig(config) {
   inRange(config.crew.posMax, 0, 2, 'crew.posMax');
   inRange(config.rudder.maxDeflectionDeg, 1, 60, 'rudder.maxDeflectionDeg');
   if (!(config.stability.abackCapsizeTime > 0)) errs.push('stability.abackCapsizeTime must be > 0');
-  if (!(config.stability.overloadCapsizeTime > 0)) errs.push('stability.overloadCapsizeTime must be > 0');
+  if (!(config.stability.capsizeTriggerMarginDeg > 0)) errs.push('stability.capsizeTriggerMarginDeg must be > 0');
   if (!(config.hull.length > 0)) errs.push('hull.length must be > 0');
   if (!(config.ama.spacing > 0)) errs.push('ama.spacing must be > 0');
   if (!(config.sail.area > 0)) errs.push('sail.area must be > 0');
@@ -1138,7 +1151,9 @@ function rudderForce(state, controls, config) {
 // ==== core/stability.js ====
 // stability.js — roll as a 4th DOF: sail heel moment, ama restoring moment
 // (weight when lifting, buoyancy when pressed), crew moment, linear
-// damping, and the aback/overload capsize state machine.
+// damping, and the capsize state machine (round 8: purely physical on the
+// flying/phi>=0 side — phi crossing past the capsizing-arm reversal — and
+// a timer on the aback/phi<0 side, unchanged since it's already physical).
 // (FIX_REQUEST_round4_roll_dof.md Part 1 — supersedes the earlier static
 // heel/roll model: "Full roll dynamics are out of scope" no longer holds.)
 
@@ -1263,44 +1278,60 @@ function rollDampingMoment(p, config) {
 // over continuously: 0 = upright, exactly 1.0 when the ama just leaves
 // the water (phi=phiLiftoffRad) or just fully submerges
 // (phi=-phiSubmergeRad) — "restoring fully mobilised" either way — and
-// UNBOUNDED past that (grows linearly with phi), so the overload/aback
-// timers below keep the exact "how far past the edge" semantics they
-// always had (a near-zero denominator is no longer possible: phi is a
-// real integrated state, not a moment/capacity ratio).
+// UNBOUNDED past that (grows linearly with phi), so the aback timer and
+// the "AMA FLYING" warning readout below keep the exact "how far past
+// the edge" semantics they always had (a near-zero denominator is no
+// longer possible: phi is a real integrated state, not a moment/capacity
+// ratio).
 function computeAmaLoad(phi, config) {
   const { stability } = config;
   if (phi >= 0) return phi / (stability.phiLiftoffDeg * DEG__b5);
   return Math.abs(phi) / (stability.phiSubmergeDeg * DEG__b5);
 }
 
-// updateAback(state, amaLoad, dt, config) -> { abackTimer, overloadTimer, capsized }
-//   Both capsize triggers now read the SAME roll-angle-derived amaLoad,
-//   split by the sign of state.phi: phi>=0 past 1.0 is the overload path
-//   (ama flying — config.stability.overloadCapsizeTime, unchanged 2s
-//   semantics); phi<0 past 1.0 is the aback path (ama pressed/submerged
-//   past buoyancy saturation — config.stability.abackCapsizeTime,
-//   unchanged 6s semantics). This is the "physical mechanism instead of a
-//   bare timer" from FIX_REQUEST_round4_roll_dof.md 1.2/1.6: previously
-//   aback was detected purely from the apparent-wind angle (a proxy for
-//   "this will press the ama down"); a backwinded sail drives heelMoment
-//   the wrong way, which now drives phi negative directly through the
-//   roll ODE, so reading state.phi's sign is strictly more direct than
-//   the old proxy. `awAngle` is dropped from the signature — it was only
-//   ever used for that proxy check.
+// updateAback(state, amaLoad, dt, config) -> { abackTimer, capsized }
+//   Round 8 (ROUND8_physical_capsize.md, R8-1) retires the phi>=0
+//   "overload timer" as a capsize trigger. It was a v0.1 proxy from
+//   before roll dynamics existed at all (FIX_REQUEST_step1_review.md) —
+//   real proas fly the ama routinely as a controlled technique, and
+//   round 7's diagnosis (ROUND7_steering_regression_findings.md sec 6-7)
+//   found it firing on trims that were still well short of the actual
+//   physical point of no return (phi~14-18deg, against a phiCapsizeDeg of
+//   50). Capsize on this side is now decided PURELY by phi: past
+//   phiCapsizeDeg the restoring arm has already reversed (see
+//   rollRestoreMoment above) and the dynamics accelerate over on their
+//   own; once phi crosses phiCapsizeDeg + capsizeTriggerMarginDeg (a
+//   config angle safely past the reversal, so integrate()'s freeze-on-
+//   capsize — see its own comment — catches the boat visibly rolling
+//   past the point of no return, not the instant it crosses the
+//   reversal itself), that's an unambiguous capsize. amaLoad>1 on this
+//   side is now purely a WARNING condition (ui/app.js's "AMA FLYING" tag,
+//   derived on the fly from state.phi/amaLoad — no stored timer, nothing
+//   to retire further if the warning's own display logic ever changes).
+//
+//   The aback/pressed path (phi<0) is UNCHANGED (R8-1(b)): counting time
+//   past buoyancy saturation is already a physical mechanism (the ama
+//   fully submerged and still being driven down harder every second is
+//   a genuine, physically-motivated "how long can this go on" question,
+//   not a proxy standing in for something else) — this is the
+//   "physical mechanism instead of a bare timer" from
+//   FIX_REQUEST_round4_roll_dof.md 1.2/1.6: previously aback was
+//   detected purely from the apparent-wind angle (a proxy for "this will
+//   press the ama down"); a backwinded sail drives heelMoment the wrong
+//   way, which now drives phi negative directly through the roll ODE, so
+//   reading state.phi's sign is strictly more direct than the old proxy.
 function updateAback(state, amaLoad, dt, config) {
-  const { abackCapsizeTime, overloadCapsizeTime } = config.stability;
-
-  const isOverloaded = state.phi >= 0 && amaLoad > 1.0;
-  const overloadTimer = isOverloaded ? state.overloadTimer + dt : 0;
+  const { abackCapsizeTime, phiCapsizeDeg, capsizeTriggerMarginDeg } = config.stability;
 
   const isAback = state.phi < 0 && amaLoad > 1.0;
   const abackTimer = isAback ? state.abackTimer + dt : 0;
 
+  const flyingCapsizeRad = (phiCapsizeDeg + capsizeTriggerMarginDeg) * DEG__b5;
   const capsized = state.capsized
     || abackTimer > abackCapsizeTime
-    || overloadTimer > overloadCapsizeTime;
+    || state.phi >= flyingCapsizeRad;
 
-  return { abackTimer, overloadTimer, capsized };
+  return { abackTimer, capsized };
 }
 
 
@@ -1488,11 +1519,13 @@ function isLuffing(state, controls, config) {
 
 // computeForces(state, controls, config) -> total forces/moment + readouts
 // shared with derivatives() and the harness/UI (alpha, aw, amaLoad, ...).
-// amaLoad is the raw physics value (unbounded, drives the overload capsize
-// timer in stability.js — must NOT be clamped); amaLoadDisplay is the same
-// value capped at config.stability.amaLoadDisplayCap for UI readouts, since
-// raw values like 2000 (see stability.js computeAmaLoad — a near-zero
-// restoring capacity denominator) are meaningless as a percentage gauge.
+// amaLoad is the raw physics value (unbounded — round 8: drives the
+// aback timer on the phi<0 side and the "AMA FLYING" warning readout on
+// the phi>=0 side, must NOT be clamped for either); amaLoadDisplay is the
+// same value capped at config.stability.amaLoadDisplayCap for UI
+// readouts, since raw values like 2000 (see stability.js computeAmaLoad —
+// a near-zero restoring capacity denominator) are meaningless as a
+// percentage gauge.
 // alpha is the raw chord-flow angle; alphaSailor is the sailor's AoA. Both
 // pairs are FIX_REQUEST_step1_round2.md R2-3.
 function computeForces(state, controls, config) {
@@ -1627,7 +1660,6 @@ function integrate(state, controls, config, dt) {
     ...finalState,
     amaLoad: forcesAtNew.amaLoad,
     abackTimer: aback.abackTimer,
-    overloadTimer: aback.overloadTimer,
     capsized: aback.capsized,
   };
 }
@@ -1735,7 +1767,7 @@ function makeInitialState(deltaStart = 0) {
   // stops it moving away again if that isn't actually where it settles.
   return {
     t: 0, x: 0, y: 0, heading: HEADING0, u: 1.0, v: 0, r: 0, phi: 0, p: 0, delta: deltaStart, end: 1,
-    amaLoad: 0, abackTimer: 0, overloadTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 },
+    amaLoad: 0, abackTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 },
   };
 }
 
@@ -1912,7 +1944,7 @@ const MS_TO_KN = 1.9438;
 // recording's codeVersion is meaningful (harness/replay.js warns on
 // mismatch) for a downloaded bundle without requiring a build step for
 // plain `python3 -m http.server` development.
-const CODE_VERSION = "5f6a77e";
+const CODE_VERSION = "2491d72";
 
 // ---------------------------------------------------------------------
 // i18n — EN/PL. Static labels are marked with data-i18n="key" in
@@ -1944,9 +1976,9 @@ const TRANSLATIONS = {
     'shunt.holdHint': 'Hold SPACE / click SHUNT to swap ends',
     'shunt.lockoutHint': (v) => `Speed lockout: ease sail first (>${v} m/s)`,
     'alarm.aback': (t) => `ABACK — ama to leeward — capsize in ${t}s`,
-    'alarm.overload': (t) => `OVERLOAD — ama flying — capsize in ${t}s`,
+    'alarm.amaFlying': 'AMA FLYING',
     'capsize.causeAback': 'Cause: sustained ABACK (ama to leeward too long)',
-    'capsize.causeOverload': 'Cause: sustained OVERLOAD (ama flying too long)',
+    'capsize.causeOverload': 'Cause: heel passed the point of no return (ama flying)',
     'shuntPhase.none': 'none', 'shuntPhase.ease': 'easing', 'shuntPhase.transfer': 'transfer',
     'shuntPhase.swap': 'swap', 'shuntPhase.sheet': 'sheeting in',
     'polar.running': 'Running...',
@@ -1980,9 +2012,9 @@ const TRANSLATIONS = {
     'shunt.holdHint': 'Przytrzymaj SPACJĘ / kliknij ZWROT, aby zamienić końce',
     'shunt.lockoutHint': (v) => `Blokada zwrotu: najpierw wyluzuj żagiel (>${v} m/s)`,
     'alarm.aback': (t) => `ABACK — ama po zawietrznej — wywrotka za ${t}s`,
-    'alarm.overload': (t) => `PRZECIĄŻENIE — ama unosi się — wywrotka za ${t}s`,
+    'alarm.amaFlying': 'AMA W POWIETRZU',
     'capsize.causeAback': 'Przyczyna: długotrwały ABACK (ama zbyt długo po zawietrznej)',
-    'capsize.causeOverload': 'Przyczyna: długotrwałe przeciążenie (ama zbyt długo w powietrzu)',
+    'capsize.causeOverload': 'Przyczyna: przechył minął punkt bez powrotu (ama w powietrzu)',
     'shuntPhase.none': 'brak', 'shuntPhase.ease': 'luzowanie', 'shuntPhase.transfer': 'przenoszenie',
     'shuntPhase.swap': 'zamiana', 'shuntPhase.sheet': 'wybieranie',
     'polar.running': 'Uruchamianie...',
@@ -2688,7 +2720,13 @@ function updateHud(state, forces) {
     : t('shunt.holdHint');
 }
 
-function updateAlarms(state) {
+// Round 8 (R8-1/R8-2, ROUND8_physical_capsize.md): the phi>=0 side is no
+// longer a countdown — amaLoad>1 ("ama flying") is a WARNING condition,
+// not a timer toward an automatic capsize, so the banner just shows the
+// tag while it's true, with no "capsize in Xs" text (there's nothing
+// counting down anymore). The aback (phi<0) side is unchanged, still a
+// real timer with a real countdown.
+function updateAlarms(state, forces) {
   banner.className = '';
   if (state.capsized) {
     // handled by overlay below
@@ -2696,15 +2734,14 @@ function updateAlarms(state) {
     banner.className = 'aback';
     const remain = Math.max(0, dims.stability.abackCapsizeTime - state.abackTimer);
     banner.textContent = t('alarm.aback', remain.toFixed(1));
-  } else if (state.overloadTimer > 0) {
+  } else if (state.phi >= 0 && forces.amaLoad > 1.0) {
     banner.className = 'overload';
-    const remain = Math.max(0, dims.stability.overloadCapsizeTime - state.overloadTimer);
-    banner.textContent = t('alarm.overload', remain.toFixed(1));
+    banner.textContent = t('alarm.amaFlying');
   }
 
   if (state.capsized && !capsizeOverlay.classList.contains('show')) {
     capsizeOverlay.classList.add('show');
-    capsizeCause.textContent = state.abackTimer > dims.stability.abackCapsizeTime - 0.05
+    capsizeCause.textContent = state.phi < 0
       ? t('capsize.causeAback')
       : t('capsize.causeOverload');
   }
@@ -3021,7 +3058,7 @@ function frame(now) {
     drawBoat(state, forces, camera);
     drawTrueWindArrow();
     updateHud(state, forces);
-    updateAlarms(state);
+    updateAlarms(state, forces);
 
     const flashing = now < shuntFlashUntil;
     hud.speed.classList.toggle('flash-warn', flashing);

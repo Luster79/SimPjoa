@@ -304,9 +304,8 @@ function buildDefaultConfig() {
     },
 
     stability: {
-      abackCapsizeTime: 6,       // s — sustained aback before capsize (acceptance criterion 3)
-      overloadCapsizeTime: 2.0,  // s — sustained amaLoad > 1.0 (ama flying) before capsize
-      amaLoadDisplayCap: 3.0,    // UI-safe ceiling for amaLoad readouts (FIX_REQUEST_step1_round2.md R2-3); the raw value stays unclamped for the overload timer above
+      abackCapsizeTime: 6,       // s — sustained aback before capsize (acceptance criterion 3; unchanged, R8-1(b): already physical)
+      amaLoadDisplayCap: 3.0,    // UI-safe ceiling for amaLoad readouts (FIX_REQUEST_step1_round2.md R2-3); the raw value stays unclamped for the aback timer above
       // --- Roll as a 4th DOF (FIX_REQUEST_round4_roll_dof.md Part 1) ---
       // I_roll: the extension request's own suggested starting estimate
       // (displacement*(0.4*ama.spacing)^2 = 250*1.0^2 = 250 kg*m^2) gave a
@@ -331,6 +330,21 @@ function buildDefaultConfig() {
       // runaway heel the round-4 review found holding as a spurious stable
       // equilibrium (verified fixed — see ARCHITECTURE doc).
       phiCapsizeDeg: 50,
+      // capsizeTriggerMarginDeg (round 8, R8-1): the flying-side (phi>=0)
+      // capsize trigger is now purely physical — phi crossing
+      // phiCapsizeDeg + this margin, not a timer. The margin exists so
+      // the boat visibly rolls PAST the capsizing-arm reversal before
+      // integrate()'s freeze-on-capsize catches it (R5-2.2) — freezing
+      // exactly AT the reversal would look like the state stopping the
+      // instant it goes unstable, not "rolling over". 15deg (round doc's
+      // own suggested value) is comfortably inside the capped capsizing-
+      // arm's own span (stability.js's rollRestoreMoment ramps to zero
+      // and on into the capped reversed arm over the SAME span past
+      // phiCapsizeDeg used to hold the old timer-based trigger, HOLD_FRAC
+      // through to phiCapsizeDeg + (phiCapsizeDeg-phiLiftoffDeg)), so the
+      // boat is already accelerating hard under a genuine capsizing
+      // moment for the whole 15deg, not coasting on residual momentum.
+      capsizeTriggerMarginDeg: 15,
     },
 
     rudder: {
@@ -362,7 +376,7 @@ export function validateConfig(config) {
   inRange(config.crew.posMax, 0, 2, 'crew.posMax');
   inRange(config.rudder.maxDeflectionDeg, 1, 60, 'rudder.maxDeflectionDeg');
   if (!(config.stability.abackCapsizeTime > 0)) errs.push('stability.abackCapsizeTime must be > 0');
-  if (!(config.stability.overloadCapsizeTime > 0)) errs.push('stability.overloadCapsizeTime must be > 0');
+  if (!(config.stability.capsizeTriggerMarginDeg > 0)) errs.push('stability.capsizeTriggerMarginDeg must be > 0');
   if (!(config.hull.length > 0)) errs.push('hull.length must be > 0');
   if (!(config.ama.spacing > 0)) errs.push('ama.spacing must be > 0');
   if (!(config.sail.area > 0)) errs.push('sail.area must be > 0');

@@ -15,11 +15,13 @@ import { sheetStep, effectiveDeltaMax, isLuffing } from './sheet.js';
 
 // computeForces(state, controls, config) -> total forces/moment + readouts
 // shared with derivatives() and the harness/UI (alpha, aw, amaLoad, ...).
-// amaLoad is the raw physics value (unbounded, drives the overload capsize
-// timer in stability.js — must NOT be clamped); amaLoadDisplay is the same
-// value capped at config.stability.amaLoadDisplayCap for UI readouts, since
-// raw values like 2000 (see stability.js computeAmaLoad — a near-zero
-// restoring capacity denominator) are meaningless as a percentage gauge.
+// amaLoad is the raw physics value (unbounded — round 8: drives the
+// aback timer on the phi<0 side and the "AMA FLYING" warning readout on
+// the phi>=0 side, must NOT be clamped for either); amaLoadDisplay is the
+// same value capped at config.stability.amaLoadDisplayCap for UI
+// readouts, since raw values like 2000 (see stability.js computeAmaLoad —
+// a near-zero restoring capacity denominator) are meaningless as a
+// percentage gauge.
 // alpha is the raw chord-flow angle; alphaSailor is the sailor's AoA. Both
 // pairs are FIX_REQUEST_step1_round2.md R2-3.
 export function computeForces(state, controls, config) {
@@ -154,7 +156,6 @@ export function integrate(state, controls, config, dt) {
     ...finalState,
     amaLoad: forcesAtNew.amaLoad,
     abackTimer: aback.abackTimer,
-    overloadTimer: aback.overloadTimer,
     capsized: aback.capsized,
   };
 }

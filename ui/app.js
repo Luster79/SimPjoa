@@ -69,9 +69,9 @@ const TRANSLATIONS = {
     'shunt.holdHint': 'Hold SPACE / click SHUNT to swap ends',
     'shunt.lockoutHint': (v) => `Speed lockout: ease sail first (>${v} m/s)`,
     'alarm.aback': (t) => `ABACK — ama to leeward — capsize in ${t}s`,
-    'alarm.overload': (t) => `OVERLOAD — ama flying — capsize in ${t}s`,
+    'alarm.amaFlying': 'AMA FLYING',
     'capsize.causeAback': 'Cause: sustained ABACK (ama to leeward too long)',
-    'capsize.causeOverload': 'Cause: sustained OVERLOAD (ama flying too long)',
+    'capsize.causeOverload': 'Cause: heel passed the point of no return (ama flying)',
     'shuntPhase.none': 'none', 'shuntPhase.ease': 'easing', 'shuntPhase.transfer': 'transfer',
     'shuntPhase.swap': 'swap', 'shuntPhase.sheet': 'sheeting in',
     'polar.running': 'Running...',
@@ -105,9 +105,9 @@ const TRANSLATIONS = {
     'shunt.holdHint': 'Przytrzymaj SPACJĘ / kliknij ZWROT, aby zamienić końce',
     'shunt.lockoutHint': (v) => `Blokada zwrotu: najpierw wyluzuj żagiel (>${v} m/s)`,
     'alarm.aback': (t) => `ABACK — ama po zawietrznej — wywrotka za ${t}s`,
-    'alarm.overload': (t) => `PRZECIĄŻENIE — ama unosi się — wywrotka za ${t}s`,
+    'alarm.amaFlying': 'AMA W POWIETRZU',
     'capsize.causeAback': 'Przyczyna: długotrwały ABACK (ama zbyt długo po zawietrznej)',
-    'capsize.causeOverload': 'Przyczyna: długotrwałe przeciążenie (ama zbyt długo w powietrzu)',
+    'capsize.causeOverload': 'Przyczyna: przechył minął punkt bez powrotu (ama w powietrzu)',
     'shuntPhase.none': 'brak', 'shuntPhase.ease': 'luzowanie', 'shuntPhase.transfer': 'przenoszenie',
     'shuntPhase.swap': 'zamiana', 'shuntPhase.sheet': 'wybieranie',
     'polar.running': 'Uruchamianie...',
@@ -813,7 +813,13 @@ function updateHud(state, forces) {
     : t('shunt.holdHint');
 }
 
-function updateAlarms(state) {
+// Round 8 (R8-1/R8-2, ROUND8_physical_capsize.md): the phi>=0 side is no
+// longer a countdown — amaLoad>1 ("ama flying") is a WARNING condition,
+// not a timer toward an automatic capsize, so the banner just shows the
+// tag while it's true, with no "capsize in Xs" text (there's nothing
+// counting down anymore). The aback (phi<0) side is unchanged, still a
+// real timer with a real countdown.
+function updateAlarms(state, forces) {
   banner.className = '';
   if (state.capsized) {
     // handled by overlay below
@@ -821,15 +827,14 @@ function updateAlarms(state) {
     banner.className = 'aback';
     const remain = Math.max(0, dims.stability.abackCapsizeTime - state.abackTimer);
     banner.textContent = t('alarm.aback', remain.toFixed(1));
-  } else if (state.overloadTimer > 0) {
+  } else if (state.phi >= 0 && forces.amaLoad > 1.0) {
     banner.className = 'overload';
-    const remain = Math.max(0, dims.stability.overloadCapsizeTime - state.overloadTimer);
-    banner.textContent = t('alarm.overload', remain.toFixed(1));
+    banner.textContent = t('alarm.amaFlying');
   }
 
   if (state.capsized && !capsizeOverlay.classList.contains('show')) {
     capsizeOverlay.classList.add('show');
-    capsizeCause.textContent = state.abackTimer > dims.stability.abackCapsizeTime - 0.05
+    capsizeCause.textContent = state.phi < 0
       ? t('capsize.causeAback')
       : t('capsize.causeOverload');
   }
@@ -1146,7 +1151,7 @@ function frame(now) {
     drawBoat(state, forces, camera);
     drawTrueWindArrow();
     updateHud(state, forces);
-    updateAlarms(state);
+    updateAlarms(state, forces);
 
     const flashing = now < shuntFlashUntil;
     hud.speed.classList.toggle('flash-warn', flashing);

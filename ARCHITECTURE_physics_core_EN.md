@@ -2,19 +2,34 @@
 
 *Last reviewed: 2026-07-16*
 
+**Round 8 note:** `ROUND8_physical_capsize.md` retired the v0.1
+amaLoad>1-for-2s "overload timer" as a capsize trigger on the flying
+(phi>=0) side — a pre-roll-DOF proxy that round 7's diagnosis found
+firing at phi~14-18deg, well short of the actual physical point of no
+return. Capsize there is now purely physical (phi crossing phiCapsizeDeg
++ capsizeTriggerMarginDeg — stability.js's updateAback); the aback
+(phi<0) timer is unchanged (already physical). Consequence: both prior
+`xfail:STABILITY` findings (T3, the R7-4b replay fixture) resolved to
+"flies the ama, finds a bounded oscillating equilibrium" rather than
+capsizing — the STABILITY tag is now unused. The round-5/7 broach-cliff
+assertion was also re-derived (R8-3) into a genuine, passing physical
+criterion (over-trimmed sails slower and heels more, no course loss).
+Current xfail ledger: two `xfail:STEERING`, two `xfail:CALIBRATION`
+(new tag, the polar bands), zero `xfail:STABILITY`. Full evidence
+(phi traces, before/after) in `ROUND8_physical_capsize_findings.md`.
+
 **Round 7 note:** `ROUND7_drag_calibration.md`/`ROUND7_DECISION.md`
 recalibrated hull/ama drag from ITTC-57 physics (fixing a ~26-30x
 ama-over-hull drag bug — a diagnosed uncommanded-round-up cause) and
 rebuilt the sail's CE-lever geometry around a classical yacht-design
 "lead" parameter (D-6) after the drag fix falsified round 5's steering
-directions. Full derivation, before/after evidence, and what's still open
-(two `xfail:STEERING`, two `xfail:STABILITY` known limitations) live in
+directions. Full derivation and before/after evidence live in
 `ROUND7_steering_regression_findings.md` — this doc only carries the
 resulting function-signature/calibration changes, not the diagnosis
-itself. **This file is now ~690 lines, well past the project's own
-~500-line anti-bloat guideline** (flagged in round 6 too) — splitting
-per-module sections into `docs/<module>.md` is recommended before the
-next round adds to it further.
+itself. **This file is now ~700+ lines, well past the project's own
+~500-line anti-bloat guideline** (flagged in rounds 6 and 7 too) —
+splitting per-module sections into `docs/<module>.md` is recommended
+before the next round adds to it further.
 
 **Round 6 note:** `ROUND6_flight_recorder.md` added a session recorder
 (UI) and offline replay tool (`harness/replay.js`), both resting entirely
@@ -143,8 +158,10 @@ changes.
       end,              // +1 | -1 — which hull end is the bow
       amaLoad,          // ama load 0..1+ (>1 = past liftoff/submersion) — DERIVED from phi (round 4)
       abackTimer,       // duration of the aback state (phi<0 past submersion) [s]
-      overloadTimer,    // duration of the overload state (phi>=0 past liftoff) [s]
-      capsized,         // bool
+      capsized,         // bool — round 8: the phi>=0 side has no timer anymore
+                        // (see stability.js updateAback); "ama flying" (amaLoad>1)
+                        // is a warning readout, derived on the fly from phi/amaLoad,
+                        // not stored state
       shunt: { phase, progress }  // 'none'|'ease'|'transfer'|'swap'|'sheet'
     }
 
@@ -348,20 +365,28 @@ cross-check at startup as required by the main prompt. Fixed schema version: a
       // DERIVED from phi (no longer a function of heelMoment/crewPos/end):
       // 0=upright, exactly 1.0 at phi=phiLiftoffRad (ama just clear) or
       // phi=-phiSubmergeRad (ama just fully submerged), UNBOUNDED past
-      // that (grows linearly with phi) so the capsize timers below keep
-      // their "how far past the edge" semantics.
-    updateAback(state, amaLoad, dt, config) -> { abackTimer, overloadTimer, capsized }
-      // Both capsize triggers read the SAME phi-derived amaLoad, split by
-      // sign: state.phi>=0 past 1.0 -> overloadTimer (ama flying,
-      // config.stability.overloadCapsizeTime, unchanged 2s semantics);
-      // state.phi<0 past 1.0 -> abackTimer (ama pressed past buoyancy
-      // saturation, config.stability.abackCapsizeTime, unchanged 6s
-      // semantics). This is the "physical mechanism instead of a bare
-      // timer" the extension request asked for: a backwinded sail drives
-      // heelMoment (and hence phi) negative through the roll ODE, so
-      // reading phi's sign is strictly more direct than the round-3
-      // apparent-wind-angle proxy it replaces — `awAngle` is dropped from
-      // the signature, it was only ever used for that proxy check.
+      // that (grows linearly with phi) so the aback timer and the "AMA
+      // FLYING" warning readout keep their "how far past the edge"
+      // semantics.
+    updateAback(state, amaLoad, dt, config) -> { abackTimer, capsized }
+      // Round 8 (ROUND8_physical_capsize.md, R8-1) retired the phi>=0
+      // "overload timer" as a capsize trigger — a v0.1 proxy from before
+      // roll dynamics existed, found (round 7 diagnosis) to fire at
+      // phi~14-18deg, far short of the actual physical point of no
+      // return. That side's capsize is now PURELY physical: state.phi
+      // crossing phiCapsizeDeg + capsizeTriggerMarginDeg (a config angle
+      // safely past the capsizing-arm reversal, so the freeze-on-capsize
+      // below catches the boat visibly rolling past the point of no
+      // return, not the instant it crosses the reversal). amaLoad>1 on
+      // this side is now a WARNING only (ui/app.js's "AMA FLYING" tag,
+      // derived on the fly — no stored timer).
+      // The aback/pressed path (phi<0) is UNCHANGED: state.phi<0 past
+      // amaLoad>1 -> abackTimer (config.stability.abackCapsizeTime,
+      // unchanged 6s semantics) — this is the "physical mechanism instead
+      // of a bare timer" the round-4 extension request asked for: a
+      // backwinded sail drives heelMoment (and hence phi) negative
+      // through the roll ODE, so reading phi's sign is strictly more
+      // direct than the round-3 apparent-wind-angle proxy it replaces.
 
 ### shunt.js
     shuntStep(state, controls, config, dt) -> state patch
@@ -453,11 +478,16 @@ cross-check at startup as required by the main prompt. Fixed schema version: a
 - `config.stability.phiCapsizeDeg` (50, round 5): past this angle (both
   sides) the restoring arm reverses into a genuine capsizing arm — see
   stability.js's rollRestoreMoment above.
+- `config.stability.capsizeTriggerMarginDeg` (15, round 8): the flying
+  (phi>=0) side's capsize trigger itself — phi crossing phiCapsizeDeg +
+  this margin — replacing the old amaLoad>1-for-2s overload timer. See
+  stability.js's updateAback above.
 - Sail force scaling and the heel-yaw coupling: see aero.js above.
 - Fore-aft crew CLR shift: see hydro.js above.
 
-`amaLoad` and both capsize timers are now driven entirely by the roll
-state instead of a static per-step formula, so a violent gust can make
+`amaLoad`, the aback timer, and (round 8) the flying side's physical
+phi-threshold trigger are now driven entirely by the roll state instead
+of a static per-step formula, so a violent gust can make
 `phi` genuinely overshoot PAST zero into the opposite regime (ama
 lifting -> ama pressed) within a second or two — a real consequence of
 having actual roll inertia and damping instead of an instantaneous
@@ -474,7 +504,8 @@ reason; see its header comment for the capsize this exposed and fixed.
       getState(), reset(), setConfig(patch),
       forcesBreakdown()          // last force breakdown — for UI and debugging.
                                   // Includes amaLoad (raw, unbounded — feeds
-                                  // the capsize timers) and amaLoadDisplay
+                                  // the aback timer and the flying-side
+                                  // capsize trigger) and amaLoadDisplay
                                   // (capped at config.stability.amaLoadDisplayCap,
                                   // UI-safe), plus alpha (raw) and alphaSailor
                                   // ([0, pi/2], UI-safe) — see aero.js. Round
@@ -593,11 +624,15 @@ either way.
         sail's CE geometry, so unaffected by round 7's CE-lever rework.
       - T3 (needs P1.2, redone round 7 D-6 — see aero.js's CE-lever/`lead`
         note above): easing the sheet (still taut) turns to windward,
-        trimming in turns to leeward. A THIRD check (60s lock, not just
-        the 10s direction/magnitude window) is xfail:STABILITY — this
-        exact trim genuinely overloads and capsizes now that the ama-drag
-        brake is gone (see findings doc sec 6) — a stability finding, not
-        a steering one.
+        trimming in turns to leeward. A THIRD check (90s lock, not just
+        the 10s direction/magnitude window) used to be xfail:STABILITY —
+        round 7's amaLoad-timer capsize fired on this exact trim; round 8
+        (ROUND8_physical_capsize.md, R8-1/R8-2) retired that timer for a
+        purely physical trigger, re-ran this same trim, and found it
+        genuinely FLIES the ama (amaLoad cycling up to ~2.0) but settles
+        into a bounded oscillation (phi cycling ~8-24deg) rather than
+        escalating toward the reversal — the xfail is REMOVED, tag lifted
+        per that document.
       - T4 (needs P2-3, redone round 7 D-6): windward brail on a beam
         reach turns to leeward AND lowers ama load simultaneously.
       - T5 (needs P2-3): windward brail lowers mean |rudder| deep downwind
@@ -614,11 +649,16 @@ either way.
         thereafter); past phiCapsizeDeg, heel gains a fixed increment
         faster than at the old (round-4) threshold — genuinely
         accelerating, not just waiting out the timer
-      - broach-cliff probe (section 8, over-sheeting a close course): the
-        "past the cliff" leg is xfail:STEERING as of round 7 — it now
-        holds course cleanly instead of broaching (same family as T1/T4,
-        NOT a capsize/stability finding — corrects an earlier assumption,
-        see findings doc sec 6).
+      - over-sheeting probe (section 8): round 5-7 had this as a "broach
+        cliff" assertion the bug-era force balance produced; the boat now
+        holds that old over-trimmed test point cleanly. Round 8 (R8-3)
+        replaced it entirely with the honest round-1-style criterion, now
+        measurable with real dynamics: at matched course/wind (TWA=90,
+        found to show it more cleanly than the old TWA=50 point, which
+        turned out to be a "boom as a lever" power regime instead — see
+        ROUND8_physical_capsize.md), an over-trimmed leg sails SLOWER and
+        HEELS MORE than a well-trimmed leg, with no loss of course either
+        way — a genuine, passing check, no xfail tag.
     - round 6: determinism self-test (see "Determinism contract" above) —
       run scenarioSquall() twice from the same initial state, hash every
       step, assert zero divergence
@@ -628,17 +668,25 @@ either way.
       R7-4b, a replay-fixture test consuming recordings/simpjoa-recording-
       20260716-155817.json (the session that diagnosed the ama-drag bug)
       against the live core, NO checksum verification (cross-engine ULP —
-      see "Determinism contract"); one of its two sub-checks is
-      xfail:STABILITY (same overload mechanism as T3, confirmed in the
-      real recording — findings doc sec 7). R7-4c, a general uncommanded-
-      round-up bound (steady reach, rudder locked, |r|<2deg/s over 30s).
-    - xfail mechanism (round 7, D-3/D-4): check()'s 4th argument tags a
-      known, diagnosed, EXPECTED-to-fail assertion ('STEERING' |
-      'STABILITY'). run_tests.js reports these separately under "KNOWN
-      MODEL LIMITATIONS", excludes them from the main pass count, and
-      fails the build if one unexpectedly starts passing (a "promotion
-      candidate" — the model changed and the mark needs a human decision
-      to lift, not a silent pass).
+      see "Determinism contract"). Round 8: under the physical capsize
+      trigger this recording no longer capsizes either (same bounded-
+      flying-equilibrium finding as T3) — but its sustained-|r| sub-check
+      still fails on its own (narrower) terms, now retagged xfail:STEERING
+      (the yaw-rate symptom of that same bounded oscillation, not a
+      capsize/overload issue anymore — see ROUND8_physical_capsize.md).
+      R7-4c, a general uncommanded-round-up bound (steady reach, rudder
+      locked, |r|<2deg/s over 30s).
+    - xfail mechanism (round 7, D-3/D-4; round 8 adds a third tag,
+      'CALIBRATION', for the polar-band findings below): check()'s 4th
+      argument tags a known, diagnosed, EXPECTED-to-fail assertion
+      ('STEERING' | 'STABILITY' | 'CALIBRATION'). run_tests.js reports
+      these separately under "KNOWN MODEL LIMITATIONS", excludes them
+      from the main pass count, and fails the build if one unexpectedly
+      starts passing (a "promotion candidate" — the model changed and the
+      mark needs a human decision to lift, not a silent pass). As of
+      round 8, the STABILITY tag is unused (both prior holders — T3, R7-4b
+      — resolved to passing/retagged); the mechanism stays generic in case
+      a future round needs it again.
 
 ### checksum.js (round 6)
     hashState(value) -> string
