@@ -1944,7 +1944,7 @@ const MS_TO_KN = 1.9438;
 // recording's codeVersion is meaningful (harness/replay.js warns on
 // mismatch) for a downloaded bundle without requiring a build step for
 // plain `python3 -m http.server` development.
-const CODE_VERSION = "2491d72";
+const CODE_VERSION = "719ed2d";
 
 // ---------------------------------------------------------------------
 // i18n — EN/PL. Static labels are marked with data-i18n="key" in
@@ -2328,7 +2328,7 @@ function drawTrueWindArrow() {
 // always -y (FIX_REQUEST_round3_worldframe.md R3-1 — this is drawn in the
 // same active-bow frame core/aero.js's chord angle lives in, so it has to
 // mirror the same way aero.js now does).
-function sailPath(yardLen, deltaAbs, brailLee, brailWind, end, alphaSign) {
+function sailPath(yardLen, deltaAbs, brailLee, brailWind, end, sailFx, sailFy) {
   const tackX = 0.35 * yardLen; // slightly forward of the mast step, anchored regardless of brail
   const furled = brailLee > 0.97 && brailWind > 0.97;
   if (furled) return { tackX, clewX: tackX + 0.15, clewY: -0.15 * end, furled: true };
@@ -2353,12 +2353,24 @@ function sailPath(yardLen, deltaAbs, brailLee, brailWind, end, alphaSign) {
   // but a raw (-dy,dx) rotation doesn't), so the belly bulged toward the
   // ama/windward after a shunt. Multiplying by `end` mirrors it the same
   // way the chord itself mirrors.
-  // P4.3 (ROUND5_CONSOLIDATED_work_order.md): the belly follows the ACTUAL
-  // pressure side, sign of alpha — alphaSign flips this to the OPPOSITE
-  // (toward the ama) in exactly the backwinded case (regime c, alpha<0),
-  // where the wind presses the sail from the other face. Normal, driving
-  // trims (alpha>=0) are unaffected (alphaSign=+1, same as before).
-  const nx = -clewY * end * alphaSign, ny = (clewX - tackX) * end * alphaSign;
+  // Round 8.1 fix: the belly must follow the ACTUAL sail force (sailFx/
+  // sailFy, the same values the force-vector overlay already draws), not
+  // aero.js's raw signed `alpha`. `alpha`'s SIGN is entangled with `end`
+  // (chordAngle = end*delta, mirrored at every shunt for bookkeeping
+  // reasons unrelated to which face the wind presses on — see aero.js's
+  // header comment), so an earlier version that flipped the belly on
+  // `alpha<0` got the right answer only by coincidence when `end` was
+  // unchanged (e.g. a genuine backwind slam) and the WRONG answer whenever
+  // a shunt flipped `end` on an otherwise perfectly ordinary, driving
+  // trim (reported: "po zwrocie żagiel jest wizualizowany w złą stronę") —
+  // verified against both a real post-shunt trim and scenarioBackwindSlam.
+  // Fix: compute the default "away from the ama" normal, then flip it only
+  // if that guess actually opposes the real force vector (dot product
+  // negative) — physically, the sail bellies in the direction its own net
+  // aerodynamic force pushes it, which is exactly what Fx/Fy already say.
+  const baseNx = -clewY * end, baseNy = (clewX - tackX) * end;
+  const forceSign = (baseNx * sailFx + baseNy * sailFy) >= 0 ? 1 : -1;
+  const nx = baseNx * forceSign, ny = baseNy * forceSign;
   const nlen = Math.hypot(nx, ny) || 1;
   const bulge = camber * chordLen;
   const ctrlX = midX + (nx / nlen) * bulge;
@@ -2517,10 +2529,10 @@ function drawBoat(state, forces, cam) {
     // P4.1/P4.3: the drawn yard angle is the ACTUAL state.delta (a real,
     // dynamic piece of state now — may differ from the commanded sheet
     // during a swing or while luffing), and the belly's bulge direction
-    // follows the sign of alpha (aero.js's raw, signed AoA), not a fixed
-    // rule — see sailPath's header comment.
-    const alphaSign = (forces?.alpha ?? 0) >= 0 ? 1 : -1;
-    const sp = sailPath(heelYardLen, Math.abs(state.delta ?? 0), controls.brailLee, controls.brailWind, state.end, alphaSign);
+    // follows the ACTUAL sail force (round 8.1 — see sailPath's header
+    // comment), not a fixed rule.
+    const sailFx = forces?.breakdown?.sail?.Fx ?? 0, sailFy = forces?.breakdown?.sail?.Fy ?? 0;
+    const sp = sailPath(heelYardLen, Math.abs(state.delta ?? 0), controls.brailLee, controls.brailWind, state.end, sailFx, sailFy);
     // The dashed/fluttering visual is gated on the AERODYNAMIC condition
     // (near-zero angle of attack — genuine regime b weathervaning, ~zero
     // force), not forces.luffing's mechanical "delta < deltaMax-2deg"
