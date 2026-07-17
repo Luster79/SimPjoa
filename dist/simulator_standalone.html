@@ -60,7 +60,7 @@
   #polarPanel.show { display: block; }
   #legend { position: absolute; right: 8px; bottom: 8px; background: rgba(10,18,28,0.75); border: 1px solid #23364a; border-radius: 4px; padding: 6px 8px; font-size: 11px; line-height: 1.7; }
   #legend .sw { display: inline-block; width: 14px; height: 3px; margin-right: 5px; vertical-align: middle; }
-  #versionInfo { position: fixed; right: 8px; bottom: 6px; font-size: 11px; color: #8aa4bd; letter-spacing: .02em; pointer-events: none; z-index: 1000; font-variant-numeric: tabular-nums; background: rgba(10,18,28,0.85); border: 1px solid #23364a; border-radius: 4px; padding: 3px 7px; }
+  #versionInfo { color: #6f8399; font-size: 11px; font-variant-numeric: tabular-nums; }
   #versionInfo:empty { display: none; }
 </style>
 </head>
@@ -90,6 +90,7 @@
       <button id="btnForces" class="active"><span data-i18n="btn.forces">Forces (F)</span></button>
       <button id="btnPolar"><span data-i18n="btn.polar">Polar (O)</span></button>
     </span>
+    <span class="stat" id="versionInfo"></span>
   </div>
   <div id="stage">
     <canvas id="scene"></canvas>
@@ -155,7 +156,6 @@
     </div>
   </div>
 </div>
-<div id="versionInfo"></div>
 <script type="module">
 // GENERATED FILE — produced by tools/bundle.js from /core, /harness/polar.js,
 // /ui/app.js and /data/*.csv. Do not edit by hand; edit the sources and re-run
@@ -1947,14 +1947,14 @@ const MS_TO_KN = 1.9438;
 // recording's codeVersion is meaningful (harness/replay.js warns on
 // mismatch) for a downloaded bundle without requiring a build step for
 // plain `python3 -m http.server` development.
-const CODE_VERSION = "b537e33";
+const CODE_VERSION = "b5e8b03";
 // BUILD_TIME: same pattern as CODE_VERSION above — tools/bundle.js
 // replaces this with the COMMIT's timestamp (not wall-clock build time),
 // so it stays stable across re-bundling the same commit and always
 // matches CODE_VERSION's hash. Shown in the bottom-right version footer
 // so a bug report/recording can be tied to an exact, dated build without
 // having to separately ask "which commit was this."
-const BUILD_TIME = "2026-07-17T20:08:18+02:00";
+const BUILD_TIME = "2026-07-17T20:15:45+02:00";
 
 // ---------------------------------------------------------------------
 // i18n — EN/PL. Static labels are marked with data-i18n="key" in
