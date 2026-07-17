@@ -72,6 +72,7 @@ export function createDefaultControls() {
     windSpeed: 6,
     sheet: 0, // MAXIMUM yard angle delta_max [rad], >=0 (R5-1) — NOT the actual yard angle, see state.delta
     rudder: 0,
+    rudderUp: false, // steering oar shipped (out of the water) — see core/rudder.js
     brailLee: 0,
     brailWind: 0,
     crewPos: 0,

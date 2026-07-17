@@ -81,6 +81,7 @@ otherwise. Documentation (this file, code comments) stays English-only.
 | Leeward brail | `Q` sheets in, `Z` eases |
 | Windward brail | `W` sheets in, `X` eases |
 | Rudder | `A` / `D` (auto-centers on release), or slider |
+| Rudder up (shipped) | checkbox — a steering oar, not a fixed rudder; produces no force while checked |
 | Crew position | `J` toward leeward, `L` toward the ama, or slider |
 | Shunt | `Space` (held or click), respects the speed lockout |
 | Reset (after capsize, or any time) | `R` |

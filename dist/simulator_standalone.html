@@ -124,6 +124,8 @@
       <h2 data-i18n="h.steering">Steering &amp; trim</h2>
       <div class="row"><label for="rudder" data-i18n="lbl.rudder">Rudder</label><input id="rudder" type="range" min="-1" max="1" step="0.02" value="0"><output id="rudderOut">0.00</output></div>
       <div class="hint" data-i18n="hint.rudder">A/D deflect, auto-centers on release</div>
+      <div class="checkboxRow"><input type="checkbox" id="rudderUp"><label for="rudderUp" data-i18n="lbl.rudderUp">Rudder up (shipped)</label></div>
+      <div class="hint" data-i18n="hint.rudderUp">A steering oar, not a fixed rudder — usually out of the water; produces no force while shipped</div>
       <div class="row"><label for="crewPos" data-i18n="lbl.crewPos">Crew pos.</label><input id="crewPos" type="range" min="-0.3" max="1.0" step="0.02" value="0.3"><output id="crewPosOut">0.30</output></div>
       <div class="hint" data-i18n="hint.crewPos">J moves to leeward, L moves to the ama</div>
       <div class="row"><label for="crewPosX" data-i18n="lbl.crewPosX">Crew fore-aft</label><input id="crewPosX" type="range" min="-1" max="1" step="0.02" value="0"><output id="crewPosXOut">0.00</output></div>
@@ -258,6 +260,7 @@ function createDefaultControls() {
     windSpeed: 6,
     sheet: 0, // MAXIMUM yard angle delta_max [rad], >=0 (R5-1) — NOT the actual yard angle, see state.delta
     rudder: 0,
+    rudderUp: false, // steering oar shipped (out of the water) — see core/rudder.js
     brailLee: 0,
     brailWind: 0,
     crewPos: 0,
@@ -1135,8 +1138,15 @@ function yawDamping(r, u, config) {
 // dead as |u| -> 0, without an artificial cutoff). After a shunt, state.end
 // flips, moving the lever arm (and hence the active steering end) to the
 // opposite physical hull end.
+//
+// controls.rudderUp: a Pjoa's "rudder" is a steering OAR, not a fixed,
+// always-in-the-water blade — its normal resting state is shipped
+// (lifted clear of the water entirely), not "centered". While shipped it
+// cannot generate any force regardless of controls.rudder's own value,
+// same as a real oar pulled out of its lashing.
 
 function rudderForce(state, controls, config) {
+  if (controls.rudderUp) return { Fy: 0, yawMoment: 0 };
   const { rudder, rho_w, hull } = config;
   const maxDeflection = (rudder.maxDeflectionDeg * Math.PI) / 180;
   const deflection = Math.max(-1, Math.min(1, controls.rudder)) * maxDeflection;
@@ -1947,14 +1957,14 @@ const MS_TO_KN = 1.9438;
 // recording's codeVersion is meaningful (harness/replay.js warns on
 // mismatch) for a downloaded bundle without requiring a build step for
 // plain `python3 -m http.server` development.
-const CODE_VERSION = "b5e8b03";
+const CODE_VERSION = "7e7f903";
 // BUILD_TIME: same pattern as CODE_VERSION above — tools/bundle.js
 // replaces this with the COMMIT's timestamp (not wall-clock build time),
 // so it stays stable across re-bundling the same commit and always
 // matches CODE_VERSION's hash. Shown in the bottom-right version footer
 // so a bug report/recording can be tied to an exact, dated build without
 // having to separately ask "which commit was this."
-const BUILD_TIME = "2026-07-17T20:15:45+02:00";
+const BUILD_TIME = "2026-07-17T20:28:57+02:00";
 
 // ---------------------------------------------------------------------
 // i18n — EN/PL. Static labels are marked with data-i18n="key" in
@@ -1975,6 +1985,7 @@ const TRANSLATIONS = {
     'lbl.brailLee': 'Brail (lee)', 'hint.brailLee': 'Q sheets in, Z eases',
     'lbl.brailWind': 'Brail (wind)', 'hint.brailWind': 'W sheets in, X eases',
     'h.steering': 'Steering & trim', 'lbl.rudder': 'Rudder', 'hint.rudder': 'A/D deflect, auto-centers on release',
+    'lbl.rudderUp': 'Rudder up (shipped)', 'hint.rudderUp': 'A steering oar, not a fixed rudder — usually out of the water; produces no force while shipped',
     'lbl.crewPos': 'Crew pos.', 'hint.crewPos': 'J moves to leeward, L moves to the ama',
     'lbl.crewPosX': 'Crew fore-aft', 'hint.crewPosX': 'I moves forward, K moves aft',
     'h.shunt': 'Shunt', 'btn.shunt': 'SHUNT (space)',
@@ -2011,6 +2022,7 @@ const TRANSLATIONS = {
     'lbl.brailLee': 'Brajda zawietrzna', 'hint.brailLee': 'Q wybiera, Z luzuje',
     'lbl.brailWind': 'Brajda nawietrzna', 'hint.brailWind': 'W wybiera, X luzuje',
     'h.steering': 'Sterowanie i wyważenie', 'lbl.rudder': 'Ster', 'hint.rudder': 'A/D wychyla ster, centruje się po puszczeniu',
+    'lbl.rudderUp': 'Wiosło wyjęte', 'hint.rudderUp': 'Ster to wiosło, nie stały ster — zwykle jest wyjęte z wody; nie wytwarza wtedy żadnej siły',
     'lbl.crewPos': 'Poz. załogi', 'hint.crewPos': 'J w stronę zawietrznej, L w stronę amy',
     'lbl.crewPosX': 'Załoga wzdłuż', 'hint.crewPosX': 'I w stronę dziobu, K w stronę rufy',
     'h.shunt': 'Zwrot', 'btn.shunt': 'ZWROT (spacja)',
@@ -2107,6 +2119,7 @@ const outs = {
   crewPosX: document.getElementById('crewPosXOut'),
 };
 const wakeTrailCheckbox = document.getElementById('wakeTrail');
+const rudderUpCheckbox = document.getElementById('rudderUp');
 const btnRec = document.getElementById('btnRec');
 const btnMark = document.getElementById('btnMark');
 const btnDownloadRec = document.getElementById('btnDownloadRec');
@@ -2165,6 +2178,15 @@ sliders.brailWind.addEventListener('input', () => { controls.brailWind = Number(
 sliders.rudder.addEventListener('input', () => { autoRudder = false; controls.rudder = Number(sliders.rudder.value); refreshOutputs(); });
 sliders.crewPos.addEventListener('input', () => { controls.crewPos = Number(sliders.crewPos.value); refreshOutputs(); });
 sliders.crewPosX.addEventListener('input', () => { controls.crewPosX = Number(sliders.crewPosX.value); refreshOutputs(); });
+// Rudder up (shipped, core/rudder.js): a steering OAR's normal resting
+// state is lifted clear of the water, not "centered" — while shipped it
+// produces no force regardless of controls.rudder's own value. The
+// slider itself is disabled while shipped (nothing for it to do), not
+// reset, so re-shipping the oar resumes from wherever it was left.
+rudderUpCheckbox.addEventListener('change', () => {
+  controls.rudderUp = rudderUpCheckbox.checked;
+  sliders.rudder.disabled = controls.rudderUp;
+});
 
 syncSlidersFromControls();
 
@@ -2214,7 +2236,7 @@ function applyContinuousKeys(dt) {
   if (keys.has('KeyI')) controls.crewPosX = clamp__b12(controls.crewPosX + crewRate * dt, dims.crew.posXMin, dims.crew.posXMax);
   if (keys.has('KeyK')) controls.crewPosX = clamp__b12(controls.crewPosX - crewRate * dt, dims.crew.posXMin, dims.crew.posXMax);
 
-  if (autoRudder) {
+  if (!controls.rudderUp && autoRudder) {
     if (keys.has('KeyA')) controls.rudder = clamp__b12(controls.rudder - rudderRate * dt, -1, 1);
     else if (keys.has('KeyD')) controls.rudder = clamp__b12(controls.rudder + rudderRate * dt, -1, 1);
     else controls.rudder = Math.abs(controls.rudder) < rudderRate * dt ? 0 : controls.rudder - Math.sign(controls.rudder) * rudderRate * dt;

@@ -171,6 +171,8 @@ changes.
       windSpeed,        // [m/s]
       sheet,            // [rad] MAXIMUM yard angle (delta_max), >=0 — round 5; NOT the actual yard angle, see state.delta
       rudder,           // [-1..1] -> scaled to +/-35 deg in rudder.js
+      rudderUp,         // bool — steering oar shipped (out of the water); zero force
+                        // regardless of `rudder`'s own value (see rudder.js)
       brailLee,         // 0..1 leeward brail
       brailWind,        // 0..1 windward brail
       crewPos,          // -0.3..1.0 crew position, lateral (fraction of ama.spacing, toward the ama)
@@ -318,6 +320,9 @@ cross-check at startup as required by the main prompt. Fixed schema version: a
 ### rudder.js
     rudderForce(state, controls, config) -> { Fy, yawMoment }
       // lever arm = half hull length * state.end; dead at |u| ~ 0
+      // controls.rudderUp short-circuits to { Fy: 0, yawMoment: 0 } — a
+      // Pjoa's "rudder" is a steering OAR, normally shipped clear of the
+      // water, not centered
 
 ### stability.js — roll as a 4th DOF (FIX_REQUEST_round4_roll_dof.md Part 1;
 ### supersedes the round-3 static heelMoment/restoringCapacity model)

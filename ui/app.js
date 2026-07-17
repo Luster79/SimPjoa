@@ -65,6 +65,7 @@ const TRANSLATIONS = {
     'lbl.brailLee': 'Brail (lee)', 'hint.brailLee': 'Q sheets in, Z eases',
     'lbl.brailWind': 'Brail (wind)', 'hint.brailWind': 'W sheets in, X eases',
     'h.steering': 'Steering & trim', 'lbl.rudder': 'Rudder', 'hint.rudder': 'A/D deflect, auto-centers on release',
+    'lbl.rudderUp': 'Rudder up (shipped)', 'hint.rudderUp': 'A steering oar, not a fixed rudder — usually out of the water; produces no force while shipped',
     'lbl.crewPos': 'Crew pos.', 'hint.crewPos': 'J moves to leeward, L moves to the ama',
     'lbl.crewPosX': 'Crew fore-aft', 'hint.crewPosX': 'I moves forward, K moves aft',
     'h.shunt': 'Shunt', 'btn.shunt': 'SHUNT (space)',
@@ -101,6 +102,7 @@ const TRANSLATIONS = {
     'lbl.brailLee': 'Brajda zawietrzna', 'hint.brailLee': 'Q wybiera, Z luzuje',
     'lbl.brailWind': 'Brajda nawietrzna', 'hint.brailWind': 'W wybiera, X luzuje',
     'h.steering': 'Sterowanie i wyważenie', 'lbl.rudder': 'Ster', 'hint.rudder': 'A/D wychyla ster, centruje się po puszczeniu',
+    'lbl.rudderUp': 'Wiosło wyjęte', 'hint.rudderUp': 'Ster to wiosło, nie stały ster — zwykle jest wyjęte z wody; nie wytwarza wtedy żadnej siły',
     'lbl.crewPos': 'Poz. załogi', 'hint.crewPos': 'J w stronę zawietrznej, L w stronę amy',
     'lbl.crewPosX': 'Załoga wzdłuż', 'hint.crewPosX': 'I w stronę dziobu, K w stronę rufy',
     'h.shunt': 'Zwrot', 'btn.shunt': 'ZWROT (spacja)',
@@ -197,6 +199,7 @@ const outs = {
   crewPosX: document.getElementById('crewPosXOut'),
 };
 const wakeTrailCheckbox = document.getElementById('wakeTrail');
+const rudderUpCheckbox = document.getElementById('rudderUp');
 const btnRec = document.getElementById('btnRec');
 const btnMark = document.getElementById('btnMark');
 const btnDownloadRec = document.getElementById('btnDownloadRec');
@@ -255,6 +258,15 @@ sliders.brailWind.addEventListener('input', () => { controls.brailWind = Number(
 sliders.rudder.addEventListener('input', () => { autoRudder = false; controls.rudder = Number(sliders.rudder.value); refreshOutputs(); });
 sliders.crewPos.addEventListener('input', () => { controls.crewPos = Number(sliders.crewPos.value); refreshOutputs(); });
 sliders.crewPosX.addEventListener('input', () => { controls.crewPosX = Number(sliders.crewPosX.value); refreshOutputs(); });
+// Rudder up (shipped, core/rudder.js): a steering OAR's normal resting
+// state is lifted clear of the water, not "centered" — while shipped it
+// produces no force regardless of controls.rudder's own value. The
+// slider itself is disabled while shipped (nothing for it to do), not
+// reset, so re-shipping the oar resumes from wherever it was left.
+rudderUpCheckbox.addEventListener('change', () => {
+  controls.rudderUp = rudderUpCheckbox.checked;
+  sliders.rudder.disabled = controls.rudderUp;
+});
 
 syncSlidersFromControls();
 
@@ -304,7 +316,7 @@ function applyContinuousKeys(dt) {
   if (keys.has('KeyI')) controls.crewPosX = clamp(controls.crewPosX + crewRate * dt, dims.crew.posXMin, dims.crew.posXMax);
   if (keys.has('KeyK')) controls.crewPosX = clamp(controls.crewPosX - crewRate * dt, dims.crew.posXMin, dims.crew.posXMax);
 
-  if (autoRudder) {
+  if (!controls.rudderUp && autoRudder) {
     if (keys.has('KeyA')) controls.rudder = clamp(controls.rudder - rudderRate * dt, -1, 1);
     else if (keys.has('KeyD')) controls.rudder = clamp(controls.rudder + rudderRate * dt, -1, 1);
     else controls.rudder = Math.abs(controls.rudder) < rudderRate * dt ? 0 : controls.rudder - Math.sign(controls.rudder) * rudderRate * dt;
