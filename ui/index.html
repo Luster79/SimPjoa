@@ -51,6 +51,18 @@
   .row input[type=range] { flex: 1; }
   .row output { flex: 0 0 46px; text-align: right; font-variant-numeric: tabular-nums; }
   .row .stepBtn { flex: 0 0 auto; padding: 2px 8px; font-size: 12px; line-height: 1.4; }
+  .pad2DWrap { flex: 1; }
+  .pad2D { position: relative; width: 100%; max-width: 220px; height: 140px; background: #0e1927; border: 1px solid #2b4460; border-radius: 6px; cursor: crosshair; touch-action: none; user-select: none; }
+  .padAxis { position: absolute; background: #1e2f42; }
+  .padAxisV { left: 50%; top: 0; bottom: 0; width: 1px; }
+  .padAxisH { top: 50%; left: 0; right: 0; height: 1px; }
+  .padLabel { position: absolute; font-size: 10px; color: #6f8399; pointer-events: none; }
+  .padLabelTop { top: 3px; left: 50%; transform: translateX(-50%); }
+  .padLabelBottom { bottom: 3px; left: 50%; transform: translateX(-50%); }
+  .padLabelLeft { left: 4px; top: 50%; transform: translateY(-50%); }
+  .padLabelRight { right: 4px; top: 50%; transform: translateY(-50%); }
+  .padDot { position: absolute; width: 14px; height: 14px; border-radius: 50%; background: #7fc7ff; border: 2px solid #dbe7f2; transform: translate(-50%, -50%); pointer-events: none; box-shadow: 0 0 6px rgba(127,199,255,0.6); }
+  .padReadout { font-size: 11px; color: #9fb4c8; margin-top: 4px; text-align: center; font-variant-numeric: tabular-nums; }
   .buttons { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
   button { background: #17293d; color: #dbe7f2; border: 1px solid #2b4460; border-radius: 4px; padding: 5px 10px; cursor: pointer; font: inherit; }
   button:hover { background: #1f3650; }
@@ -149,10 +161,22 @@
       <div class="hint" data-i18n="hint.rudder">A/D deflect, auto-centers on release</div>
       <div class="checkboxRow"><input type="checkbox" id="rudderUp"><label for="rudderUp" data-i18n="lbl.rudderUp">Rudder up (shipped)</label></div>
       <div class="hint" data-i18n="hint.rudderUp">A steering oar, not a fixed rudder — usually out of the water; produces no force while shipped</div>
-      <div class="row"><label for="crewPos" data-i18n="lbl.crewPos">Crew pos.</label><input id="crewPos" type="range" min="-0.3" max="1.0" step="0.02" value="0.3"><output id="crewPosOut">0.30</output></div>
-      <div class="hint" data-i18n="hint.crewPos">J moves to leeward, L moves to the ama</div>
-      <div class="row"><label for="crewPosX" data-i18n="lbl.crewPosX">Crew fore-aft</label><input id="crewPosX" type="range" min="-1" max="1" step="0.02" value="0"><output id="crewPosXOut">0.00</output></div>
-      <div class="hint" data-i18n="hint.crewPosX">I moves forward, K moves aft</div>
+      <div class="row" style="align-items: flex-start">
+        <label data-i18n="lbl.crewPos">Crew position</label>
+        <div class="pad2DWrap">
+          <div id="crewPad" class="pad2D">
+            <div class="padAxis padAxisV"></div>
+            <div class="padAxis padAxisH"></div>
+            <span class="padLabel padLabelTop" data-i18n="pad.ama">ama</span>
+            <span class="padLabel padLabelBottom" data-i18n="pad.leeward">leeward</span>
+            <span class="padLabel padLabelLeft" data-i18n="pad.aft">aft</span>
+            <span class="padLabel padLabelRight" data-i18n="pad.fwd">fwd</span>
+            <div id="crewDot" class="padDot"></div>
+          </div>
+          <div class="padReadout"><output id="crewPosOut">0.30</output> / <output id="crewPosXOut">0.00</output></div>
+        </div>
+      </div>
+      <div class="hint" data-i18n="hint.crewPos">Drag the dot, or J/L (lateral), I/K (fore-aft)</div>
 
       <h2 data-i18n="h.shunt">Shunt</h2>
       <div class="buttons"><button id="btnShunt"><span data-i18n="btn.shunt">SHUNT (space)</span></button></div>

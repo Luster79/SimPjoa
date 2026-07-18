@@ -66,8 +66,8 @@ const TRANSLATIONS = {
     'lbl.brailWind': 'Brail (wind)', 'hint.brailWind': 'W sheets in, X eases',
     'h.steering': 'Steering & trim', 'lbl.rudder': 'Rudder', 'hint.rudder': 'A/D deflect, auto-centers on release',
     'lbl.rudderUp': 'Rudder up (shipped)', 'hint.rudderUp': 'A steering oar, not a fixed rudder — usually out of the water; produces no force while shipped',
-    'lbl.crewPos': 'Crew pos.', 'hint.crewPos': 'J moves to leeward, L moves to the ama',
-    'lbl.crewPosX': 'Crew fore-aft', 'hint.crewPosX': 'I moves forward, K moves aft',
+    'lbl.crewPos': 'Crew position', 'hint.crewPos': 'Drag the dot, or J/L (lateral), I/K (fore-aft)',
+    'pad.ama': 'ama', 'pad.leeward': 'leeward', 'pad.aft': 'aft', 'pad.fwd': 'fwd',
     'h.shunt': 'Shunt', 'btn.shunt': 'SHUNT (space)',
     'h.amaLoad': 'Ama load', 'hud.heel': 'Heel', 'hint.heelBar': 'Heel (centered = upright)', 'h.reset': 'Reset',
     'h.display': 'Display', 'lbl.wakeTrail': 'Wake trail (kilwater)', 'hud.luffing': 'LUFFING', 'hud.stalled': 'STALLED',
@@ -119,8 +119,8 @@ const TRANSLATIONS = {
     'lbl.brailWind': 'Brajda nawietrzna', 'hint.brailWind': 'W wybiera, X luzuje',
     'h.steering': 'Sterowanie i wyważenie', 'lbl.rudder': 'Ster', 'hint.rudder': 'A/D wychyla ster, centruje się po puszczeniu',
     'lbl.rudderUp': 'Wiosło wyjęte', 'hint.rudderUp': 'Ster to wiosło, nie stały ster — zwykle jest wyjęte z wody; nie wytwarza wtedy żadnej siły',
-    'lbl.crewPos': 'Poz. załogi', 'hint.crewPos': 'J w stronę zawietrznej, L w stronę amy',
-    'lbl.crewPosX': 'Załoga wzdłuż', 'hint.crewPosX': 'I w stronę dziobu, K w stronę rufy',
+    'lbl.crewPos': 'Pozycja załogi', 'hint.crewPos': 'Przeciągnij kropkę, lub J/L (bok), I/K (wzdłuż)',
+    'pad.ama': 'ama', 'pad.leeward': 'zawietrzna', 'pad.aft': 'rufa', 'pad.fwd': 'dziób',
     'h.shunt': 'Zwrot', 'btn.shunt': 'ZWROT (spacja)',
     'h.amaLoad': 'Obciążenie amy', 'hud.heel': 'Przechył', 'hint.heelBar': 'Przechył (środek = pion)', 'h.reset': 'Reset',
     'h.display': 'Widok', 'lbl.wakeTrail': 'Kilwater', 'hud.luffing': 'ŁOPOCZE', 'hud.stalled': 'PRZECIĄGNIĘTY',
@@ -218,8 +218,6 @@ const sliders = {
   brailLee: document.getElementById('brailLee'),
   brailWind: document.getElementById('brailWind'),
   rudder: document.getElementById('rudder'),
-  crewPos: document.getElementById('crewPos'),
-  crewPosX: document.getElementById('crewPosX'),
 };
 const outs = {
   windDir: document.getElementById('windDirOut'),
@@ -300,8 +298,7 @@ function syncSlidersFromControls() {
   sliders.brailLee.value = String(Math.round(controls.brailLee * 100));
   sliders.brailWind.value = String(Math.round(controls.brailWind * 100));
   sliders.rudder.value = String(controls.rudder);
-  sliders.crewPos.value = String(controls.crewPos);
-  sliders.crewPosX.value = String(controls.crewPosX);
+  updateCrewDot();
   refreshOutputs();
 }
 
@@ -322,8 +319,53 @@ sliders.sheet.addEventListener('input', () => { controls.sheet = Number(sliders.
 sliders.brailLee.addEventListener('input', () => { controls.brailLee = Number(sliders.brailLee.value) / 100; refreshOutputs(); });
 sliders.brailWind.addEventListener('input', () => { controls.brailWind = Number(sliders.brailWind.value) / 100; refreshOutputs(); });
 sliders.rudder.addEventListener('input', () => { autoRudder = false; controls.rudder = Number(sliders.rudder.value); refreshOutputs(); });
-sliders.crewPos.addEventListener('input', () => { controls.crewPos = Number(sliders.crewPos.value); refreshOutputs(); });
-sliders.crewPosX.addEventListener('input', () => { controls.crewPosX = Number(sliders.crewPosX.value); refreshOutputs(); });
+
+// Crew position 2D pad: combines the old crewPos (lateral, toward the
+// ama) and crewPosX (fore-aft) sliders into a single draggable dot, per
+// the user's request — one point in a 2D space instead of two 1D
+// sliders. Top of the pad = crew.posMax (toward the ama), bottom =
+// crew.posMin (leeward); left = crew.posXMin (aft), right =
+// crew.posXMax (forward) — matches the existing J/L (lateral) and I/K
+// (fore-aft) keyboard convention (L/I increase, J/K decrease).
+const crewPad = document.getElementById('crewPad');
+const crewDot = document.getElementById('crewDot');
+
+// Local clamp (not the module-level one below — that's declared after
+// this point, and syncSlidersFromControls() already runs before it).
+const clampLocal = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+function updateCrewDot() {
+  const { posMin, posMax, posXMin, posXMax } = dims.crew;
+  const fracY = (clampLocal(controls.crewPos, posMin, posMax) - posMin) / (posMax - posMin);
+  const fracX = (clampLocal(controls.crewPosX, posXMin, posXMax) - posXMin) / (posXMax - posXMin);
+  crewDot.style.left = `${fracX * 100}%`;
+  crewDot.style.top = `${(1 - fracY) * 100}%`;
+}
+
+function setCrewFromPad(clientX, clientY) {
+  const rect = crewPad.getBoundingClientRect();
+  const { posMin, posMax, posXMin, posXMax } = dims.crew;
+  const fracX = clampLocal((clientX - rect.left) / rect.width, 0, 1);
+  const fracY = clampLocal((clientY - rect.top) / rect.height, 0, 1);
+  controls.crewPosX = posXMin + fracX * (posXMax - posXMin);
+  controls.crewPos = posMax - fracY * (posMax - posMin);
+  updateCrewDot();
+  refreshOutputs();
+}
+
+let draggingCrewPad = false;
+crewPad.addEventListener('pointerdown', (e) => {
+  draggingCrewPad = true;
+  crewPad.setPointerCapture(e.pointerId);
+  setCrewFromPad(e.clientX, e.clientY);
+});
+crewPad.addEventListener('pointermove', (e) => {
+  if (draggingCrewPad) setCrewFromPad(e.clientX, e.clientY);
+});
+crewPad.addEventListener('pointerup', (e) => {
+  draggingCrewPad = false;
+  crewPad.releasePointerCapture(e.pointerId);
+});
 // Rudder up (shipped, core/rudder.js): a steering OAR's normal resting
 // state is lifted clear of the water, not "centered" — while shipped it
 // produces no force regardless of controls.rudder's own value. The
