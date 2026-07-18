@@ -88,8 +88,32 @@ export function hullSideForce(u, v, crewPosX, config) {
   // it doesn't reopen the R2-1 escape valve at normal sailing speeds, where
   // the quadratic term already dominates.
   const FyLinear = -hull.lowSpeedSideDamping * v;
-  const Fy = FyQuadratic + FyLinear;
-  const Fx = -Math.sign(u) * Math.abs(Fy) * Math.sin(leewayAbs);
+  const FyFoil = FyQuadratic + FyLinear;
+
+  // --- Cross-flow (broadside) drag (R9 follow-up) ---
+  // Past stall the hull stops being a foil and becomes a BLUFF BODY dragged
+  // side-on through the water: large cross-flow pressure drag on the lateral
+  // plane (Cd ~ 1.1) that the foil-lift term above CANNOT capture — that
+  // term mushes to near zero past the ~15deg stall, so at beam-on the old
+  // model left the hull almost free to slide sideways (a spurious
+  // sail-sideways / stuck-crabbing attractor; see the ROUND9 findings).
+  // Standard ship-maneuvering cross-flow term Y_{v|v|}: opposes the
+  // TRANSVERSE velocity, quadratic in it, so it is negligible at normal
+  // leeway (v tiny) yet dominant near 90deg leeway — it makes sailing
+  // sideways feel like hitting a wall.
+  // Scaled by sin(leewayAbs): the full broadside coefficient only applies
+  // near beam-on (90deg) — at small-to-moderate drift the flow stays more
+  // attached and the effective cross-flow Cd is lower, so this does not
+  // over-damp the ordinary leeway/yaw transients of normal maneuvers (e.g.
+  // the backwind-slam yaw yank) while still arresting a genuine beam-on
+  // slide (sin ~ 1 there).
+  const FyCross = -Math.sign(v) * (hull.crossFlowDragCoeff ?? 0) * 0.5 * rho_w * (hull.lateralArea ?? 0) * v * v * Math.sin(leewayAbs);
+
+  const Fy = FyFoil + FyCross;
+  // Induced drag is a FOIL property (side force tilted aft by the leeway
+  // angle); the cross-flow term is already a pure resistance and must not be
+  // re-counted as induced drag, so Fx uses the foil part only.
+  const Fx = -Math.sign(u) * Math.abs(FyFoil) * Math.sin(leewayAbs);
 
   // Center of lateral resistance offset from CG (slightly aft, tunable) — gives
   // a modest weather-helm-like turning tendency rather than zero yaw coupling.

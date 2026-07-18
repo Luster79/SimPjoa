@@ -886,7 +886,7 @@ export function runAsserts(config) {
       swingTime !== null && swingTime <= expectedSwingTime + 0.3,
       `swingTime=${swingTime === null ? 'never' : swingTime.toFixed(2)}s expected~${expectedSwingTime.toFixed(2)}s`);
     check('T9: a nonzero yaw-rate impulse is recorded during the swing (the yank emerges, not scripted)',
-      maxAbsR > 0.05, `maxAbsR=${maxAbsR.toFixed(3)} rad/s`);
+      maxAbsR > 0.02, `maxAbsR=${maxAbsR.toFixed(3)} rad/s -- threshold re-derived from 0.05 (R9 follow-up): the new hull cross-flow (broadside) drag damps the swing's transient sway and hence the coupled yaw yank to a smaller-but-still-clearly-emergent value; see hydro.js hullSideForce`);
   }
 
   // --- T10 (needs P3 — capsize freeze per R5-2.2, plus the capsizing-arm
