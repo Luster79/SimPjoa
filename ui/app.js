@@ -198,6 +198,39 @@ const outs = {
   crewPos: document.getElementById('crewPosOut'),
   crewPosX: document.getElementById('crewPosXOut'),
 };
+
+// Step buttons (-/+) flanking every slider, for finer/click-based control
+// alongside dragging. Reuse each slider's own min/max/step and just
+// dispatch a real 'input' event, so every existing per-slider listener
+// (including side effects like rudder's autoRudder=false) fires unchanged.
+const stepButtons = {};
+function stepInputValue(input, direction) {
+  const step = Number(input.step) || 1;
+  const decimals = (String(input.step).split('.')[1] || '').length;
+  const min = Number(input.min), max = Number(input.max);
+  const next = Math.min(max, Math.max(min, Number(input.value) + direction * step));
+  input.value = next.toFixed(decimals);
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+for (const key of Object.keys(sliders)) {
+  const input = sliders[key];
+  if (!input) continue;
+  const minus = document.createElement('button');
+  minus.type = 'button';
+  minus.className = 'stepBtn';
+  minus.textContent = '−';
+  minus.setAttribute('aria-label', 'decrease');
+  minus.addEventListener('click', () => stepInputValue(input, -1));
+  const plus = document.createElement('button');
+  plus.type = 'button';
+  plus.className = 'stepBtn';
+  plus.textContent = '+';
+  plus.setAttribute('aria-label', 'increase');
+  plus.addEventListener('click', () => stepInputValue(input, 1));
+  input.insertAdjacentElement('beforebegin', minus);
+  input.insertAdjacentElement('afterend', plus);
+  stepButtons[key] = { minus, plus };
+}
 const wakeTrailCheckbox = document.getElementById('wakeTrail');
 const rudderUpCheckbox = document.getElementById('rudderUp');
 const btnRec = document.getElementById('btnRec');
@@ -266,6 +299,8 @@ sliders.crewPosX.addEventListener('input', () => { controls.crewPosX = Number(sl
 rudderUpCheckbox.addEventListener('change', () => {
   controls.rudderUp = rudderUpCheckbox.checked;
   sliders.rudder.disabled = controls.rudderUp;
+  stepButtons.rudder.minus.disabled = controls.rudderUp;
+  stepButtons.rudder.plus.disabled = controls.rudderUp;
 });
 
 syncSlidersFromControls();

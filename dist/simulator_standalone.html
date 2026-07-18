@@ -41,6 +41,7 @@
   .row label { flex: 0 0 108px; color: #9fb4c8; }
   .row input[type=range] { flex: 1; }
   .row output { flex: 0 0 46px; text-align: right; font-variant-numeric: tabular-nums; }
+  .row .stepBtn { flex: 0 0 auto; padding: 2px 8px; font-size: 12px; line-height: 1.4; }
   .buttons { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
   button { background: #17293d; color: #dbe7f2; border: 1px solid #2b4460; border-radius: 4px; padding: 5px 10px; cursor: pointer; font: inherit; }
   button:hover { background: #1f3650; }
@@ -657,7 +658,9 @@ function buildDefaultConfig() {
     rudder: {
       maxDeflectionDeg: 35,
       area: 0.4,                // m^2 — tunable estimate, steering-oar blade
-      coeff: 3.5,               // tunable — lift-curve-like coefficient for the oar
+      // coeff: halved from 3.5 (user feedback: reacted too sharply for a
+      // hand-held steering oar, not a proper rudder — see core/rudder.js).
+      coeff: 1.75,
     },
 
     shunt: {
@@ -2024,14 +2027,14 @@ const MS_TO_KN = 1.9438;
 // recording's codeVersion is meaningful (harness/replay.js warns on
 // mismatch) for a downloaded bundle without requiring a build step for
 // plain `python3 -m http.server` development.
-const CODE_VERSION = "259ef2d";
+const CODE_VERSION = "5745bbc";
 // BUILD_TIME: same pattern as CODE_VERSION above — tools/bundle.js
 // replaces this with the COMMIT's timestamp (not wall-clock build time),
 // so it stays stable across re-bundling the same commit and always
 // matches CODE_VERSION's hash. Shown in the bottom-right version footer
 // so a bug report/recording can be tied to an exact, dated build without
 // having to separately ask "which commit was this."
-const BUILD_TIME = "2026-07-17T21:19:06+02:00";
+const BUILD_TIME = "2026-07-18T00:57:37+02:00";
 
 // ---------------------------------------------------------------------
 // i18n — EN/PL. Static labels are marked with data-i18n="key" in
@@ -2185,6 +2188,39 @@ const outs = {
   crewPos: document.getElementById('crewPosOut'),
   crewPosX: document.getElementById('crewPosXOut'),
 };
+
+// Step buttons (-/+) flanking every slider, for finer/click-based control
+// alongside dragging. Reuse each slider's own min/max/step and just
+// dispatch a real 'input' event, so every existing per-slider listener
+// (including side effects like rudder's autoRudder=false) fires unchanged.
+const stepButtons = {};
+function stepInputValue(input, direction) {
+  const step = Number(input.step) || 1;
+  const decimals = (String(input.step).split('.')[1] || '').length;
+  const min = Number(input.min), max = Number(input.max);
+  const next = Math.min(max, Math.max(min, Number(input.value) + direction * step));
+  input.value = next.toFixed(decimals);
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+for (const key of Object.keys(sliders)) {
+  const input = sliders[key];
+  if (!input) continue;
+  const minus = document.createElement('button');
+  minus.type = 'button';
+  minus.className = 'stepBtn';
+  minus.textContent = '−';
+  minus.setAttribute('aria-label', 'decrease');
+  minus.addEventListener('click', () => stepInputValue(input, -1));
+  const plus = document.createElement('button');
+  plus.type = 'button';
+  plus.className = 'stepBtn';
+  plus.textContent = '+';
+  plus.setAttribute('aria-label', 'increase');
+  plus.addEventListener('click', () => stepInputValue(input, 1));
+  input.insertAdjacentElement('beforebegin', minus);
+  input.insertAdjacentElement('afterend', plus);
+  stepButtons[key] = { minus, plus };
+}
 const wakeTrailCheckbox = document.getElementById('wakeTrail');
 const rudderUpCheckbox = document.getElementById('rudderUp');
 const btnRec = document.getElementById('btnRec');
@@ -2253,6 +2289,8 @@ sliders.crewPosX.addEventListener('input', () => { controls.crewPosX = Number(sl
 rudderUpCheckbox.addEventListener('change', () => {
   controls.rudderUp = rudderUpCheckbox.checked;
   sliders.rudder.disabled = controls.rudderUp;
+  stepButtons.rudder.minus.disabled = controls.rudderUp;
+  stepButtons.rudder.plus.disabled = controls.rudderUp;
 });
 
 syncSlidersFromControls();

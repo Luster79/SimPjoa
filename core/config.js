@@ -385,7 +385,9 @@ function buildDefaultConfig() {
     rudder: {
       maxDeflectionDeg: 35,
       area: 0.4,                // m^2 — tunable estimate, steering-oar blade
-      coeff: 3.5,               // tunable — lift-curve-like coefficient for the oar
+      // coeff: halved from 3.5 (user feedback: reacted too sharply for a
+      // hand-held steering oar, not a proper rudder — see core/rudder.js).
+      coeff: 1.75,
     },
 
     shunt: {
