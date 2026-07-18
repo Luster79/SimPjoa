@@ -68,6 +68,18 @@
   .hint { color: #6f8399; font-size: 11px; margin: 2px 0 8px; }
   #polarPanel { display: none; }
   #polarPanel.show { display: block; }
+  #boatPanel { display: none; }
+  #boatPanel.show { display: block; }
+  .boatLegend { display: flex; gap: 10px; margin: 4px 0 10px; font-size: 11px; color: #9fb4c8; align-items: center; }
+  .boatCategory { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: #7fa8cc; margin: 14px 0 4px; border-bottom: 1px solid #1e2f42; padding-bottom: 3px; }
+  .boatRow { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
+  .boatRow label { flex: 1 1 auto; color: #9fb4c8; font-size: 12px; }
+  .boatRow input[type=number] { width: 92px; flex: 0 0 auto; background: #0e1927; color: #dbe7f2; border: 1px solid #2b4460; border-radius: 4px; padding: 3px 5px; font: inherit; }
+  .tag { font-size: 10px; padding: 1px 6px; border-radius: 3px; flex: 0 0 auto; white-space: nowrap; }
+  .tag.tagPhysics { background: #1f3f2a; color: #7fe3a3; border: 1px solid #2c5c3c; }
+  .tag.tagGraphics { background: #3a2f1f; color: #e3b87f; border: 1px solid #5c4a2c; }
+  #boatError { color: #ff8a8a; min-height: 1em; white-space: pre-line; }
+  #boatPresetSelect { flex: 1 1 auto; background: #0e1927; color: #dbe7f2; border: 1px solid #2b4460; border-radius: 4px; padding: 4px; font: inherit; }
   #legend { position: absolute; right: 8px; bottom: 8px; background: rgba(10,18,28,0.75); border: 1px solid #23364a; border-radius: 4px; padding: 6px 8px; font-size: 11px; line-height: 1.7; }
   #legend .sw { display: inline-block; width: 14px; height: 3px; margin-right: 5px; vertical-align: middle; }
   #versionInfo { color: #6f8399; font-size: 11px; font-variant-numeric: tabular-nums; }
@@ -99,6 +111,7 @@
       <button id="btnStep"><span data-i18n="btn.step">Step (.)</span></button>
       <button id="btnForces" class="active"><span data-i18n="btn.forces">Forces (F)</span></button>
       <button id="btnPolar"><span data-i18n="btn.polar">Polar (O)</span></button>
+      <button id="btnBoat"><span data-i18n="btn.boat">Boat (B)</span></button>
     </span>
     <span class="stat" id="versionInfo"></span>
   </div>
@@ -165,6 +178,36 @@
         <button id="btnClosePolar"><span data-i18n="btn.backToSailing">Back to sailing</span></button>
       </div>
       <div id="polarProgress" class="hint"></div>
+    </div>
+    <div id="boatPanel">
+      <h2 data-i18n="h.boatDesign">Boat design</h2>
+      <div class="hint" data-i18n="hint.boatDesign">Physical design parameters — hull, ama, sail, rudder, stability. Changes apply on "Apply" and reset the boat's motion state.</div>
+      <div class="boatLegend">
+        <span class="tag tagPhysics" data-i18n="tag.physics">affects physics</span>
+        <span class="tag tagGraphics" data-i18n="tag.graphics">drawing/UI only</span>
+      </div>
+      <div id="boatFields"></div>
+      <div id="boatError" class="hint"></div>
+      <div class="buttons">
+        <button id="btnApplyBoat"><span data-i18n="btn.applyBoat">Apply</span></button>
+        <button id="btnResetBoatDefaults"><span data-i18n="btn.resetBoatDefaults">Reset to defaults</span></button>
+      </div>
+
+      <h2 data-i18n="h.boatPresets">Saved boats</h2>
+      <div class="row"><label for="boatPresetName" data-i18n="lbl.boatName">Name</label><input id="boatPresetName" type="text"></div>
+      <div class="buttons">
+        <button id="btnSaveBoatPreset"><span data-i18n="btn.saveBoat">Save</span></button>
+        <button id="btnExportBoat"><span data-i18n="btn.exportBoat">Export file</span></button>
+        <button id="btnImportBoat"><span data-i18n="btn.importBoat">Import file</span></button>
+        <input id="boatImportFile" type="file" accept="application/json" style="display:none">
+      </div>
+      <div class="row">
+        <label for="boatPresetSelect" data-i18n="lbl.boatPresetList">Saved</label>
+        <select id="boatPresetSelect"><option value="" data-i18n="opt.boatPresetNone">— select —</option></select>
+        <button id="btnDeleteBoatPreset"><span data-i18n="btn.deleteBoat">Delete</span></button>
+      </div>
+
+      <div class="buttons"><button id="btnCloseBoat"><span data-i18n="btn.backToSailing">Back to sailing</span></button></div>
     </div>
   </div>
 </div>

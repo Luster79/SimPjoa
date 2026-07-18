@@ -59,6 +59,18 @@
   .hint { color: #6f8399; font-size: 11px; margin: 2px 0 8px; }
   #polarPanel { display: none; }
   #polarPanel.show { display: block; }
+  #boatPanel { display: none; }
+  #boatPanel.show { display: block; }
+  .boatLegend { display: flex; gap: 10px; margin: 4px 0 10px; font-size: 11px; color: #9fb4c8; align-items: center; }
+  .boatCategory { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: #7fa8cc; margin: 14px 0 4px; border-bottom: 1px solid #1e2f42; padding-bottom: 3px; }
+  .boatRow { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
+  .boatRow label { flex: 1 1 auto; color: #9fb4c8; font-size: 12px; }
+  .boatRow input[type=number] { width: 92px; flex: 0 0 auto; background: #0e1927; color: #dbe7f2; border: 1px solid #2b4460; border-radius: 4px; padding: 3px 5px; font: inherit; }
+  .tag { font-size: 10px; padding: 1px 6px; border-radius: 3px; flex: 0 0 auto; white-space: nowrap; }
+  .tag.tagPhysics { background: #1f3f2a; color: #7fe3a3; border: 1px solid #2c5c3c; }
+  .tag.tagGraphics { background: #3a2f1f; color: #e3b87f; border: 1px solid #5c4a2c; }
+  #boatError { color: #ff8a8a; min-height: 1em; white-space: pre-line; }
+  #boatPresetSelect { flex: 1 1 auto; background: #0e1927; color: #dbe7f2; border: 1px solid #2b4460; border-radius: 4px; padding: 4px; font: inherit; }
   #legend { position: absolute; right: 8px; bottom: 8px; background: rgba(10,18,28,0.75); border: 1px solid #23364a; border-radius: 4px; padding: 6px 8px; font-size: 11px; line-height: 1.7; }
   #legend .sw { display: inline-block; width: 14px; height: 3px; margin-right: 5px; vertical-align: middle; }
   #versionInfo { color: #6f8399; font-size: 11px; font-variant-numeric: tabular-nums; }
@@ -90,6 +102,7 @@
       <button id="btnStep"><span data-i18n="btn.step">Step (.)</span></button>
       <button id="btnForces" class="active"><span data-i18n="btn.forces">Forces (F)</span></button>
       <button id="btnPolar"><span data-i18n="btn.polar">Polar (O)</span></button>
+      <button id="btnBoat"><span data-i18n="btn.boat">Boat (B)</span></button>
     </span>
     <span class="stat" id="versionInfo"></span>
   </div>
@@ -156,6 +169,36 @@
         <button id="btnClosePolar"><span data-i18n="btn.backToSailing">Back to sailing</span></button>
       </div>
       <div id="polarProgress" class="hint"></div>
+    </div>
+    <div id="boatPanel">
+      <h2 data-i18n="h.boatDesign">Boat design</h2>
+      <div class="hint" data-i18n="hint.boatDesign">Physical design parameters — hull, ama, sail, rudder, stability. Changes apply on "Apply" and reset the boat's motion state.</div>
+      <div class="boatLegend">
+        <span class="tag tagPhysics" data-i18n="tag.physics">affects physics</span>
+        <span class="tag tagGraphics" data-i18n="tag.graphics">drawing/UI only</span>
+      </div>
+      <div id="boatFields"></div>
+      <div id="boatError" class="hint"></div>
+      <div class="buttons">
+        <button id="btnApplyBoat"><span data-i18n="btn.applyBoat">Apply</span></button>
+        <button id="btnResetBoatDefaults"><span data-i18n="btn.resetBoatDefaults">Reset to defaults</span></button>
+      </div>
+
+      <h2 data-i18n="h.boatPresets">Saved boats</h2>
+      <div class="row"><label for="boatPresetName" data-i18n="lbl.boatName">Name</label><input id="boatPresetName" type="text"></div>
+      <div class="buttons">
+        <button id="btnSaveBoatPreset"><span data-i18n="btn.saveBoat">Save</span></button>
+        <button id="btnExportBoat"><span data-i18n="btn.exportBoat">Export file</span></button>
+        <button id="btnImportBoat"><span data-i18n="btn.importBoat">Import file</span></button>
+        <input id="boatImportFile" type="file" accept="application/json" style="display:none">
+      </div>
+      <div class="row">
+        <label for="boatPresetSelect" data-i18n="lbl.boatPresetList">Saved</label>
+        <select id="boatPresetSelect"><option value="" data-i18n="opt.boatPresetNone">— select —</option></select>
+        <button id="btnDeleteBoatPreset"><span data-i18n="btn.deleteBoat">Delete</span></button>
+      </div>
+
+      <div class="buttons"><button id="btnCloseBoat"><span data-i18n="btn.backToSailing">Back to sailing</span></button></div>
     </div>
   </div>
 </div>
@@ -2027,14 +2070,14 @@ const MS_TO_KN = 1.9438;
 // recording's codeVersion is meaningful (harness/replay.js warns on
 // mismatch) for a downloaded bundle without requiring a build step for
 // plain `python3 -m http.server` development.
-const CODE_VERSION = "4825007";
+const CODE_VERSION = "7f77916";
 // BUILD_TIME: same pattern as CODE_VERSION above — tools/bundle.js
 // replaces this with the COMMIT's timestamp (not wall-clock build time),
 // so it stays stable across re-bundling the same commit and always
 // matches CODE_VERSION's hash. Shown in the bottom-right version footer
 // so a bug report/recording can be tied to an exact, dated build without
 // having to separately ask "which commit was this."
-const BUILD_TIME = "2026-07-18T07:13:32+02:00";
+const BUILD_TIME = "2026-07-18T07:26:15+02:00";
 
 // ---------------------------------------------------------------------
 // i18n — EN/PL. Static labels are marked with data-i18n="key" in
@@ -2047,7 +2090,7 @@ const TRANSLATIONS = {
     'hud.speed': 'Speed', 'unit.kn': 'kn', 'hud.leeway': 'Leeway', 'hud.amaLoad': 'Ama load', 'hud.shunt': 'Shunt',
     'hud.sheet': 'Sheet', 'hud.yard': 'Yard',
     'btn.rec': 'REC (F9)', 'btn.mark': 'Mark (F10)', 'btn.downloadRec': 'Download rec.',
-    'btn.pause': 'Pause (P)', 'btn.step': 'Step (.)', 'btn.forces': 'Forces (F)', 'btn.polar': 'Polar (O)',
+    'btn.pause': 'Pause (P)', 'btn.step': 'Step (.)', 'btn.forces': 'Forces (F)', 'btn.polar': 'Polar (O)', 'btn.boat': 'Boat (B)',
     'legend.lift': 'sail lift', 'legend.drag': 'sail drag', 'legend.hullSide': 'hull side', 'legend.rudder': 'rudder',
     'capsize.title': 'CAPSIZED', 'btn.reset': 'Reset (R)',
     'h.wind': 'Wind', 'lbl.direction': 'Direction', 'lbl.strength': 'Strength',
@@ -2079,12 +2122,28 @@ const TRANSLATIONS = {
     'wind.trueWindLabel': (v) => `TWS ${v} m/s`,
     'polar.twsLegend': (v) => `TWS ${v} m/s`,
     'doc.title': 'Proa Simulator — Step 2',
+    'h.boatDesign': 'Boat design',
+    'hint.boatDesign': 'Physical design parameters — hull, ama, sail, rudder, stability. Changes apply on "Apply" and reset the boat\'s motion state.',
+    'tag.physics': 'affects physics', 'tag.graphics': 'drawing/UI only',
+    'btn.applyBoat': 'Apply', 'btn.resetBoatDefaults': 'Reset to defaults',
+    'h.boatPresets': 'Saved boats', 'lbl.boatName': 'Name',
+    'btn.saveBoat': 'Save', 'btn.exportBoat': 'Export file', 'btn.importBoat': 'Import file',
+    'lbl.boatPresetList': 'Saved', 'opt.boatPresetNone': '— select —', 'btn.deleteBoat': 'Delete',
+    'boat.needName': 'Enter a name before saving.',
+    'boat.saved': (name) => `Saved as "${name}".`,
+    'boat.deleted': (name) => `Deleted "${name}".`,
+    'boat.invalid': (msg) => `Invalid values, not applied: ${msg}`,
+    'boat.applied': 'Applied — boat reset.',
+    'boat.imported': (name) => `Imported "${name}".`,
+    'boat.importFailed': 'Could not read that file.',
+    'cat.hull': 'Hull', 'cat.ama': 'Ama', 'cat.sail': 'Sail', 'cat.crew': 'Crew',
+    'cat.rudder': 'Rudder', 'cat.stability': 'Stability', 'cat.shunt': 'Shunt',
   },
   pl: {
     'hud.speed': 'Prędkość', 'unit.kn': 'w', 'hud.leeway': 'Znos', 'hud.amaLoad': 'Obc. amy', 'hud.shunt': 'Zwrot',
     'hud.sheet': 'Szot', 'hud.yard': 'Reja',
     'btn.rec': 'NAGR (F9)', 'btn.mark': 'Znacznik (F10)', 'btn.downloadRec': 'Pobierz nagranie',
-    'btn.pause': 'Pauza (P)', 'btn.step': 'Krok (.)', 'btn.forces': 'Siły (F)', 'btn.polar': 'Polara (O)',
+    'btn.pause': 'Pauza (P)', 'btn.step': 'Krok (.)', 'btn.forces': 'Siły (F)', 'btn.polar': 'Polara (O)', 'btn.boat': 'Łódź (B)',
     'legend.lift': 'siła nośna żagla', 'legend.drag': 'opór żagla', 'legend.hullSide': 'siła boczna kadłuba', 'legend.rudder': 'ster',
     'capsize.title': 'WYWROTKA', 'btn.reset': 'Reset (R)',
     'h.wind': 'Wiatr', 'lbl.direction': 'Kierunek', 'lbl.strength': 'Siła',
@@ -2116,6 +2175,22 @@ const TRANSLATIONS = {
     'wind.trueWindLabel': (v) => `Wiatr ${v} m/s`,
     'polar.twsLegend': (v) => `Wiatr ${v} m/s`,
     'doc.title': 'Symulator proa — Krok 2',
+    'h.boatDesign': 'Charakterystyka łodzi',
+    'hint.boatDesign': 'Fizyczne parametry konstrukcyjne — kadłub, ama, żagiel, ster, stateczność. Zmiany wchodzą w życie po "Zastosuj" i resetują ruch łodzi.',
+    'tag.physics': 'wpływa na fizykę', 'tag.graphics': 'tylko rysunek/UI',
+    'btn.applyBoat': 'Zastosuj', 'btn.resetBoatDefaults': 'Przywróć domyślne',
+    'h.boatPresets': 'Zapisane łodzie', 'lbl.boatName': 'Nazwa',
+    'btn.saveBoat': 'Zapisz', 'btn.exportBoat': 'Eksportuj plik', 'btn.importBoat': 'Importuj plik',
+    'lbl.boatPresetList': 'Zapisane', 'opt.boatPresetNone': '— wybierz —', 'btn.deleteBoat': 'Usuń',
+    'boat.needName': 'Podaj nazwę przed zapisem.',
+    'boat.saved': (name) => `Zapisano jako "${name}".`,
+    'boat.deleted': (name) => `Usunięto "${name}".`,
+    'boat.invalid': (msg) => `Nieprawidłowe wartości, nie zastosowano: ${msg}`,
+    'boat.applied': 'Zastosowano — łódź zresetowana.',
+    'boat.imported': (name) => `Zaimportowano "${name}".`,
+    'boat.importFailed': 'Nie udało się odczytać pliku.',
+    'cat.hull': 'Kadłub', 'cat.ama': 'Ama', 'cat.sail': 'Żagiel', 'cat.crew': 'Załoga',
+    'cat.rudder': 'Ster', 'cat.stability': 'Stateczność', 'cat.shunt': 'Zwrot',
   },
 };
 
@@ -2148,9 +2223,10 @@ function setLang(lang) {
   // reachable via the btnLang click handler, wired after full module
   // evaluation) — safe despite the forward textual reference.
   if (polarMode) drawPolarView(lastPolarRows);
+  if (boatMode) buildBoatPanel();
 }
 
-const dims = createConfig(); // dimensions/limits only; the sim keeps its own internal config
+let dims = createConfig(); // dimensions/limits only; the sim keeps its own internal config. Reassigned wholesale by the boat-design panel's Apply (see bottom of file) — never mutated field-by-field.
 const sim = createSimulator();
 
 // ---------------------------------------------------------------------
@@ -2301,10 +2377,19 @@ syncSlidersFromControls();
 const clamp__b12 = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 const HANDLED_KEYS = new Set(['Space', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',
-  'KeyQ', 'KeyZ', 'KeyW', 'KeyX', 'KeyJ', 'KeyL', 'KeyI', 'KeyK', 'KeyA', 'KeyD', 'KeyP', 'Period', 'KeyF', 'KeyO', 'KeyR',
+  'KeyQ', 'KeyZ', 'KeyW', 'KeyX', 'KeyJ', 'KeyL', 'KeyI', 'KeyK', 'KeyA', 'KeyD', 'KeyP', 'Period', 'KeyF', 'KeyO', 'KeyB', 'KeyR',
   'F9', 'F10']);
 
+// Text/number inputs (boat-name field, boat-design fields) need normal
+// typing (letters, digits, arrow keys to move the cursor) — the sailing
+// shortcuts below would otherwise steal keystrokes like "b" or arrow keys
+// away from them.
+function isTextEntryTarget(target) {
+  return target instanceof HTMLInputElement && (target.type === 'text' || target.type === 'number');
+}
+
 window.addEventListener('keydown', (e) => {
+  if (isTextEntryTarget(e.target)) return;
   if (HANDLED_KEYS.has(e.code)) e.preventDefault();
   if (e.repeat) return;
   keys.add(e.code);
@@ -2313,6 +2398,7 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'Period') stepOnce = true;
   if (e.code === 'KeyF') toggleForces();
   if (e.code === 'KeyO') togglePolar();
+  if (e.code === 'KeyB') toggleBoat();
   if (e.code === 'KeyR') doReset();
   if (e.code === 'F9') recToggle();
   if (e.code === 'F10') recMark(sim.getState().t);
@@ -2356,6 +2442,7 @@ let paused = false;
 let stepOnce = false;
 let showForces = true;
 let polarMode = false;
+let boatMode = false;
 
 function togglePause() { paused = !paused; document.getElementById('btnPause').classList.toggle('active', paused); }
 function toggleForces() { showForces = !showForces; document.getElementById('btnForces').classList.toggle('active', showForces); }
@@ -3157,7 +3244,7 @@ function frame(now) {
   const dtFrame = Math.min(0.1, Math.max(0, (now - lastT) / 1000)); // clamp__b12 100ms, tab-switch protection
   lastT = now;
 
-  if (!polarMode) {
+  if (!polarMode && !boatMode) {
     applyContinuousKeys(dtFrame);
     controls.shuntRequest = shuntHeld;
     const attemptEdge = shuntHeld && !prevShuntHeld;
@@ -3239,8 +3326,10 @@ requestAnimationFrame(frame);
 // Polar mode
 // ---------------------------------------------------------------------
 const polarPanel = document.getElementById('polarPanel');
+const boatPanel = document.getElementById('boatPanel');
 const livePanel = document.getElementById('livePanel');
 const btnPolar = document.getElementById('btnPolar');
+const btnBoat = document.getElementById('btnBoat');
 const btnRunPolar = document.getElementById('btnRunPolar');
 const btnExportPolar = document.getElementById('btnExportPolar');
 const btnClosePolar = document.getElementById('btnClosePolar');
@@ -3248,15 +3337,26 @@ const polarProgress = document.getElementById('polarProgress');
 
 let lastPolarRows = null;
 
-function togglePolar() {
-  polarMode = !polarMode;
+// setActivePanel('live'|'polar'|'boat') — the panel area shows exactly one
+// of livePanel/polarPanel/boatPanel at a time; switching to one forces the
+// other two off, rather than each mode independently toggling itself (which
+// would let two panels show at once if opened back to back).
+function setActivePanel(mode) {
+  polarMode = mode === 'polar';
+  boatMode = mode === 'boat';
   btnPolar.classList.toggle('active', polarMode);
+  btnBoat.classList.toggle('active', boatMode);
   polarPanel.classList.toggle('show', polarMode);
-  livePanel.style.display = polarMode ? 'none' : '';
+  boatPanel.classList.toggle('show', boatMode);
+  livePanel.style.display = (polarMode || boatMode) ? 'none' : '';
   if (polarMode) drawPolarView(lastPolarRows);
+  if (boatMode) buildBoatPanel();
 }
+function togglePolar() { setActivePanel(polarMode ? 'live' : 'polar'); }
+function toggleBoat() { setActivePanel(boatMode ? 'live' : 'boat'); }
 btnPolar.addEventListener('click', togglePolar);
 btnClosePolar.addEventListener('click', togglePolar);
+btnBoat.addEventListener('click', toggleBoat);
 
 btnRunPolar.addEventListener('click', async () => {
   btnRunPolar.disabled = true;
@@ -3362,6 +3462,276 @@ function drawPolarView(rows) {
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5 * dpr; ctx.stroke();
   }
 }
+
+// ---------------------------------------------------------------------
+// Boat design panel — edit core/config.js's CONFIG fields at runtime.
+//
+// Every field here is a physical design/tuning constant that a real Pjoa's
+// specific construction would otherwise fix (hull dimensions, sail area,
+// ITTC-style coefficients standing in for what that construction would
+// determine). Two fields are marked 'graphics' (drawing/UI only, no
+// physics effect at all — confirmed by grep across core/*.js):
+// sail.tackXFraction (mast-drawing position only, round 7 D-6 moved the
+// real CE geometry to hull.lead) and stability.amaLoadDisplayCap (a
+// display-only ceiling on the HUD readout; the aback-timer physics reads
+// the raw, uncapped amaLoad). Everything else genuinely feeds core/*.js's
+// force/moment calculations. crew.posMin/posMax/posXMin/posXMax are
+// deliberately NOT exposed here — they're slider-range UI config, not a
+// boat characteristic, and the HTML sliders' own hardcoded min/max already
+// bound player input independent of them.
+//
+// Applying a change: builds a full patch (every field below, not just the
+// edited ones) and calls createConfig(patch) to both validate and produce
+// a complete new config in one step (deepMerge starts from fresh defaults,
+// so every schema field must be explicit or its edit would be lost on a
+// later Apply) — see core/config.js's createConfig/deepMerge. On success,
+// replaces `dims` (this module's drawing/limits copy) and calls
+// sim.setConfig(patch) + sim.reset() (the same reset core/simulator.js's
+// facade already exposes but app.js never called before this feature).
+const BOAT_FIELDS = [
+  { path: 'hull.length', kind: 'physics', unit: 'm', step: 0.1, labelEn: 'Hull length', labelPl: 'Długość kadłuba' },
+  { path: 'hull.beam', kind: 'graphics', unit: 'm', step: 0.01, labelEn: 'Hull beam', labelPl: 'Szerokość kadłuba' },
+  { path: 'hull.displacement', kind: 'physics', unit: 'kg', step: 1, labelEn: 'Displacement', labelPl: 'Wyporność' },
+  { path: 'hull.wettedSurface', kind: 'physics', unit: 'm²', step: 0.1, labelEn: 'Hull wetted surface', labelPl: 'Pow. zwilżona kadłuba' },
+  { path: 'hull.residuaryPeakCr', kind: 'physics', unit: '', step: 0.0005, labelEn: 'Wave-resistance peak (Cr)', labelPl: 'Szczyt oporu falowego (Cr)' },
+  { path: 'hull.residuaryFrPeak', kind: 'physics', unit: '', step: 0.01, labelEn: 'Peak Froude number', labelPl: 'Liczba Froude’a szczytu oporu' },
+  { path: 'hull.residuaryFrWidth', kind: 'physics', unit: '', step: 0.01, labelEn: 'Resistance hump width', labelPl: 'Szerokość garbu oporu' },
+  { path: 'hull.sideForceCoeff', kind: 'physics', unit: '', step: 0.05, labelEn: 'Hull side-force coeff.', labelPl: 'Współcz. siły bocznej kadłuba' },
+  { path: 'hull.leewaySaturationDeg', kind: 'physics', unit: '°', step: 1, labelEn: 'Leeway saturation angle', labelPl: 'Kąt nasycenia znosu' },
+  { path: 'hull.leewayMushingCoeff', kind: 'physics', unit: '', step: 0.5, labelEn: 'Post-saturation mushing coeff.', labelPl: 'Współcz. tłumienia po nasyceniu' },
+  { path: 'hull.lowSpeedSideDamping', kind: 'physics', unit: '', step: 5, labelEn: 'Low-speed side damping', labelPl: 'Tłumienie boczne przy małej prędk.' },
+  { path: 'hull.yawDampingCoeff', kind: 'physics', unit: '', step: 10, labelEn: 'Yaw damping coeff.', labelPl: 'Tłumienie odchylenia (yaw)' },
+  { path: 'hull.clrXFraction', kind: 'physics', unit: '', step: 0.01, labelEn: 'CLR offset (fraction)', labelPl: 'Przesunięcie CLR (ułamek)' },
+  { path: 'hull.crewForeAftTrimCoeff', kind: 'physics', unit: '', step: 0.01, labelEn: 'Crew fore-aft CLR trim coeff.', labelPl: 'Współcz. przesuwu CLR przez załogę' },
+  { path: 'hull.crewTrimSign', kind: 'physics', unit: '±1', step: 2, labelEn: 'Crew-trim coupling sign', labelPl: 'Znak sprzężenia załoga→CLR' },
+  { path: 'hull.yawHeelSign', kind: 'physics', unit: '±1', step: 2, labelEn: 'Heel→yaw coupling sign', labelPl: 'Znak sprzężenia przechył→odchylenie' },
+  { path: 'hull.ceLeverSign', kind: 'physics', unit: '±1', step: 2, labelEn: 'CE-lever sign', labelPl: 'Znak dźwigni CE' },
+  { path: 'hull.lead', kind: 'physics', unit: 'm', step: 0.01, labelEn: 'CE-CLR lead', labelPl: 'Wyprzedzenie CE przed CLR (lead)' },
+
+  { path: 'ama.length', kind: 'physics', unit: 'm', step: 0.1, labelEn: 'Ama length', labelPl: 'Długość amy' },
+  { path: 'ama.maxBuoyancy', kind: 'physics', unit: 'kg', step: 1, labelEn: 'Ama max buoyancy', labelPl: 'Maks. wyporność amy' },
+  { path: 'ama.mass', kind: 'physics', unit: 'kg', step: 1, labelEn: 'Ama mass', labelPl: 'Masa amy' },
+  { path: 'ama.spacing', kind: 'physics', unit: 'm', step: 0.1, labelEn: 'Hull-ama spacing', labelPl: 'Rozstaw kadłub–ama' },
+  { path: 'ama.wettedSurface', kind: 'physics', unit: 'm²', step: 0.05, labelEn: 'Ama wetted surface', labelPl: 'Pow. zwilżona amy' },
+  { path: 'ama.formFactor', kind: 'physics', unit: '', step: 0.05, labelEn: 'Ama form factor (1+k)', labelPl: 'Współcz. kształtu amy (1+k)' },
+  { path: 'ama.crewImmersionCoeff', kind: 'physics', unit: '', step: 0.01, labelEn: 'Crew-immersion coeff.', labelPl: 'Współcz. zanurzania przez załogę' },
+
+  { path: 'sail.area', kind: 'physics', unit: 'm²', step: 0.1, labelEn: 'Sail area', labelPl: 'Powierzchnia żagla' },
+  { path: 'sail.apexAngleDeg', kind: 'physics', unit: '°', step: 1, labelEn: 'Sail apex angle', labelPl: 'Kąt wierzchołkowy żagla' },
+  { path: 'sail.CEheight', kind: 'physics', unit: 'm', step: 0.05, labelEn: 'CE height (mast)', labelPl: 'Wysokość CE (masztu)' },
+  { path: 'sail.camber', kind: 'physics', unit: '', step: 0.01, labelEn: 'Sail camber', labelPl: 'Wybrzuszenie żagla (camber)' },
+  { path: 'sail.CD0', kind: 'physics', unit: '', step: 0.005, labelEn: 'Parasitic drag (CD0)', labelPl: 'Opór szkodliwy (CD0)' },
+  { path: 'sail.s', kind: 'physics', unit: '', step: 0.05, labelEn: 'Partial-suction factor (s)', labelPl: 'Współcz. częściowej ssącej (s)' },
+  { path: 'sail.yardSwingRateDegPerSec', kind: 'physics', unit: '°/s', step: 5, labelEn: 'Yard swing rate', labelPl: 'Prędkość wychylania rei' },
+  { path: 'sail.deltaMaxReleaseDeg', kind: 'physics', unit: '°', step: 1, labelEn: 'Shunt release angle', labelPl: 'Kąt zwolnienia przy zwrocie' },
+  { path: 'sail.floggingCDFactor', kind: 'physics', unit: '', step: 0.01, labelEn: 'Flogging drag factor', labelPl: 'Dodatkowy opór łopotania' },
+  { path: 'sail.tackXFraction', kind: 'graphics', unit: '', step: 0.01, labelEn: 'Mast position (drawing)', labelPl: 'Pozycja masztu (rysunek)' },
+  { path: 'sail.ceBrailShift', kind: 'physics', unit: '', step: 0.01, labelEn: 'CE shift from windward brail', labelPl: 'Przesunięcie CE przez brajdę nawietrzną' },
+  { path: 'sail.ceSwingFraction', kind: 'physics', unit: '', step: 0.01, labelEn: 'CE swing fraction', labelPl: 'Ułamek wychylenia CE z reją' },
+  { path: 'sail.verticalLiftFraction', kind: 'physics', unit: '', step: 0.01, labelEn: 'Vertical lift fraction', labelPl: 'Ułamek pionowej siły nośnej' },
+
+  { path: 'crew.mass', kind: 'physics', unit: 'kg', step: 1, labelEn: 'Crew mass', labelPl: 'Masa załogi' },
+
+  { path: 'rudder.maxDeflectionDeg', kind: 'physics', unit: '°', step: 1, labelEn: 'Max rudder deflection', labelPl: 'Maks. wychylenie steru' },
+  { path: 'rudder.area', kind: 'physics', unit: 'm²', step: 0.01, labelEn: 'Rudder blade area', labelPl: 'Powierzchnia pióra steru' },
+  { path: 'rudder.coeff', kind: 'physics', unit: '', step: 0.05, labelEn: 'Rudder force coeff.', labelPl: 'Współcz. siły steru' },
+
+  { path: 'stability.abackCapsizeTime', kind: 'physics', unit: 's', step: 0.5, labelEn: 'Aback capsize time', labelPl: 'Czas do wywrotki (aback)' },
+  { path: 'stability.amaLoadDisplayCap', kind: 'graphics', unit: '', step: 0.5, labelEn: 'Ama-load display cap (UI)', labelPl: 'Limit wskazania obc. amy (UI)' },
+  { path: 'stability.I_roll', kind: 'physics', unit: 'kg·m²', step: 50, labelEn: 'Roll moment of inertia', labelPl: 'Moment bezwładności przechyłu' },
+  { path: 'stability.phiLiftoffDeg', kind: 'physics', unit: '°', step: 1, labelEn: 'Ama liftoff angle', labelPl: 'Kąt oderwania amy' },
+  { path: 'stability.phiSubmergeDeg', kind: 'physics', unit: '°', step: 1, labelEn: 'Ama submerge angle', labelPl: 'Kąt zanurzenia amy' },
+  { path: 'stability.rollDampingCoeff', kind: 'physics', unit: '', step: 10, labelEn: 'Roll damping coeff.', labelPl: 'Tłumienie przechyłu' },
+  { path: 'stability.phiCapsizeDeg', kind: 'physics', unit: '°', step: 1, labelEn: 'Capsize angle', labelPl: 'Kąt wywrotki' },
+  { path: 'stability.capsizeTriggerMarginDeg', kind: 'physics', unit: '°', step: 1, labelEn: 'Capsize trigger margin', labelPl: 'Margines wyzwolenia wywrotki' },
+
+  { path: 'shunt.speedLockout', kind: 'physics', unit: 'm/s', step: 0.5, labelEn: 'Shunt speed lockout', labelPl: 'Blokada zwrotu (prędkość)' },
+  { path: 'shunt.easeDuration', kind: 'physics', unit: 's', step: 0.1, labelEn: 'Ease duration', labelPl: 'Czas luzowania' },
+  { path: 'shunt.transferDuration', kind: 'physics', unit: 's', step: 0.1, labelEn: 'Transfer duration', labelPl: 'Czas przenoszenia' },
+  { path: 'shunt.swapDuration', kind: 'physics', unit: 's', step: 0.1, labelEn: 'Bow/stern swap duration', labelPl: 'Czas zamiany dziób/rufa' },
+  { path: 'shunt.sheetDuration', kind: 'physics', unit: 's', step: 0.1, labelEn: 'Sheeting duration', labelPl: 'Czas wybierania szotu' },
+];
+const BOAT_CATEGORIES = ['hull', 'ama', 'sail', 'crew', 'rudder', 'stability', 'shunt'];
+
+function getPath(obj, path) { return path.split('.').reduce((o, k) => o?.[k], obj); }
+function setPath(obj, path, value) {
+  const keys = path.split('.');
+  let node = obj;
+  for (let i = 0; i < keys.length - 1; i++) node = (node[keys[i]] ??= {});
+  node[keys[keys.length - 1]] = value;
+}
+
+const boatFieldsEl = document.getElementById('boatFields');
+const boatErrorEl = document.getElementById('boatError');
+const boatPresetNameInput = document.getElementById('boatPresetName');
+const boatPresetSelect = document.getElementById('boatPresetSelect');
+const boatImportFile = document.getElementById('boatImportFile');
+const BOAT_PRESETS_KEY = 'simpjoaBoatPresets';
+
+function loadBoatPresets() {
+  try { return JSON.parse(localStorage.getItem(BOAT_PRESETS_KEY) || '{}'); } catch { return {}; }
+}
+function saveBoatPresets(presets) { localStorage.setItem(BOAT_PRESETS_KEY, JSON.stringify(presets)); }
+
+function refreshBoatPresetSelect() {
+  const presets = loadBoatPresets();
+  const names = Object.keys(presets).sort((a, b) => a.localeCompare(b));
+  boatPresetSelect.innerHTML = `<option value="">${t('opt.boatPresetNone')}</option>`;
+  for (const name of names) {
+    const opt = document.createElement('option');
+    opt.value = name; opt.textContent = name;
+    boatPresetSelect.appendChild(opt);
+  }
+}
+
+// Builds/rebuilds just the field rows from BOAT_FIELDS, pre-filled from
+// the current `dims` config — deliberately separate from the preset
+// <select> (see buildBoatPanel below): rebuilding the select wipes its
+// current selection, which would break "pick a preset, then Delete it"
+// if loading a preset also rebuilt the select it fired from.
+function buildBoatFieldRows() {
+  boatFieldsEl.innerHTML = '';
+  boatErrorEl.textContent = '';
+  for (const cat of BOAT_CATEGORIES) {
+    const h = document.createElement('div');
+    h.className = 'boatCategory';
+    h.textContent = t(`cat.${cat}`);
+    boatFieldsEl.appendChild(h);
+    for (const field of BOAT_FIELDS.filter((f) => f.path.startsWith(cat + '.'))) {
+      const row = document.createElement('div');
+      row.className = 'boatRow';
+      const label = document.createElement('label');
+      label.textContent = (currentLang === 'pl' ? field.labelPl : field.labelEn) + (field.unit ? ` (${field.unit})` : '');
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.step = field.step;
+      input.value = getPath(dims, field.path);
+      input.dataset.path = field.path;
+      const tag = document.createElement('span');
+      tag.className = `tag ${field.kind === 'physics' ? 'tagPhysics' : 'tagGraphics'}`;
+      tag.textContent = t(`tag.${field.kind}`);
+      row.append(label, input, tag);
+      boatFieldsEl.appendChild(row);
+    }
+  }
+}
+
+// Full panel (re)build — first open, language switch, reset-to-defaults:
+// cases where the preset list's own selection has no reason to survive.
+function buildBoatPanel() {
+  buildBoatFieldRows();
+  refreshBoatPresetSelect();
+}
+
+// Reads every BOAT_FIELDS input back into a full nested patch object — see
+// the "Applying a change" note above for why this is always the COMPLETE
+// field set, not just whatever the user touched this time.
+function collectBoatPatch() {
+  const patch = {};
+  for (const field of BOAT_FIELDS) {
+    const input = boatFieldsEl.querySelector(`input[data-path="${field.path}"]`);
+    setPath(patch, field.path, Number(input.value));
+  }
+  return patch;
+}
+
+function applyBoatPatch(patch) {
+  let validated;
+  try {
+    validated = createConfig(patch);
+  } catch (err) {
+    boatErrorEl.textContent = t('boat.invalid', err.message);
+    return false;
+  }
+  dims = validated;
+  sim.setConfig(patch);
+  sim.reset();
+  boatErrorEl.style.color = '#7fe3a3';
+  boatErrorEl.textContent = t('boat.applied');
+  return true;
+}
+
+document.getElementById('btnApplyBoat').addEventListener('click', () => {
+  boatErrorEl.style.color = '#ff8a8a';
+  applyBoatPatch(collectBoatPatch());
+});
+
+document.getElementById('btnResetBoatDefaults').addEventListener('click', () => {
+  dims = createConfig();
+  buildBoatPanel();
+});
+
+document.getElementById('btnCloseBoat').addEventListener('click', toggleBoat);
+
+document.getElementById('btnSaveBoatPreset').addEventListener('click', () => {
+  const name = boatPresetNameInput.value.trim();
+  boatErrorEl.style.color = '#ff8a8a';
+  if (!name) { boatErrorEl.textContent = t('boat.needName'); return; }
+  const presets = loadBoatPresets();
+  presets[name] = collectBoatPatch();
+  saveBoatPresets(presets);
+  refreshBoatPresetSelect();
+  boatPresetSelect.value = name;
+  boatErrorEl.style.color = '#7fe3a3';
+  boatErrorEl.textContent = t('boat.saved', name);
+});
+
+document.getElementById('btnDeleteBoatPreset').addEventListener('click', () => {
+  const name = boatPresetSelect.value;
+  if (!name) return;
+  const presets = loadBoatPresets();
+  delete presets[name];
+  saveBoatPresets(presets);
+  refreshBoatPresetSelect();
+  boatErrorEl.style.color = '#7fe3a3';
+  boatErrorEl.textContent = t('boat.deleted', name);
+});
+
+// Selecting a saved boat loads AND applies it immediately — "choosing from
+// the list of saved ones" is meant to actually sail that boat, not just
+// stage its values for a separate Apply click.
+boatPresetSelect.addEventListener('change', () => {
+  const name = boatPresetSelect.value;
+  if (!name) return;
+  const presets = loadBoatPresets();
+  const patch = presets[name];
+  if (!patch) return;
+  boatPresetNameInput.value = name;
+  boatErrorEl.style.color = '#ff8a8a';
+  if (applyBoatPatch(patch)) buildBoatFieldRows();
+});
+
+document.getElementById('btnExportBoat').addEventListener('click', () => {
+  const name = boatPresetNameInput.value.trim() || 'boat';
+  const patch = collectBoatPatch();
+  const blob = new Blob([JSON.stringify({ name, config: patch }, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${name}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+document.getElementById('btnImportBoat').addEventListener('click', () => boatImportFile.click());
+boatImportFile.addEventListener('change', async () => {
+  const file = boatImportFile.files?.[0];
+  boatImportFile.value = '';
+  if (!file) return;
+  boatErrorEl.style.color = '#ff8a8a';
+  try {
+    const data = JSON.parse(await file.text());
+    const patch = data.config ?? data; // accept either {name,config} or a bare patch
+    if (applyBoatPatch(patch)) {
+      buildBoatPanel();
+      const name = data.name || file.name.replace(/\.json$/i, '');
+      boatPresetNameInput.value = name;
+      boatErrorEl.style.color = '#7fe3a3';
+      boatErrorEl.textContent = t('boat.imported', name);
+    }
+  } catch {
+    boatErrorEl.textContent = t('boat.importFailed');
+  }
+});
 </script>
 </body>
 </html>
