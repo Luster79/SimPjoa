@@ -2094,14 +2094,14 @@ const MS_TO_KN = 1.9438;
 // recording's codeVersion is meaningful (harness/replay.js warns on
 // mismatch) for a downloaded bundle without requiring a build step for
 // plain `python3 -m http.server` development.
-const CODE_VERSION = "aa00b9a";
+const CODE_VERSION = "efec060";
 // BUILD_TIME: same pattern as CODE_VERSION above — tools/bundle.js
 // replaces this with the COMMIT's timestamp (not wall-clock build time),
 // so it stays stable across re-bundling the same commit and always
 // matches CODE_VERSION's hash. Shown in the bottom-right version footer
 // so a bug report/recording can be tied to an exact, dated build without
 // having to separately ask "which commit was this."
-const BUILD_TIME = "2026-07-18T08:13:28+02:00";
+const BUILD_TIME = "2026-07-18T08:21:49+02:00";
 
 // ---------------------------------------------------------------------
 // i18n — EN/PL. Static labels are marked with data-i18n="key" in
@@ -2172,8 +2172,8 @@ const TRANSLATIONS = {
     'capsize.title': 'WYWROTKA', 'btn.reset': 'Reset (R)',
     'h.wind': 'Wiatr', 'lbl.direction': 'Kierunek', 'lbl.strength': 'Siła',
     'h.sail': 'Żagiel', 'lbl.sheet': 'Szot', 'hint.yard': 'Strzałki ←/→: luzuj / wybieraj',
-    'lbl.brailLee': 'Brajda zawietrzna', 'hint.brailLee': 'Q wybiera, Z luzuje',
-    'lbl.brailWind': 'Brajda nawietrzna', 'hint.brailWind': 'W wybiera, X luzuje',
+    'lbl.brailLee': 'Gejtawa zawietrzna', 'hint.brailLee': 'Q wybiera, Z luzuje',
+    'lbl.brailWind': 'Gejtawa nawietrzna', 'hint.brailWind': 'W wybiera, X luzuje',
     'h.steering': 'Sterowanie i wyważenie', 'lbl.rudder': 'Ster', 'hint.rudder': 'A/D wychyla ster, centruje się po puszczeniu',
     'lbl.rudderUp': 'Wiosło wyjęte', 'hint.rudderUp': 'Ster to wiosło, nie stały ster — zwykle jest wyjęte z wody; nie wytwarza wtedy żadnej siły',
     'lbl.crewPos': 'Pozycja załogi', 'hint.crewPos': 'Przeciągnij kropkę, lub J/L (bok), I/K (wzdłuż)',
@@ -3592,7 +3592,7 @@ const BOAT_FIELDS = [
   { path: 'sail.deltaMaxReleaseDeg', kind: 'physics', unit: '°', step: 1, labelEn: 'Shunt release angle', labelPl: 'Kąt zwolnienia przy zwrocie' },
   { path: 'sail.floggingCDFactor', kind: 'physics', unit: '', step: 0.01, labelEn: 'Flogging drag factor', labelPl: 'Dodatkowy opór łopotania' },
   { path: 'sail.tackXFraction', kind: 'graphics', unit: '', step: 0.01, labelEn: 'Mast position (drawing)', labelPl: 'Pozycja masztu (rysunek)' },
-  { path: 'sail.ceBrailShift', kind: 'physics', unit: '', step: 0.01, labelEn: 'CE shift from windward brail', labelPl: 'Przesunięcie CE przez brajdę nawietrzną' },
+  { path: 'sail.ceBrailShift', kind: 'physics', unit: '', step: 0.01, labelEn: 'CE shift from windward brail', labelPl: 'Przesunięcie CE przez gejtawę nawietrzną' },
   { path: 'sail.ceSwingFraction', kind: 'physics', unit: '', step: 0.01, labelEn: 'CE swing fraction', labelPl: 'Ułamek wychylenia CE z reją' },
   { path: 'sail.verticalLiftFraction', kind: 'physics', unit: '', step: 0.01, labelEn: 'Vertical lift fraction', labelPl: 'Ułamek pionowej siły nośnej' },
 
