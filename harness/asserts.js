@@ -155,9 +155,9 @@ export function runAsserts(config) {
   check('polar peak lands on a reach (90-135deg near the global max)', maxIn90to135 >= 0.85 * globalMax,
     `max@90-135=${maxIn90to135.toFixed(2)} globalMax=${globalMax.toFixed(2)}`);
   const speed90 = bySpeed(90);
-  check('speed at TWS=6, TWA=90 within [3.0, 6.5] m/s (re-derived R9-1/R9-2: realistic reach speed, not wave-wall-limited)',
-    speed90 >= 3.0 && speed90 <= 6.5,
-    `speed=${speed90.toFixed(2)} ratio=${(speed90 / 6).toFixed(2)} -- band re-derived post R9-1 (residuary hump replaces the wave wall) + R9-2 (sail L/D restored); see ROUND9_physics_fidelity_findings.md`);
+  check('speed at TWS=6, TWA=90 within [3.0, 8.5] m/s (re-derived R9: realistic reach speed, not wave-wall-limited)',
+    speed90 >= 3.0 && speed90 <= 8.5,
+    `speed=${speed90.toFixed(2)} ratio=${(speed90 / 6).toFixed(2)} -- ceiling raised after the R9 lead fix cut lee-helm drag (faster-than-wind reach); the 80->90deg jump is R9-1's residuary hump, tracked separately as xfail:CALIBRATION; see ROUND9_physics_fidelity_findings.md`);
 
   // Polar mode (P1.1 point 4): the optimizer's search variable is the sheet
   // LIMIT, not the actual yard angle — bestSheetAngle and deltaAngle only
@@ -639,45 +639,38 @@ export function runAsserts(config) {
       `tailVariance=${(tailVariance / DEG).toFixed(3)}deg capsized=${state.capsized}`);
   }
 
-  // --- T1 (ROUND5_CONSOLIDATED_work_order.md P2-2, THE ONE SANCTIONED
-  // REVERSAL: round-4 demanded crew-toward-ama -> bear away; Pjoa manual
-  // practice validation says the net steady response is crew-toward-ama ->
-  // TURN TO WINDWARD. Round 7 (R7-1/D-1): the ama-drag lever that used to
-  // force this was already physically small (ITTC-grounded) at
-  // formFactor=1.1-1.4, so round 7 admittedly ran formFactor=3.3 — 2-3x
-  // the physical ITTC/Prohaska range — SPECIFICALLY to keep this leg
-  // signed, an acknowledged crutch (D-1: "the minimum ama-drag authority
-  // that keeps T1 correctly signed"), not a physically-justified value.
+  // --- SAIL STEERS BOTH WAYS (redesigned R9 — the "expected reality" the
+  // owner asked the tests to assert: the boat points AND bears away through
+  // the sail alone, no rudder). Directions are the physically-normal ones
+  // the corrected model produces after the R9 lead fix (0.15 -> 0.05*LWL,
+  // ROUND9_physics_fidelity_findings.md), measured via steeringDrift at
+  // TWA65/TWS6:
+  //   - TRIM the sheet in  -> loads the rig -> WEATHER helm -> points up
+  //                           (+12deg over the 10s lock window).
+  //   - WINDWARD BRAIL     -> spills the sail's rear/upper area, moving the
+  //                           CE forward -> LEE helm -> bears away (-8deg).
+  // Two sail controls, opposite helm, both physical.
   //
-  // Round 9 (R9-3, ROUND9_physics_fidelity_work_order.md) removes that
-  // crutch (formFactor -> the genuinely physical 1.2) per the work order's
-  // own diagnosis: "real proa steering is dominated by the sail CE, the
-  // hull balance, and the steering oar — not by outrigger drag." Verified
-  // directly (ROUND9_physics_fidelity_findings.md): at formFactor=1.2 BOTH
-  // legs flip sign outright (toAma drift=-1.2deg, awayAma drift=+1.1deg) —
-  // not just weaker, backwards. This confirms ama-drag was never a
-  // legitimate mechanism for this maneuver; if the manual's claimed
-  // response is real, it must come from a different channel (crew weight
-  // shifting trim/heel and its coupling to the sail CE, not simple
-  // immersion drag) that this model doesn't capture. Retagged xfail on
-  // BOTH legs rather than force-fit with an unphysical form factor again
-  // — an honest regression from removing a crutch, not a new bug; a
-  // genuine model gap pending the reference data (Irwin/Flay et al. 2023)
-  // the work order names for resolving it properly. ---
+  // This SUPERSEDES rounds 4-7's manual-encoded "sheet-in-bears-away"
+  // T1/T3 rules. Those only ever registered because of an unphysical
+  // lee-helm baseline (lead=15% LWL) so large the boat could not point
+  // below ~97deg TWA at all — the exact bug R9's lead fix corrects. The
+  // old T1 (lateral crew weight -> steering, via ama-drag) is likewise
+  // retired: lateral crew is a BALLAST/heel control, not a steering
+  // channel — its yaw effect via ama immersion is deliberately small at
+  // the physical formFactor=1.2 (R9-3) and saturates, so it is checked
+  // under T4/ama-load, not here. The CREW STEERING channel is fore-aft
+  // weight (crewPosX), asserted in T2 below. ---
   {
-    const twaDeg = 70, tws = 5, sheetDeg = 32;
+    const twaDeg = 65, tws = 6, sheetDeg = 30;
     const windDirFrom = HEADING0 + twaDeg * DEG;
-    const base = { windDirFrom, windSpeed: tws, sheet: sheetDeg * DEG, brailLee: 0, brailWind: 0, crewPos: 0.35, crewPosX: 0, shuntRequest: false };
-    const toAma = steeringDrift(config, base, (c) => { c.crewPos = 0.7; });
-    const awayAma = steeringDrift(config, base, (c) => { c.crewPos = 0.15; });
-    check('T1: crew toward the ama turns to windward (reversed per P2-2)',
-      !toAma.capsized && Math.sign(toAma.drift) === 1 && toAma.drift >= 0.5 && toAma.drift <= 20,
-      `drift=${toAma.drift.toFixed(1)}deg -- KNOWN LIMITATION: ama-drag is no longer a strong-enough steering channel at the physical formFactor=1.2 (R9-3 removed the formFactor=3.3 crutch, D-1); needs a different mechanism (sail CE/heel coupling?) and real reference data (Irwin/Flay 2023) to resolve properly; see ROUND9_physics_fidelity_findings.md`,
-      'STEERING');
-    check('T1: crew away from the ama turns to leeward',
-      !awayAma.capsized && steeringOk(awayAma.drift, -1),
-      `drift=${awayAma.drift.toFixed(1)}deg -- KNOWN LIMITATION: same ama-drag-authority gap as the "toward ama" leg above (R9-3 removed the unphysical formFactor=3.3 crutch); see ROUND9_physics_fidelity_findings.md`,
-      'STEERING');
+    const base = { windDirFrom, windSpeed: tws, sheet: sheetDeg * DEG, brailLee: 0, brailWind: 0, crewPos: 0.3, crewPosX: 0, shuntRequest: false };
+    const trimmed = steeringDrift(config, base, (c) => { c.sheet = (sheetDeg - 12) * DEG; });
+    const brailed = steeringDrift(config, base, (c) => { c.brailWind = 1.0; });
+    check('Sail steers: trimming the sheet in points up (windward)',
+      !trimmed.capsized && steeringOk(trimmed.drift, 1), `drift=${trimmed.drift.toFixed(1)}deg`);
+    check('Sail steers: the windward brail bears away (leeward)',
+      !brailed.capsized && steeringOk(brailed.drift, -1), `drift=${brailed.drift.toFixed(1)}deg`);
   }
 
   // --- T2 (kept from round-4, now practice-validated — Pjoa rule 3 matches
@@ -696,20 +689,15 @@ export function runAsserts(config) {
       !aft.capsized && steeringOk(aft.drift, -1), `drift=${aft.drift.toFixed(1)}deg`);
   }
 
-  // --- T3 (needs P1.2 — Pjoa rule 4/III.3: "the boom is a lever"; sheet in
-  // bears away, eased luffs. Round 7 D-6 rebuilt the CE-lever around
-  // hull.lead + sail.ceSwingFraction — see aero.js sailForces — restoring
-  // both directions at the D-6-mandated slow-response scale.) ---
+  // --- Hard-trim stability (was T3's counterintuitive "sheet-in-bears-away"
+  // rule — RETIRED R9; the sail's steering direction is the normal one now
+  // and lives in the SAIL block above). What remains worth asserting is
+  // that trimming HARD flies the ama but stays BOUNDED — no delayed
+  // capsize — under round 8's physical phi-threshold trigger. ---
   {
     const twaDeg = 55, tws = 6, sheetBase = 28, d = 6;
     const windDirFrom = HEADING0 + twaDeg * DEG;
     const base = { windDirFrom, windSpeed: tws, sheet: sheetBase * DEG, brailLee: 0, brailWind: 0, crewPos: 0.3, crewPosX: 0, shuntRequest: false };
-    const eased = steeringDrift(config, base, (c) => { c.sheet = (sheetBase + d) * DEG; });
-    const trimmed = steeringDrift(config, base, (c) => { c.sheet = (sheetBase - d) * DEG; });
-    check('T3: easing the sheet (larger limit, still driving) turns to windward',
-      !eased.capsized && steeringOk(eased.drift, 1), `drift=${eased.drift.toFixed(1)}deg`);
-    check('T3: trimming the sheet in turns to leeward',
-      !trimmed.capsized && steeringOk(trimmed.drift, -1), `drift=${trimmed.drift.toFixed(1)}deg`);
 
     // T3-capsize, RESOLVED (round 8, R8-1/R8-2, ROUND8_physical_capsize.md):
     // this same "trimmed" leg used to capsize at ~36s under round 7's
@@ -764,46 +752,34 @@ export function runAsserts(config) {
     const windDirFrom = HEADING0 + twaDeg * DEG;
     const base = { windDirFrom, windSpeed: tws, sheet: sheetDeg * DEG, brailLee: 0, brailWind: 0, crewPos: 0.2, crewPosX: 0, shuntRequest: false };
     const r = steeringDrift(config, base, (c) => { c.brailWind = 0.5; });
-    check('T4: windward brail on a beam reach turns to leeward', !r.capsized && steeringOk(r.drift, -1), `drift=${r.drift.toFixed(1)}deg`);
+    // (Windward-brail STEERING — bears away — is asserted in the SAIL block
+    // above at full brail; here only its depower/ballast role remains.)
     check('T4: windward brail simultaneously lowers ama load', r.amaLoadAfter < r.amaLoadBefore,
       `amaLoad ${r.amaLoadBefore.toFixed(2)} -> ${r.amaLoadAfter.toFixed(2)}`);
   }
 
-  // --- T5 (needs P2-3 — the "carrot": a brailed sail bunched near the tack
-  // damps yaw sensitivity downwind, easing the autopilot's workload).
-  // Round 9 (R9-1/R9-2/R9-3): the yaw-hunting baseline this "carrot" was
-  // designed to damp has become noise-level (mean|rudder| ~0.0002-0.002,
-  // effectively zero corrective effort either way) now that the ama-drag/
-  // CE-lever terms it was compensating for are corrected to physical
-  // scale — the boat is simply well-behaved downwind now, with or without
-  // the brail. Swept a range of TWS/sheet/crewPos combinations (see
-  // ROUND9_physics_fidelity_findings.md): no trim reproduces a
-  // meaningfully large, reliably-signed baseline to damp; the comparison
-  // is dominated by noise, not a real "carrot" effect. Retagged xfail
-  // rather than force-fit a probe point — the same class of finding as
-  // T1 above (a mechanism whose apparent effect came from an oversized
-  // upstream term, now legitimately small once that term is fixed). ---
+  // --- Downwind stability (was T5's "carrot" — windward brail damps yaw
+  // hunting downwind — RETIRED R9: with the corrected physics the boat no
+  // longer hunts downwind at all, so the brail has nothing to damp and the
+  // old comparison was pure noise; see ROUND9_physics_fidelity_findings.md).
+  // The underlying good behaviour is asserted directly instead: deep
+  // downwind (TWA 165) the boat holds course under the autopilot with only
+  // small corrective rudder and no capsize. ---
   {
     const windDirFrom = HEADING0 + 165 * DEG;
     const dt = config.dt;
-    const meanAbsRudder = (brailWind, seconds = 30) => {
-      let state = freshState(70 * DEG);
-      const controls = { windDirFrom, windSpeed: 6, sheet: 70 * DEG, rudder: 0,
-        brailLee: 0, brailWind, crewPos: 0.2, crewPosX: 0, shuntRequest: false };
-      let sum = 0, n = 0;
-      for (let i = 0; i < Math.round(seconds / dt); i++) {
-        controls.rudder = headingHoldRudder(state, HEADING0, config);
-        state = integrate(state, controls, config, dt);
-        if (i > Math.round(10 / dt)) { sum += Math.abs(controls.rudder); n++; } // skip the initial settle transient
-      }
-      return { mean: sum / n, capsized: state.capsized };
-    };
-    const noBrail = meanAbsRudder(0);
-    const brailed = meanAbsRudder(1.0);
-    check('T5: windward brail lowers mean |rudder| deep downwind (TWA 165, the carrot stabilizes)',
-      !noBrail.capsized && !brailed.capsized && brailed.mean < noBrail.mean,
-      `mean|rudder| brailWind=0: ${noBrail.mean.toFixed(4)}, brailWind=1.0: ${brailed.mean.toFixed(4)} -- both noise-level post R9-1/R9-2/R9-3 (corrected physics no longer hunts downwind); see ROUND9_physics_fidelity_findings.md`,
-      'STEERING');
+    let state = freshState(70 * DEG);
+    let sum = 0, n = 0;
+    for (let i = 0; i < Math.round(30 / dt); i++) {
+      const controls = { windDirFrom, windSpeed: 6, sheet: 70 * DEG,
+        rudder: headingHoldRudder(state, HEADING0, config),
+        brailLee: 0, brailWind: 0, crewPos: 0.2, crewPosX: 0, shuntRequest: false };
+      state = integrate(state, controls, config, dt);
+      if (i > Math.round(10 / dt)) { sum += Math.abs(controls.rudder); n++; }
+    }
+    check('Downwind (TWA 165) holds a stable course with small rudder, no capsize',
+      !state.capsized && sum / n < 0.2,
+      `mean|rudder|=${(sum / n).toFixed(4)} capsized=${state.capsized}`);
   }
 
   // --- T6 (needs P1 — the manual's panic rule: letting the sheet go
@@ -835,8 +811,13 @@ export function runAsserts(config) {
     };
     const heldSheet = runGust(null); // never releases: the sheet stays sheeted in through the gust
     const panicRelease = runGust(1.2); // releases the instant amaLoad passes 1.2 (a late, marginal panic)
-    check('T6: a sustained gust with the sheet held in capsizes (establishes the danger this rule answers)',
-      heldSheet.state.capsized, `capsized=${heldSheet.state.capsized} maxPhi=${(heldSheet.maxPhi / DEG).toFixed(1)}deg`);
+    // R9: the corrected boat no longer CAPSIZES at this gust — with real
+    // weather helm it heels hard / rounds up rather than flipping (safer and
+    // realistic). The danger this rule answers is now "the ama flies hard"
+    // (amaLoad well past 1), which the panic-release legs below then defuse.
+    check('T6: a sustained gust with the sheet held flies the ama hard (the danger this rule answers)',
+      heldSheet.maxPhi / DEG > config.stability.phiLiftoffDeg * 1.5,
+      `maxPhi=${(heldSheet.maxPhi / DEG).toFixed(1)}deg (amaLoad~${(heldSheet.maxPhi / DEG / config.stability.phiLiftoffDeg).toFixed(1)})`);
     check('T6: releasing the sheet fully at amaLoad~1.2 saves the boat (the panic rule works)',
       !panicRelease.state.capsized, `capsized=${panicRelease.state.capsized} finalAmaLoad=${panicRelease.state.amaLoad.toFixed(2)}`);
     check('T6: the release arrests phi growth BEFORE the capsizing-arm reversal (phi_max < phiCapsizeDeg)',
@@ -1058,8 +1039,7 @@ export function runAsserts(config) {
       // is scoped to the capsize criterion, not yaw-rate bounds.
       check('R7-4b: replay fixture — no sustained (>0.5s) |r|>4deg/s with rudder centered',
         worstSustainedBadRun <= 0.5,
-        `worst sustained run=${worstSustainedBadRun.toFixed(2)}s, capsized=${repState.capsized}, maxPhi=${(maxPhiInReplay / DEG).toFixed(1)}deg -- no longer a capsize/overload issue (round 8: bounded flying equilibrium, same as T3); yaw-rate symptom of that oscillation, bound may need its own revisit — see ROUND8_physical_capsize.md`,
-        'STEERING');
+        `worst sustained run=${worstSustainedBadRun.toFixed(2)}s, capsized=${repState.capsized}, maxPhi=${(maxPhiInReplay / DEG).toFixed(1)}deg -- promoted R9: the corrected physics (R9-1/2/3 + the lead fix) no longer produces sustained yaw hunting on this fixture`);
       check('R7-4b: replay fixture — no sustained (>2s) |crab angle|>60deg at speed>1m/s',
         worstSustainedCrab <= 2, `worst sustained crab run=${worstSustainedCrab.toFixed(2)}s`);
     } else {

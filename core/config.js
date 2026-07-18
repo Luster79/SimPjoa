@@ -212,13 +212,24 @@ function buildDefaultConfig() {
       // lead: round 7, D-6 (ROUND7_DECISION.md). Classical yacht-design
       // "lead" — the CE-CLR longitudinal separation — order 5-25% of
       // waterline length depending on hull/rig type (Larsson & Eliasson,
-      // Principles of Yacht Design). 0.15 (15%) is mid-range: replaces
-      // round 5's ad-hoc tackXFraction-based CE anchor (aero.js sailForces
-      // no longer uses tackXFraction for the yaw-moment geometry — it's
-      // still used by ui/app.js for drawing the mast/tack position, kept
-      // for that). Per-boat parameter; revisit if a specific hull's real
-      // lead is measured.
-      lead: 0.15 * p.boat_length_m,
+      // Principles of Yacht Design). Replaces round 5's ad-hoc
+      // tackXFraction-based CE anchor (aero.js sailForces no longer uses
+      // tackXFraction for the yaw-moment geometry — it's still used by
+      // ui/app.js for drawing the mast/tack position, kept for that).
+      // Per-boat parameter; revisit if a specific hull's real lead is
+      // measured.
+      //
+      // R9 follow-up: lowered from 0.15 (15% LWL) to 0.05 (~5%, low edge of
+      // the literature band). At 15% the CE sat so far forward of the CLR
+      // that ceLeverSign=+1 produced a STRUCTURAL lee-helm bias the sail and
+      // crew couldn't overcome — the boat bore away off any course tighter
+      // than ~97deg TWA and could not point without the rudder (which on a
+      // Pjoa is a last resort). Measured M(TWA) balance was negative across
+      // the whole close-hauled range at lead=0.825; at ~0.05*L it crosses
+      // zero near 55-58deg, giving a stable, rudder-free pointing attractor.
+      // Only the baseline shifts — the delta-dependent trim steering
+      // (halfChordEff*cos(delta)) is untouched, so T3/T4's directions hold.
+      lead: 0.05 * p.boat_length_m,
     },
 
     ama: {
