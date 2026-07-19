@@ -235,23 +235,30 @@ export function sailForces(state, controls, config) {
   // (D-6's target: 0.3-1.5deg/s steady sail-trim turn rate at TWS 6,
   // 5-15deg over a 10s window) — see harness/asserts.js's T1/T3/T4/T5.
   //
-  // P2-3 (brail-induced CE shift, unchanged from round 5): spilling the
-  // sail's rear/upper area (windward brail) moves the effective CE toward
-  // the tack — shrink the along-yard FORE-AFT distance from the tack
-  // proportionally to brailWind (config.sail.ceBrailShift, ~0.3). Only
-  // x_CE shifts, not y_CE (round-5 finding: shrinking both leaves the net
-  // magnitude roughly unchanged, since they partly cancel through
-  // ceLeverSign; shifting only x_CE genuinely damps the yaw moment — the
-  // "carrot" that lowers rudder workload deep downwind, T5).
+  // P2-3 (brail-induced CE shift). Spilling the sail's rear/upper area
+  // (windward brail) gathers the working area of the sail back toward the
+  // yard's own pivot (the tack) — physically this shrinks the CE's WHOLE
+  // excursion along the yard from that pivot, fore-aft AND lateral, not
+  // just its fore-aft component. Round 5-7 originally shrank only x_CE,
+  // reasoning that shrinking both "cancels through ceLeverSign" and so
+  // only x_CE need move to damp the yaw moment; that was a bookkeeping
+  // argument about net magnitude, not a physical one, and round 5's own
+  // spilling-line description (gathering the sail toward the yard pulls
+  // the pressure centroid inboard/up) applies to both axes. Round 10b
+  // (D2) unifies them: the SAME effective half-chord (shrunk by
+  // ceBrailShift*brailWind) now sets both xCE's and yCE's excursion,
+  // projected onto cos(delta)/sin(delta) respectively — see
+  // ROUND10b_downwind_wall.md and ROUND10b_downwind_wall_findings.md for
+  // the before/after measurement this changed.
   const chord = config.sail.CEheight / 2;
   const halfChord = chord / 2;
   const lead = config.hull.lead ?? 0.15 * config.hull.length;
   const clrXNeutral = clrXPosition(0, config);
   const ceSwingFraction = config.sail.ceSwingFraction ?? 0.5;
   const ceBrailShift = config.sail.ceBrailShift ?? 0.3;
-  const halfChordEffX = halfChord * ceSwingFraction * (1 - ceBrailShift * brailWind);
-  const xCE = clrXNeutral + lead - halfChordEffX * Math.cos(delta);
-  const yCE = -state.end * halfChord * ceSwingFraction * Math.sin(delta);
+  const halfChordEff = halfChord * ceSwingFraction * (1 - ceBrailShift * brailWind);
+  const xCE = clrXNeutral + lead - halfChordEff * Math.cos(delta);
+  const yCE = -state.end * halfChordEff * Math.sin(delta);
 
   // Heel-course coupling (pure geometry, FIX_REQUEST_round4_roll_dof.md
   // 1.4): heeling tips the mast, offsetting the CE laterally by

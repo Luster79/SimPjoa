@@ -817,6 +817,35 @@ export function runAsserts(config) {
       `mean|rudder|=${(sum / n).toFixed(4)} capsized=${state.capsized}`);
   }
 
+  // --- T5, revived (Round 10b, D2): the manual's "carrot" — windward
+  // brail lowers downwind rudder workload — is measurable again now that
+  // the CE-brail shift shrinks yCE as well as xCE (aero.js sailForces(),
+  // ROUND10b_downwind_wall.md D2: gathering the sail toward the yard
+  // pulls the pressure centroid inboard/up on BOTH axes, not just
+  // fore-aft). Same TWA165 scenario as the block above, brailWind=0 vs
+  // 0.5, direction-strict (carrot must reduce workload) not magnitude-strict. ---
+  {
+    const windDirFrom = HEADING0 + 165 * DEG;
+    const dt = config.dt;
+    function meanAbsRudder(brailWind) {
+      let state = freshState(70 * DEG);
+      let sum = 0, n = 0;
+      for (let i = 0; i < Math.round(30 / dt); i++) {
+        const controls = { windDirFrom, windSpeed: 6, sheet: 70 * DEG,
+          rudder: headingHoldRudder(state, HEADING0, config),
+          brailLee: 0, brailWind, crewPos: 0.2, crewPosX: 0, shuntRequest: false };
+        state = integrate(state, controls, config, dt);
+        if (i > Math.round(10 / dt)) { sum += Math.abs(controls.rudder); n++; }
+      }
+      return { mean: sum / n, capsized: state.capsized };
+    }
+    const noCarrot = meanAbsRudder(0);
+    const carrot = meanAbsRudder(0.5);
+    check('T5: the windward brail (carrot) lowers downwind rudder workload',
+      !carrot.capsized && carrot.mean < noCarrot.mean,
+      `mean|rudder| ${noCarrot.mean.toFixed(4)} -> ${carrot.mean.toFixed(4)}`);
+  }
+
   // --- T6 (needs P1 — the manual's panic rule: letting the sheet go
   // fully must actually save a boat that's overloading in a gust). Round
   // 8 (R8-2, ROUND8_physical_capsize.md): now that capsize on the flying
