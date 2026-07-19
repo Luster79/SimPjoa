@@ -8,7 +8,7 @@ import path from 'node:path';
 import { tableCL, sailForces } from '../core/aero.js';
 import { integrate, computeForces } from '../core/integrator.js';
 import { computeAmaLoad, updateAback, rollRestoreMoment, crewRollMoment, rollDampingMoment } from '../core/stability.js';
-import { amaDrag, hullResistance } from '../core/hydro.js';
+import { amaDrag, hullResistance, hullSideForce } from '../core/hydro.js';
 import { createConfig } from '../core/config.js';
 import { computePolar, headingHoldRudder } from './polar.js';
 import { scenarioSquall, scenarioShunt, scenarioAback, scenarioStop, scenarioBackwindSlam } from './scenarios.js';
@@ -155,20 +155,19 @@ export function runAsserts(config) {
   // wave-wall-limited ceiling; also promoted. Both may need a further
   // small touch-up after R9-3 (ama-drag/steering rebuild, next in this
   // round) if that shifts the polar again — re-verified there.
-  // Round 10 (R10-1, ROUND10_data_integration.md): the Di Piazza-anchored
-  // v2 aero table cut sail power ~35% at CLmax, which alone would be
-  // expected to WORSEN (raise) this ratio — measured 0.641, above the
-  // round-9 band (<0.55). The work order's own R10-3 section explicitly
-  // anticipates the opposite pull once hull side force is re-grounded on
-  // Flay's measured CS(leeway) next ("stronger side force at high leeway,
-  // cheaper resistance... will fight R10-1's power reduction in the
-  // TWA-40 band. Genuinely unknown net outcome: report it, do not steer
-  // it.") — left as an honest xfail with the current number rather than
-  // pre-emptively retuned; re-evaluated after R10-3 lands (both effects
-  // together), not before.
+  // Round 10: R10-1's Di Piazza-anchored sail (~35% weaker CLmax) alone
+  // raised this ratio to 0.641, above the round-9 band (<0.55). R10-3
+  // (hull side force re-grounded on Flay's measured CS(leeway)) pulled
+  // the other way as the work order anticipated ("stronger side force at
+  // high leeway, cheaper resistance... genuinely unknown net outcome:
+  // report it, do not steer it") — but only slightly, to 0.622: real,
+  // measured, and correctly signed, but not enough on its own to bring
+  // the ratio back in-band. Reported honestly as the combined R10-1+R10-3
+  // outcome, not retuned to force a pass — see
+  // ROUND10_data_integration_findings.md.
   check('no meaningful progress below ~50deg TWA',
     bySpeed(40) < 0.55 * globalMax,
-    `speed(40)=${bySpeed(40).toFixed(2)} globalMax=${globalMax.toFixed(2)} ratio=${(bySpeed(40) / globalMax).toFixed(3)} -- R10-1 (weaker sail) alone raises this above the round-9 band; R10-3 (hull side force) pulls the other way and hasn't landed yet — see ROUND10_data_integration_findings.md`,
+    `speed(40)=${bySpeed(40).toFixed(2)} globalMax=${globalMax.toFixed(2)} ratio=${(bySpeed(40) / globalMax).toFixed(3)} -- R10-1 alone: 0.641; R10-3's opposing pull brought it to this value (still above the 0.55 band); see ROUND10_data_integration_findings.md`,
     'CALIBRATION');
   check('polar peak lands on a reach (90-135deg near the global max)', maxIn90to135 >= 0.85 * globalMax,
     `max@90-135=${maxIn90to135.toFixed(2)} globalMax=${globalMax.toFixed(2)}`);
@@ -979,6 +978,37 @@ export function runAsserts(config) {
     check('T10: past phiCapsizeDeg, heel accelerates (gains the same increment faster than at the old threshold)',
       tAtOldThreshold !== null && tAtCapsizeDeg !== null && tAtCapsizeDeg < tAtOldThreshold,
       `time for +20deg: at old threshold=${tAtOldThreshold?.toFixed(2)}s, at phiCapsizeDeg=${tAtCapsizeDeg?.toFixed(2)}s`);
+  }
+
+  // --- R10-3 (ROUND10_data_integration.md, docs/adr/0004): hull side
+  // force re-grounded on Flay/Irwin/Viola 2025's measured CS(leeway).
+  {
+    // CS(leeway) must not saturate/mush inside the measured 0-16deg
+    // range (the whole point of re-grounding it) — check it's still
+    // rising, not flattening, between two points well inside that range.
+    const u = 3;
+    const fLow = hullSideForce(u, u * Math.tan(6 * DEG), 0, config);
+    const fHigh = hullSideForce(u, u * Math.tan(14 * DEG), 0, config);
+    check('R10-3: hull side force does not saturate within the measured 0-16deg leeway range',
+      Math.abs(fHigh.Fy) > Math.abs(fLow.Fy) * 1.5,
+      `|Fy|(6deg)=${Math.abs(fLow.Fy).toFixed(0)} |Fy|(14deg)=${Math.abs(fHigh.Fy).toFixed(0)}`);
+
+    // "Sailing free" (R10-3): Flay's Fig 15 — CR decreases with leeway for
+    // V hulls. Qualitative reproduction only (no digitized CR-vs-leeway
+    // curve); verified directly rather than assumed: total resistance
+    // (longitudinal hull drag + the foil's induced drag) at 8-12deg
+    // leeway must not exceed the 0-deg value.
+    const V = 3;
+    const baseRes = Math.abs(hullResistance(V, config));
+    let worstRatio = 0;
+    for (let leewayDeg = 8; leewayDeg <= 12; leewayDeg += 1) {
+      const uu = V * Math.cos(leewayDeg * DEG), vv = V * Math.sin(leewayDeg * DEG);
+      const f = hullSideForce(uu, vv, 0, config);
+      const totalFx = Math.abs(hullResistance(uu, config)) + Math.abs(f.Fx);
+      worstRatio = Math.max(worstRatio, totalFx / baseRes);
+    }
+    check('R10-3: "sailing free" — total resistance at 8-12deg leeway does not exceed the 0-deg value',
+      worstRatio <= 1.0, `worst ratio=${worstRatio.toFixed(3)}`);
   }
 
   // --- R7-4a (ROUND7_drag_calibration.md / ROUND7_DECISION.md D-1): the

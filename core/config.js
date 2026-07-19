@@ -298,12 +298,60 @@ function buildDefaultConfig() {
       residuaryPeakCr: 0.006,             // tunable — Cr at the hump's peak, ~2x Cf (slender-hull order of magnitude, not a monohull's 100x+)
       residuaryFrPeak: 0.5,               // tunable — Fr at which residuary resistance peaks (the main prismatic hump)
       residuaryFrWidth: 0.18,             // tunable — Gaussian width; keeps the hump's rise/fall gentle (naturally ~0 below Fr~0.3, per work order's "~0 below Fr~0.35")
-      sideForceCoeff: 0.8,                // tunable — low-AR hull-as-foil lift-curve factor (folds in the ama's lateral resistance too, since hydro.js has no separate ama side-force term). Lowered from 2.5 in round 2 (FIX_REQUEST_step1_round2.md R2-1): a boardless canoe hull is a genuinely weak lateral-force generator (that's the prompt's own framing of why a proa needs the ama/crew technique instead of pointing ability) — 2.5 let the hull balance the sail's side force at near-zero leeway once crew ballast dropped amaDrag, letting the boat "point" unrealistically well close-hauled.
-      leewaySaturationDeg: 15,            // side force saturates above this leeway angle
-      leewayMushingCoeff: 6,              // tunable — post-saturation side-force falloff, per radian of excess leeway (FIX_REQUEST_step1_round2.md R2-1)
-      lowSpeedSideDamping: 100,            // tunable — N per (m/s) of sway speed; linear-regime side resistance that keeps a near-stalled boat from drifting freely once sideForceCoeff was tuned low (FIX_REQUEST_step1_round2.md R2-1)
+      // hullSideForceCoeff (round 10, R10-3, docs/adr/0004): replaces the
+      // old sideForceCoeff/leewaySaturationDeg/leewayMushingCoeff trio
+      // (a saturate-then-mush shape with NO measured basis) with a
+      // direct fit to Flay, Irwin & Viola 2025's towing-tank CS(leeway)
+      // for their V2 hull (narrow 70deg-keel Vee, the proa-like case):
+      // CS(lambda) = csV2A*lambda + csV2B*lambda^2 (lambda in DEGREES,
+      // matching the digitized source's own units), valid 0-16deg — the
+      // measured range shows NO saturation (rises superlinearly, a
+      // strengthening vortex-lift mechanism), contradicting the old
+      // model's 15deg knee. csBlendStartDeg..csBlendEndDeg (16-24deg)
+      // blends toward the V1 hull's (100deg keel, more rounded) own
+      // fitted curve — V2 has no data past 16deg, so a naive continuation
+      // of its own steeper quadratic would run away; V1's slower,
+      // independently-measured growth (tested to 24deg) is a more
+      // defensible extrapolation than V2's own unconstrained curve.
+      // Beyond csBlendEndDeg (24deg, the edge of ANY measured data): CS
+      // holds FLAT (config.js validateConfig doesn't enforce this shape —
+      // it's applied in hydro.js hullSideForce) — an explicitly
+      // provenance-free extrapolation guard, not a measured claim.
+      csV2A: 0.00564, csV2B: 0.00042,     // fit residuals within the digitized +-0.01 uncertainty at all 4 V2 anchors (4/8/12/16deg) — see ROUND10_data_integration_findings.md
+      csV1A: 0.00598, csV1B: 0.00019,     // V1 fit (4/8/16/24deg anchors), used only for the 16-24deg blend target
+      csBlendStartDeg: 16,
+      csBlendEndDeg: 24,
+      // sailingFreeReliefPeak (round 10, R10-3): qualitative reproduction
+      // of Flay's Fig 15 finding (CR decreases with leeway for V hulls) —
+      // see hydro.js hullSideForce's own comment for the full reasoning
+      // and the caveat that no quantitative CR-vs-leeway curve exists to
+      // fit against (Fig 15 is described qualitatively only). Ramps up
+      // 0..8deg, flat at full relief across 8-12deg (matching the
+      // harness's own direct assertion window), fades back to 0 by 24deg.
+      // 1.0 (magnitude — full induced-drag elimination within the
+      // plateau) is sized empirically so total resistance at 8-12deg
+      // leeway does not exceed the 0-deg value, not derived from a
+      // source number.
+      sailingFreeReliefPeak: 1.0,
+      sailingFreeReliefPlateauStartDeg: 8,
+      sailingFreeReliefPlateauEndDeg: 12,
+      sailingFreeReliefFadeEndDeg: 24,
+      lowSpeedSideDamping: 100,            // tunable — N per (m/s) of sway speed; linear-regime side resistance that keeps a near-stalled boat from drifting freely at very low absolute speed, independent of the (now measured) CS curve's own shape
       crossFlowDragCoeff: 1.1,             // R9 follow-up — bluff-body cross-flow (broadside) drag coefficient on the lateral plane; past stall the hull is dragged side-on and meets huge resistance (fixes the spurious "sails sideways" state; see hydro.js hullSideForce and the ROUND9 findings)
-      lateralArea: 1.8,                    // m^2 — hull lateral (broadside) plane area (~length*draft); cross-flow drag reference area (tunable estimate)
+      // lateralArea (~Lwl*draft): dual-use since round 10, R10-3 — the
+      // cross-flow bluff-body term above (unchanged) AND the new
+      // hullSideForceCoeff CS(leeway) term (hydro.js) both reference this
+      // same projected-side-area estimate. Flay's own CS is referenced to
+      // THEIR test hull's projected side area (12m hull, 4.88 m2 full
+      // scale) — since CS is a dimensionless coefficient, the "conversion"
+      // to our geometry is simply computing Fy from OUR OWN area here
+      // (not theirs), per the work order's explicit instruction, rather
+      // than a unit-conversion factor. Validity ceiling (Flay's own
+      // caveat): Fr<=0.48 — beyond that, the residuary hump model (ADR
+      // 0001) already covers the high-Fr regime with its own separate
+      // provenance; no additional guard needed here since side force and
+      // longitudinal resistance are independent terms.
+      lateralArea: 1.8,                    // m^2 — hull lateral (broadside) plane area (~length*draft); tunable estimate (no direct measurement of THIS hull's draft)
       yawDampingCoeff: 900,               // tunable — N*m per (rad/s), scaled by speed
       clrXFraction: 0.05,                 // tunable — center-of-lateral-resistance offset from CG (aft), fraction of half-length
       crewForeAftTrimCoeff: 0.15,          // tunable ("k_trim") — fraction of half-length the CLR shifts per unit crewPosX (FIX_REQUEST_round4_roll_dof.md 1.5)

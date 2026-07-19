@@ -40,14 +40,38 @@ export function hullResistance(u, config) {
   return -Math.sign(u) * (friction + residuary);
 }
 
+// hullSideForceCoeff(lambdaDeg, hull) -> CS, the measured-anchored side-
+// force coefficient (round 10, R10-3, docs/adr/0004) — see config.js's
+// csV2A/csV2B/csV1A/csV1B/csBlendStartDeg/csBlendEndDeg comment for the
+// full derivation. Three regimes: V2's own quadratic fit (0..blendStart,
+// measured 0-16deg), a linear blend toward V1's fitted value
+// (blendStart..blendEnd, 16-24deg — no V2 data past 16deg, so continuing
+// V2's OWN steeper curve would be an unconstrained runaway; V1's slower,
+// independently-measured growth is a more defensible extrapolation
+// target), and a flat hold beyond blendEnd (an explicit, provenance-free
+// extrapolation guard — genuinely untested territory for either hull).
+function hullSideForceCoeff(lambdaDeg, hull) {
+  const { csV2A, csV2B, csV1A, csV1B, csBlendStartDeg, csBlendEndDeg } = hull;
+  if (lambdaDeg <= csBlendStartDeg) {
+    return csV2A * lambdaDeg + csV2B * lambdaDeg * lambdaDeg;
+  }
+  const csAtBlendStart = csV2A * csBlendStartDeg + csV2B * csBlendStartDeg * csBlendStartDeg;
+  const csV1AtBlendEnd = csV1A * csBlendEndDeg + csV1B * csBlendEndDeg * csBlendEndDeg;
+  if (lambdaDeg <= csBlendEndDeg) {
+    const frac = (lambdaDeg - csBlendStartDeg) / (csBlendEndDeg - csBlendStartDeg);
+    return csAtBlendStart + frac * (csV1AtBlendEnd - csAtBlendStart);
+  }
+  return csV1AtBlendEnd;
+}
+
 // hullSideForce(u, v, crewPosX, config) -> { Fx, Fy, yawMoment }
-//   Fy: low-AR-foil side force, saturating at hull.leewaySaturationDeg and
-//   then DEGRADING (not plateauing) past it — a foil beyond its designed
-//   leeway range stalls and mushes sideways rather than continuing to
-//   generate steady side force, per FIX_REQUEST_step1_round2.md R2-1.
+//   Fy: low-AR-foil side force via the measured CS(leeway) curve above —
+//   round 10, R10-3 replaces the old saturate-then-mush shape (no
+//   saturation observed in Flay's measured 0-16deg range; the vortex-lift
+//   mechanism STRENGTHENS with leeway there, the opposite of the old
+//   model's behavior inside that range).
 //   Fx: induced drag. A foil's side force is never free: it costs drag
-//   proportional to Fy tilted aft by the RAW (unclamped) leeway angle, so
-//   the penalty keeps growing past saturation even as Fy itself falls off.
+//   proportional to Fy tilted aft by the RAW (unclamped) leeway angle.
 //   crewPosX (fore-aft crew position, -1..1): phenomenological CLR shift,
 //   no pitch DOF (FIX_REQUEST_round4_roll_dof.md 1.5) — weight forward
 //   moves the center of lateral resistance forward by
@@ -68,39 +92,39 @@ export function clrXPosition(crewPosX, config) {
 
 export function hullSideForce(u, v, crewPosX, config) {
   const { hull, rho_w } = config;
-  const satRad = (hull.leewaySaturationDeg * Math.PI) / 180;
+  const DEG = Math.PI / 180;
   const leewayRaw = Math.atan2(v, Math.abs(u) + 0.05);
   const leewayAbs = Math.abs(leewayRaw);
-  const leewayClamped = Math.min(leewayAbs, satRad);
+  const leewayAbsDeg = leewayAbs / DEG;
 
-  const excess = Math.max(0, leewayAbs - satRad);
-  const mushFalloff = 1 / (1 + hull.leewayMushingCoeff * excess);
-
+  const CS = hullSideForceCoeff(leewayAbsDeg, hull);
   const V2 = u * u + v * v;
-  const FyQuadratic = -Math.sign(v) * hull.sideForceCoeff * Math.sin(leewayClamped) * mushFalloff * 0.5 * rho_w * hull.wettedSurface * V2;
+  const FyQuadratic = -Math.sign(v) * CS * 0.5 * rho_w * (hull.lateralArea ?? 0) * V2;
   // The lift-like term above is quadratic in speed and vanishes as V -> 0,
   // but real hull/ama drag has a linear (viscous-regime) component that
   // dominates at very low speed instead of disappearing — without it, a
-  // near-stalled boat (e.g. drifting close to head-to-wind, sideForceCoeff
-  // tuned low per FIX_REQUEST_step1_round2.md R2-1) has essentially no
-  // resistance to being blown sideways until it's already picked up
-  // meaningful leeway speed. This term is independent of sideForceCoeff so
-  // it doesn't reopen the R2-1 escape valve at normal sailing speeds, where
+  // near-stalled boat (e.g. drifting close to head-to-wind) has
+  // essentially no resistance to being blown sideways until it's already
+  // picked up meaningful leeway speed. Independent of CS's own shape, so
+  // it doesn't reopen that escape valve at normal sailing speeds, where
   // the quadratic term already dominates.
   const FyLinear = -hull.lowSpeedSideDamping * v;
   const FyFoil = FyQuadratic + FyLinear;
 
-  // --- Cross-flow (broadside) drag (R9 follow-up) ---
-  // Past stall the hull stops being a foil and becomes a BLUFF BODY dragged
-  // side-on through the water: large cross-flow pressure drag on the lateral
-  // plane (Cd ~ 1.1) that the foil-lift term above CANNOT capture — that
-  // term mushes to near zero past the ~15deg stall, so at beam-on the old
-  // model left the hull almost free to slide sideways (a spurious
-  // sail-sideways / stuck-crabbing attractor; see the ROUND9 findings).
-  // Standard ship-maneuvering cross-flow term Y_{v|v|}: opposes the
-  // TRANSVERSE velocity, quadratic in it, so it is negligible at normal
-  // leeway (v tiny) yet dominant near 90deg leeway — it makes sailing
-  // sideways feel like hitting a wall.
+  // --- Cross-flow (broadside) drag (R9 follow-up; role updated R10-3) ---
+  // A genuinely different physical regime from the foil-lift term above:
+  // near true beam-on (90deg) the hull stops being a foil at all and
+  // becomes a BLUFF BODY dragged side-on through the water (Cd ~ 1.1) —
+  // an order of magnitude past anything the measured CS curve reaches
+  // (CS holds flat at ~0.25 beyond its own 24deg extrapolation guard,
+  // nowhere near a true flat-plate coefficient). Standard ship-
+  // maneuvering cross-flow term Y_{v|v|}: opposes the TRANSVERSE
+  // velocity, quadratic in it, so it is negligible at normal leeway
+  // (v tiny) yet dominant near 90deg — it makes sailing sideways feel
+  // like hitting a wall, exactly where the foil term's own physically-
+  // reasonable flat hold would otherwise under-resist (the original,
+  // still-valid motivation: see the ROUND9 findings for the spurious
+  // "sails sideways" state this fixed).
   // Scaled by sin(leewayAbs): the full broadside coefficient only applies
   // near beam-on (90deg) — at small-to-moderate drift the flow stays more
   // attached and the effective cross-flow Cd is lower, so this does not
@@ -113,7 +137,36 @@ export function hullSideForce(u, v, crewPosX, config) {
   // Induced drag is a FOIL property (side force tilted aft by the leeway
   // angle); the cross-flow term is already a pure resistance and must not be
   // re-counted as induced drag, so Fx uses the foil part only.
-  const Fx = -Math.sign(u) * Math.abs(FyFoil) * Math.sin(leewayAbs);
+  //
+  // "Sailing free" relief (round 10, R10-3): Flay's Fig 15 reports CR
+  // (total resistance) DECREASING with leeway for V-shaped hulls — the
+  // opposite of what a standard 2D induced-drag formula gives (Fx above
+  // grows with sin(leeway) regardless of hull shape). The physical
+  // picture: a V-hull's leeway-induced lift vector isn't purely
+  // perpendicular to the flow the way a simple 2D foil's is — 3D effects
+  // at the veed underwater sections give it a small FORWARD-projecting
+  // component this model's induced-drag formula doesn't capture on its
+  // own. No quantitative CR-vs-leeway curve was digitized (Fig 15 is
+  // described qualitatively only), so this is a conservative, EXPLICITLY
+  // qualitative reproduction, not a fitted curve: a relief fraction that
+  // ramps up from 0 at leeway=0, peaks around sailingFreeReliefPeakDeg,
+  // and fades back to 0 by sailingFreeReliefEndDeg (beyond which Flay's
+  // own claim isn't made). Verified against a direct assertion (harness/
+  // asserts.js): total resistance at 8-12deg leeway must not exceed the
+  // 0-deg value.
+  const reliefPeak = hull.sailingFreeReliefPeak ?? 0;
+  const reliefPlateauStartDeg = hull.sailingFreeReliefPlateauStartDeg ?? 8;
+  const reliefPlateauEndDeg = hull.sailingFreeReliefPlateauEndDeg ?? 12;
+  const reliefFadeEndDeg = hull.sailingFreeReliefFadeEndDeg ?? 24;
+  let relief = 0;
+  if (leewayAbsDeg > 0 && leewayAbsDeg <= reliefPlateauStartDeg) {
+    relief = reliefPeak * (leewayAbsDeg / reliefPlateauStartDeg);
+  } else if (leewayAbsDeg <= reliefPlateauEndDeg) {
+    relief = reliefPeak;
+  } else if (leewayAbsDeg <= reliefFadeEndDeg) {
+    relief = reliefPeak * (1 - (leewayAbsDeg - reliefPlateauEndDeg) / (reliefFadeEndDeg - reliefPlateauEndDeg));
+  }
+  const Fx = -Math.sign(u) * Math.abs(FyFoil) * Math.sin(leewayAbs) * (1 - relief);
 
   // Center of lateral resistance offset from CG (slightly aft, tunable) — gives
   // a modest weather-helm-like turning tendency rather than zero yaw coupling.

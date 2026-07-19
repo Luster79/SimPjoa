@@ -639,12 +639,60 @@ function buildDefaultConfig() {
       residuaryPeakCr: 0.006,             // tunable — Cr at the hump's peak, ~2x Cf (slender-hull order of magnitude, not a monohull's 100x+)
       residuaryFrPeak: 0.5,               // tunable — Fr at which residuary resistance peaks (the main prismatic hump)
       residuaryFrWidth: 0.18,             // tunable — Gaussian width; keeps the hump's rise/fall gentle (naturally ~0 below Fr~0.3, per work order's "~0 below Fr~0.35")
-      sideForceCoeff: 0.8,                // tunable — low-AR hull-as-foil lift-curve factor (folds in the ama's lateral resistance too, since hydro.js has no separate ama side-force term). Lowered from 2.5 in round 2 (FIX_REQUEST_step1_round2.md R2-1): a boardless canoe hull is a genuinely weak lateral-force generator (that's the prompt's own framing of why a proa needs the ama/crew technique instead of pointing ability) — 2.5 let the hull balance the sail's side force at near-zero leeway once crew ballast dropped amaDrag, letting the boat "point" unrealistically well close-hauled.
-      leewaySaturationDeg: 15,            // side force saturates above this leeway angle
-      leewayMushingCoeff: 6,              // tunable — post-saturation side-force falloff, per radian of excess leeway (FIX_REQUEST_step1_round2.md R2-1)
-      lowSpeedSideDamping: 100,            // tunable — N per (m/s) of sway speed; linear-regime side resistance that keeps a near-stalled boat from drifting freely once sideForceCoeff was tuned low (FIX_REQUEST_step1_round2.md R2-1)
+      // hullSideForceCoeff (round 10, R10-3, docs/adr/0004): replaces the
+      // old sideForceCoeff/leewaySaturationDeg/leewayMushingCoeff trio
+      // (a saturate-then-mush shape with NO measured basis) with a
+      // direct fit to Flay, Irwin & Viola 2025's towing-tank CS(leeway)
+      // for their V2 hull (narrow 70deg-keel Vee, the proa-like case):
+      // CS(lambda) = csV2A*lambda + csV2B*lambda^2 (lambda in DEGREES,
+      // matching the digitized source's own units), valid 0-16deg — the
+      // measured range shows NO saturation (rises superlinearly, a
+      // strengthening vortex-lift mechanism), contradicting the old
+      // model's 15deg knee. csBlendStartDeg..csBlendEndDeg (16-24deg)
+      // blends toward the V1 hull's (100deg keel, more rounded) own
+      // fitted curve — V2 has no data past 16deg, so a naive continuation
+      // of its own steeper quadratic would run away; V1's slower,
+      // independently-measured growth (tested to 24deg) is a more
+      // defensible extrapolation than V2's own unconstrained curve.
+      // Beyond csBlendEndDeg (24deg, the edge of ANY measured data): CS
+      // holds FLAT (config.js validateConfig doesn't enforce this shape —
+      // it's applied in hydro.js hullSideForce) — an explicitly
+      // provenance-free extrapolation guard, not a measured claim.
+      csV2A: 0.00564, csV2B: 0.00042,     // fit residuals within the digitized +-0.01 uncertainty at all 4 V2 anchors (4/8/12/16deg) — see ROUND10_data_integration_findings.md
+      csV1A: 0.00598, csV1B: 0.00019,     // V1 fit (4/8/16/24deg anchors), used only for the 16-24deg blend target
+      csBlendStartDeg: 16,
+      csBlendEndDeg: 24,
+      // sailingFreeReliefPeak (round 10, R10-3): qualitative reproduction
+      // of Flay's Fig 15 finding (CR decreases with leeway for V hulls) —
+      // see hydro.js hullSideForce's own comment for the full reasoning
+      // and the caveat that no quantitative CR-vs-leeway curve exists to
+      // fit against (Fig 15 is described qualitatively only). Ramps up
+      // 0..8deg, flat at full relief across 8-12deg (matching the
+      // harness's own direct assertion window), fades back to 0 by 24deg.
+      // 1.0 (magnitude — full induced-drag elimination within the
+      // plateau) is sized empirically so total resistance at 8-12deg
+      // leeway does not exceed the 0-deg value, not derived from a
+      // source number.
+      sailingFreeReliefPeak: 1.0,
+      sailingFreeReliefPlateauStartDeg: 8,
+      sailingFreeReliefPlateauEndDeg: 12,
+      sailingFreeReliefFadeEndDeg: 24,
+      lowSpeedSideDamping: 100,            // tunable — N per (m/s) of sway speed; linear-regime side resistance that keeps a near-stalled boat from drifting freely at very low absolute speed, independent of the (now measured) CS curve's own shape
       crossFlowDragCoeff: 1.1,             // R9 follow-up — bluff-body cross-flow (broadside) drag coefficient on the lateral plane; past stall the hull is dragged side-on and meets huge resistance (fixes the spurious "sails sideways" state; see hydro.js hullSideForce and the ROUND9 findings)
-      lateralArea: 1.8,                    // m^2 — hull lateral (broadside) plane area (~length*draft); cross-flow drag reference area (tunable estimate)
+      // lateralArea (~Lwl*draft): dual-use since round 10, R10-3 — the
+      // cross-flow bluff-body term above (unchanged) AND the new
+      // hullSideForceCoeff CS(leeway) term (hydro.js) both reference this
+      // same projected-side-area estimate. Flay's own CS is referenced to
+      // THEIR test hull's projected side area (12m hull, 4.88 m2 full
+      // scale) — since CS is a dimensionless coefficient, the "conversion"
+      // to our geometry is simply computing Fy from OUR OWN area here
+      // (not theirs), per the work order's explicit instruction, rather
+      // than a unit-conversion factor. Validity ceiling (Flay's own
+      // caveat): Fr<=0.48 — beyond that, the residuary hump model (ADR
+      // 0001) already covers the high-Fr regime with its own separate
+      // provenance; no additional guard needed here since side force and
+      // longitudinal resistance are independent terms.
+      lateralArea: 1.8,                    // m^2 — hull lateral (broadside) plane area (~length*draft); tunable estimate (no direct measurement of THIS hull's draft)
       yawDampingCoeff: 900,               // tunable — N*m per (rad/s), scaled by speed
       clrXFraction: 0.05,                 // tunable — center-of-lateral-resistance offset from CG (aft), fraction of half-length
       crewForeAftTrimCoeff: 0.15,          // tunable ("k_trim") — fraction of half-length the CLR shifts per unit crewPosX (FIX_REQUEST_round4_roll_dof.md 1.5)
@@ -1278,14 +1326,38 @@ function hullResistance(u, config) {
   return -Math.sign(u) * (friction + residuary);
 }
 
+// hullSideForceCoeff(lambdaDeg, hull) -> CS, the measured-anchored side-
+// force coefficient (round 10, R10-3, docs/adr/0004) — see config.js's
+// csV2A/csV2B/csV1A/csV1B/csBlendStartDeg/csBlendEndDeg comment for the
+// full derivation. Three regimes: V2's own quadratic fit (0..blendStart,
+// measured 0-16deg), a linear blend toward V1's fitted value
+// (blendStart..blendEnd, 16-24deg — no V2 data past 16deg, so continuing
+// V2's OWN steeper curve would be an unconstrained runaway; V1's slower,
+// independently-measured growth is a more defensible extrapolation
+// target), and a flat hold beyond blendEnd (an explicit, provenance-free
+// extrapolation guard — genuinely untested territory for either hull).
+function hullSideForceCoeff(lambdaDeg, hull) {
+  const { csV2A, csV2B, csV1A, csV1B, csBlendStartDeg, csBlendEndDeg } = hull;
+  if (lambdaDeg <= csBlendStartDeg) {
+    return csV2A * lambdaDeg + csV2B * lambdaDeg * lambdaDeg;
+  }
+  const csAtBlendStart = csV2A * csBlendStartDeg + csV2B * csBlendStartDeg * csBlendStartDeg;
+  const csV1AtBlendEnd = csV1A * csBlendEndDeg + csV1B * csBlendEndDeg * csBlendEndDeg;
+  if (lambdaDeg <= csBlendEndDeg) {
+    const frac = (lambdaDeg - csBlendStartDeg) / (csBlendEndDeg - csBlendStartDeg);
+    return csAtBlendStart + frac * (csV1AtBlendEnd - csAtBlendStart);
+  }
+  return csV1AtBlendEnd;
+}
+
 // hullSideForce(u, v, crewPosX, config) -> { Fx, Fy, yawMoment }
-//   Fy: low-AR-foil side force, saturating at hull.leewaySaturationDeg and
-//   then DEGRADING (not plateauing) past it — a foil beyond its designed
-//   leeway range stalls and mushes sideways rather than continuing to
-//   generate steady side force, per FIX_REQUEST_step1_round2.md R2-1.
+//   Fy: low-AR-foil side force via the measured CS(leeway) curve above —
+//   round 10, R10-3 replaces the old saturate-then-mush shape (no
+//   saturation observed in Flay's measured 0-16deg range; the vortex-lift
+//   mechanism STRENGTHENS with leeway there, the opposite of the old
+//   model's behavior inside that range).
 //   Fx: induced drag. A foil's side force is never free: it costs drag
-//   proportional to Fy tilted aft by the RAW (unclamped) leeway angle, so
-//   the penalty keeps growing past saturation even as Fy itself falls off.
+//   proportional to Fy tilted aft by the RAW (unclamped) leeway angle.
 //   crewPosX (fore-aft crew position, -1..1): phenomenological CLR shift,
 //   no pitch DOF (FIX_REQUEST_round4_roll_dof.md 1.5) — weight forward
 //   moves the center of lateral resistance forward by
@@ -1306,39 +1378,39 @@ function clrXPosition(crewPosX, config) {
 
 function hullSideForce(u, v, crewPosX, config) {
   const { hull, rho_w } = config;
-  const satRad = (hull.leewaySaturationDeg * Math.PI) / 180;
+  const DEG = Math.PI / 180;
   const leewayRaw = Math.atan2(v, Math.abs(u) + 0.05);
   const leewayAbs = Math.abs(leewayRaw);
-  const leewayClamped = Math.min(leewayAbs, satRad);
+  const leewayAbsDeg = leewayAbs / DEG;
 
-  const excess = Math.max(0, leewayAbs - satRad);
-  const mushFalloff = 1 / (1 + hull.leewayMushingCoeff * excess);
-
+  const CS = hullSideForceCoeff(leewayAbsDeg, hull);
   const V2 = u * u + v * v;
-  const FyQuadratic = -Math.sign(v) * hull.sideForceCoeff * Math.sin(leewayClamped) * mushFalloff * 0.5 * rho_w * hull.wettedSurface * V2;
+  const FyQuadratic = -Math.sign(v) * CS * 0.5 * rho_w * (hull.lateralArea ?? 0) * V2;
   // The lift-like term above is quadratic in speed and vanishes as V -> 0,
   // but real hull/ama drag has a linear (viscous-regime) component that
   // dominates at very low speed instead of disappearing — without it, a
-  // near-stalled boat (e.g. drifting close to head-to-wind, sideForceCoeff
-  // tuned low per FIX_REQUEST_step1_round2.md R2-1) has essentially no
-  // resistance to being blown sideways until it's already picked up
-  // meaningful leeway speed. This term is independent of sideForceCoeff so
-  // it doesn't reopen the R2-1 escape valve at normal sailing speeds, where
+  // near-stalled boat (e.g. drifting close to head-to-wind) has
+  // essentially no resistance to being blown sideways until it's already
+  // picked up meaningful leeway speed. Independent of CS's own shape, so
+  // it doesn't reopen that escape valve at normal sailing speeds, where
   // the quadratic term already dominates.
   const FyLinear = -hull.lowSpeedSideDamping * v;
   const FyFoil = FyQuadratic + FyLinear;
 
-  // --- Cross-flow (broadside) drag (R9 follow-up) ---
-  // Past stall the hull stops being a foil and becomes a BLUFF BODY dragged
-  // side-on through the water: large cross-flow pressure drag on the lateral
-  // plane (Cd ~ 1.1) that the foil-lift term above CANNOT capture — that
-  // term mushes to near zero past the ~15deg stall, so at beam-on the old
-  // model left the hull almost free to slide sideways (a spurious
-  // sail-sideways / stuck-crabbing attractor; see the ROUND9 findings).
-  // Standard ship-maneuvering cross-flow term Y_{v|v|}: opposes the
-  // TRANSVERSE velocity, quadratic in it, so it is negligible at normal
-  // leeway (v tiny) yet dominant near 90deg leeway — it makes sailing
-  // sideways feel like hitting a wall.
+  // --- Cross-flow (broadside) drag (R9 follow-up; role updated R10-3) ---
+  // A genuinely different physical regime from the foil-lift term above:
+  // near true beam-on (90deg) the hull stops being a foil at all and
+  // becomes a BLUFF BODY dragged side-on through the water (Cd ~ 1.1) —
+  // an order of magnitude past anything the measured CS curve reaches
+  // (CS holds flat at ~0.25 beyond its own 24deg extrapolation guard,
+  // nowhere near a true flat-plate coefficient). Standard ship-
+  // maneuvering cross-flow term Y_{v|v|}: opposes the TRANSVERSE
+  // velocity, quadratic in it, so it is negligible at normal leeway
+  // (v tiny) yet dominant near 90deg — it makes sailing sideways feel
+  // like hitting a wall, exactly where the foil term's own physically-
+  // reasonable flat hold would otherwise under-resist (the original,
+  // still-valid motivation: see the ROUND9 findings for the spurious
+  // "sails sideways" state this fixed).
   // Scaled by sin(leewayAbs): the full broadside coefficient only applies
   // near beam-on (90deg) — at small-to-moderate drift the flow stays more
   // attached and the effective cross-flow Cd is lower, so this does not
@@ -1351,7 +1423,36 @@ function hullSideForce(u, v, crewPosX, config) {
   // Induced drag is a FOIL property (side force tilted aft by the leeway
   // angle); the cross-flow term is already a pure resistance and must not be
   // re-counted as induced drag, so Fx uses the foil part only.
-  const Fx = -Math.sign(u) * Math.abs(FyFoil) * Math.sin(leewayAbs);
+  //
+  // "Sailing free" relief (round 10, R10-3): Flay's Fig 15 reports CR
+  // (total resistance) DECREASING with leeway for V-shaped hulls — the
+  // opposite of what a standard 2D induced-drag formula gives (Fx above
+  // grows with sin(leeway) regardless of hull shape). The physical
+  // picture: a V-hull's leeway-induced lift vector isn't purely
+  // perpendicular to the flow the way a simple 2D foil's is — 3D effects
+  // at the veed underwater sections give it a small FORWARD-projecting
+  // component this model's induced-drag formula doesn't capture on its
+  // own. No quantitative CR-vs-leeway curve was digitized (Fig 15 is
+  // described qualitatively only), so this is a conservative, EXPLICITLY
+  // qualitative reproduction, not a fitted curve: a relief fraction that
+  // ramps up from 0 at leeway=0, peaks around sailingFreeReliefPeakDeg,
+  // and fades back to 0 by sailingFreeReliefEndDeg (beyond which Flay's
+  // own claim isn't made). Verified against a direct assertion (harness/
+  // asserts.js): total resistance at 8-12deg leeway must not exceed the
+  // 0-deg value.
+  const reliefPeak = hull.sailingFreeReliefPeak ?? 0;
+  const reliefPlateauStartDeg = hull.sailingFreeReliefPlateauStartDeg ?? 8;
+  const reliefPlateauEndDeg = hull.sailingFreeReliefPlateauEndDeg ?? 12;
+  const reliefFadeEndDeg = hull.sailingFreeReliefFadeEndDeg ?? 24;
+  let relief = 0;
+  if (leewayAbsDeg > 0 && leewayAbsDeg <= reliefPlateauStartDeg) {
+    relief = reliefPeak * (leewayAbsDeg / reliefPlateauStartDeg);
+  } else if (leewayAbsDeg <= reliefPlateauEndDeg) {
+    relief = reliefPeak;
+  } else if (leewayAbsDeg <= reliefFadeEndDeg) {
+    relief = reliefPeak * (1 - (leewayAbsDeg - reliefPlateauEndDeg) / (reliefFadeEndDeg - reliefPlateauEndDeg));
+  }
+  const Fx = -Math.sign(u) * Math.abs(FyFoil) * Math.sin(leewayAbs) * (1 - relief);
 
   // Center of lateral resistance offset from CG (slightly aft, tunable) — gives
   // a modest weather-helm-like turning tendency rather than zero yaw coupling.
@@ -2249,14 +2350,14 @@ const MS_TO_KN = 1.9438;
 // recording's codeVersion is meaningful (harness/replay.js warns on
 // mismatch) for a downloaded bundle without requiring a build step for
 // plain `python3 -m http.server` development.
-const CODE_VERSION = "7baa220";
+const CODE_VERSION = "42a9b64";
 // BUILD_TIME: same pattern as CODE_VERSION above — tools/bundle.js
 // replaces this with the COMMIT's timestamp (not wall-clock build time),
 // so it stays stable across re-bundling the same commit and always
 // matches CODE_VERSION's hash. Shown in the bottom-right version footer
 // so a bug report/recording can be tied to an exact, dated build without
 // having to separately ask "which commit was this."
-const BUILD_TIME = "2026-07-18T14:27:55+02:00";
+const BUILD_TIME = "2026-07-19T16:13:46+02:00";
 
 // ---------------------------------------------------------------------
 // i18n — EN/PL. Static labels are marked with data-i18n="key" in
@@ -3717,10 +3818,19 @@ const BOAT_FIELDS = [
   { path: 'hull.residuaryPeakCr', kind: 'physics', unit: '', step: 0.0005, labelEn: 'Wave-resistance peak (Cr)', labelPl: 'Szczyt oporu falowego (Cr)' },
   { path: 'hull.residuaryFrPeak', kind: 'physics', unit: '', step: 0.01, labelEn: 'Peak Froude number', labelPl: 'Liczba Froude’a szczytu oporu' },
   { path: 'hull.residuaryFrWidth', kind: 'physics', unit: '', step: 0.01, labelEn: 'Resistance hump width', labelPl: 'Szerokość garbu oporu' },
-  { path: 'hull.sideForceCoeff', kind: 'physics', unit: '', step: 0.05, labelEn: 'Hull side-force coeff.', labelPl: 'Współcz. siły bocznej kadłuba' },
-  { path: 'hull.leewaySaturationDeg', kind: 'physics', unit: '°', step: 1, labelEn: 'Leeway saturation angle', labelPl: 'Kąt nasycenia znosu' },
-  { path: 'hull.leewayMushingCoeff', kind: 'physics', unit: '', step: 0.5, labelEn: 'Post-saturation mushing coeff.', labelPl: 'Współcz. tłumienia po nasyceniu' },
+  { path: 'hull.csV2A', kind: 'physics', unit: '', step: 0.0001, labelEn: 'Side-force coeff. (V2 fit, linear)', labelPl: 'Współcz. siły bocznej (V2, liniowy)' },
+  { path: 'hull.csV2B', kind: 'physics', unit: '', step: 0.0001, labelEn: 'Side-force coeff. (V2 fit, quadratic)', labelPl: 'Współcz. siły bocznej (V2, kwadratowy)' },
+  { path: 'hull.csV1A', kind: 'physics', unit: '', step: 0.0001, labelEn: 'Side-force coeff. (V1 blend, linear)', labelPl: 'Współcz. siły bocznej (V1, liniowy)' },
+  { path: 'hull.csV1B', kind: 'physics', unit: '', step: 0.0001, labelEn: 'Side-force coeff. (V1 blend, quadratic)', labelPl: 'Współcz. siły bocznej (V1, kwadratowy)' },
+  { path: 'hull.csBlendStartDeg', kind: 'physics', unit: '°', step: 1, labelEn: 'CS blend start angle', labelPl: 'Kąt startu mieszania CS' },
+  { path: 'hull.csBlendEndDeg', kind: 'physics', unit: '°', step: 1, labelEn: 'CS blend end angle (flat beyond)', labelPl: 'Kąt końca mieszania CS (dalej płasko)' },
   { path: 'hull.lowSpeedSideDamping', kind: 'physics', unit: '', step: 5, labelEn: 'Low-speed side damping', labelPl: 'Tłumienie boczne przy małej prędk.' },
+  { path: 'hull.sailingFreeReliefPeak', kind: 'physics', unit: '', step: 0.05, labelEn: '"Sailing free" relief magnitude', labelPl: 'Wielkość ulgi "żeglowania swobodnego"' },
+  { path: 'hull.sailingFreeReliefPlateauStartDeg', kind: 'physics', unit: '°', step: 1, labelEn: '"Sailing free" plateau start', labelPl: 'Początek plateau "żeglowania swobodnego"' },
+  { path: 'hull.sailingFreeReliefPlateauEndDeg', kind: 'physics', unit: '°', step: 1, labelEn: '"Sailing free" plateau end', labelPl: 'Koniec plateau "żeglowania swobodnego"' },
+  { path: 'hull.sailingFreeReliefFadeEndDeg', kind: 'physics', unit: '°', step: 1, labelEn: '"Sailing free" fade-out angle', labelPl: 'Kąt zaniku "żeglowania swobodnego"' },
+  { path: 'hull.crossFlowDragCoeff', kind: 'physics', unit: '', step: 0.05, labelEn: 'Cross-flow (broadside) drag coeff.', labelPl: 'Współcz. oporu poprzecznego (na boku)' },
+  { path: 'hull.lateralArea', kind: 'physics', unit: 'm²', step: 0.1, labelEn: 'Hull lateral (projected side) area', labelPl: 'Pow. boczna kadłuba (rzut)' },
   { path: 'hull.yawDampingCoeff', kind: 'physics', unit: '', step: 10, labelEn: 'Yaw damping coeff.', labelPl: 'Tłumienie odchylenia (yaw)' },
   { path: 'hull.clrXFraction', kind: 'physics', unit: '', step: 0.01, labelEn: 'CLR offset (fraction)', labelPl: 'Przesunięcie CLR (ułamek)' },
   { path: 'hull.crewForeAftTrimCoeff', kind: 'physics', unit: '', step: 0.01, labelEn: 'Crew fore-aft CLR trim coeff.', labelPl: 'Współcz. przesuwu CLR przez załogę' },
