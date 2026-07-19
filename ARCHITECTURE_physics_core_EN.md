@@ -282,10 +282,13 @@ cross-check at startup as required by the main prompt. Fixed schema version: a
       // direction strictly and magnitude loosely, not a tight number).
       // config.hull.ceLeverSign flipped from -1 (round 5) to +1 (round 7):
       // the lead-dominated x_CE is now typically POSITIVE (round 5's was
-      // typically negative, swing-dominated) — same underlying "match the
-      // Pjoa manual's field-validated sheet-in-bears-away/eased-luffs
-      // direction" empirical flip knob, just re-verified against the new
-      // geometry's sign. ceBrailShift (config.sail, ~0.3) is unchanged
+      // typically negative, swing-dominated). Round 10 (R10-4, docs/adr/
+      // 0004) found this +1 value is now the IDENTITY, not an active
+      // flip: once round 9's lead fix (0.15->0.05*LWL) removed a
+      // structural lee-helm bias, the naive r x F derivation matches the
+      // boat's real steering direction on its own — see aero.js's own
+      // comment at this line for the full history. ceBrailShift
+      // (config.sail, ~0.3) is unchanged
       // from round 5: shrinks x_CE's along-yard swing proportionally to
       // brailWind (spilling the sail's rear moves the effective CE toward
       // the tack), damping yaw sensitivity downwind (T5) without needing

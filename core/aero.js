@@ -266,30 +266,29 @@ export function sailForces(state, controls, config) {
   // under heel vs. the yard's OWN swing angle) and stays additive with it.
   const yawHeelSign = config.hull.yawHeelSign ?? 1;
   const yawMomentHeel = yawHeelSign * state.end * config.sail.CEheight * Math.sin(phi) * Fx;
-  // ceLeverSign (P1.2/T3 — verified-empirically flip knob, same pattern as
-  // yawHeelSign above): the from-scratch geometric derivation (CE aft of
-  // CG when trimmed-in, forward when eased) gives standard weather/lee-helm
-  // physics — trim-in -> weather helm/luffs, ease -> lee helm/bears away —
-  // which is the OPPOSITE polarity from the Pjoa manual's field-validated
-  // rule III.3/4 ("sheet in bears away, eased luffs", ROUND5_CONSOLIDATED_
-  // work_order.md T3). Flipped to match the manual's documented practice
-  // rather than the unaided derivation, exactly as yawHeelSign was already
-  // fixed empirically elsewhere in this codebase without a from-scratch
-  // proof.
+  // ceLeverSign: history below; CURRENTLY AN IDENTITY (+1) — round 10
+  // (R10-4, ROUND10_data_integration.md, docs/adr/0004) re-examined this
+  // TODO and found the flip is no longer active. Round 5-7's derivation
+  // (CE aft of CG when trimmed-in) gave standard weather-helm physics —
+  // the OPPOSITE of the round-4-era Pjoa-manual rule this codebase used
+  // to encode ("sheet in bears away"), so ceLeverSign was set to -1 to
+  // flip it. The round-9 follow-up (ROUND9_physics_fidelity_findings.md)
+  // retired that manual-encoded rule entirely — a structural lee-helm
+  // bias at the old lead=15%LWL was masking the boat's REAL behavior;
+  // once `lead` was corrected to 5%LWL, the boat genuinely points AND
+  // bears away through the sail in the STANDARD (non-inverted) direction
+  // (harness/asserts.js's "Sail steers" block) — i.e. the naive,
+  // unflipped r x F derivation is what the corrected geometry actually
+  // wants, and ceLeverSign now defaults to +1 (config.js), the identity.
   //
-  // Round 9 (R9-3, ROUND9_physics_fidelity_work_order.md) was tasked with
-  // removing this flip by deriving the correct sign from geometry — NOT
-  // done: doing so needs real reference data (Irwin/Flay et al. 2023's
-  // Csf/Crm coefficients, cited by the work order for exactly this) to
-  // distinguish "the naive r x F derivation has a sign error somewhere in
-  // this model's geometry" from "a real Pjoa's CE/CLR balance genuinely
-  // works opposite to a standard yacht's for reasons this model doesn't
-  // capture (asymmetric crab-claw rigging, shunting bow/stern instead of
-  // tacking, etc.)" — neither is resolvable from this codebase alone.
-  // Left as an explicit, honest TODO rather than declared "derived":
-  // per the work order's own instruction, "if a sign flip is still needed
-  // after a correct derivation, the geometry is still wrong."
-  const ceLeverSign = config.hull.ceLeverSign ?? -1;
+  // R10-4 could not go further to a fully from-scratch, assumption-free
+  // derivation: Di Piazza 2014 and Flay 2025 (this round's new data)
+  // measured FORCE coefficients (sail CL/CD, hull CS), not CE/CLR
+  // POSITION — `hull.lead`, `sail.ceSwingFraction`, and `hull.clrXFraction`
+  // remain estimated lever-arm geometry, not measured. The sign question
+  // is resolved (no active flip); the lever-arm MAGNITUDES are still
+  // tunable estimates, same standing TODO, narrower scope.
+  const ceLeverSign = config.hull.ceLeverSign ?? 1;
   const yawMoment = ceLeverSign * (xCE * Fy - yCE * Fx) + yawMomentHeel;
 
   return { Fx, Fy, heelMoment, yawMoment, yawMomentHeel, alpha, alphaSailor, aw, CL, CD };
