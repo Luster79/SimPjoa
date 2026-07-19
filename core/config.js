@@ -89,10 +89,63 @@ export function polhamusCD(CL, alphaRad, CD0, s) {
 }
 
 // ---------------------------------------------------------------------
-// Load + parse the aero table CSV into per-apex arrays
+// v2 aero table generator (round 10, R10-1, ROUND10_data_integration.md,
+// docs/adr/0003): crab_claw_CL_CD_v2.csv rescales the SAME Polhamus
+// functional-form curve (kept for interpolation smoothness — the work
+// order's own instruction) to Di Piazza, Pearthree & Paille 2014's
+// measured Santa Cruz wind-tunnel anchors (Fig 3) instead of the pure
+// theoretical suction-analogy curve, which overshoots CLmax by ~35%
+// (1.88 analytic vs ~1.38 measured). Three-parameter fit per apex angle:
+//   - CLgain: scales CL so the theoretical peak matches measured CLmax.
+//   - alphaStretch: remaps the alpha axis (piecewise: a plain multiply
+//     on the rising side 0..peakAlpha, a linear rescale on the falling
+//     side peakAlpha..90 so old_alpha is ALWAYS in [0,90] — a naive
+//     single multiply pushes old_alpha past 90 on the falling side for
+//     alphaStretch far from 1, where the flat-plate formula (only valid
+//     on a full sin/cos period through 90) turns negative).
+//   - CD0/s: refit via least-squares against the four measured (CL,CD)
+//     anchor pairs (Di Piazza gives no alpha for these — only CL/CD — so
+//     each anchor's alpha is back-solved from CLgain/alphaStretch first).
+// peakAlphaDeg/peakCL are the exact (fine-search) location of the RAW
+// Polhamus curve's own peak per apex — precomputed once here rather than
+// re-searched at runtime; CLgain is defined directly from it
+// (measured CLmax / peakCL), so it never needs to be re-derived.
+// See ROUND10_data_integration_findings.md for the full fit residuals
+// and the L/Dmax-region constraint (the curve must not exceed the
+// paper's own labeled peak L/D=0.70/0.13=5.38 anywhere else).
+export const AERO_V2_PARAMS = {
+  45: { peakAlphaDeg: 46.849, peakCL: 1.916361, CLgain: 0.7202, alphaStretch: 1.10, CD0: 0.040, s: 0.406 },
+  60: { peakAlphaDeg: 45.517, peakCL: 2.126019, CLgain: 0.6491, alphaStretch: 1.10, CD0: 0.040, s: 0.428 },
+};
+
+// newAlphaDeg -> old (raw-Polhamus) alphaDeg, piecewise per the comment above.
+function v2OldAlphaFor(newAlphaDeg, apexDeg) {
+  const { peakAlphaDeg, alphaStretch } = AERO_V2_PARAMS[apexDeg];
+  const peakNewDeg = peakAlphaDeg * alphaStretch;
+  if (newAlphaDeg <= peakNewDeg) return newAlphaDeg / alphaStretch;
+  return peakAlphaDeg + (newAlphaDeg - peakNewDeg) * (90 - peakAlphaDeg) / (90 - peakNewDeg);
+}
+
+export function polhamusCLv2(alphaRad, apexDeg) {
+  const { CLgain } = AERO_V2_PARAMS[apexDeg];
+  const alphaDeg = (alphaRad * 180) / Math.PI;
+  const oldAlphaDeg = v2OldAlphaFor(alphaDeg, apexDeg);
+  const AR = polhamusAR(apexDeg);
+  const Kp = polhamusKp(AR);
+  return CLgain * polhamusCL((oldAlphaDeg * Math.PI) / 180, Kp, polhamusKv);
+}
+
+export function polhamusCDv2(CL, alphaRad, apexDeg) {
+  const { CD0, s } = AERO_V2_PARAMS[apexDeg];
+  const alphaClamped = Math.min(alphaRad, (89.9 * Math.PI) / 180);
+  return CD0 + s * CL * Math.tan(alphaClamped);
+}
+
 // ---------------------------------------------------------------------
-function loadAeroTable() {
-  const text = readFileSync(path.join(DATA_DIR, 'crab_claw_CL_CD_polhamus.csv'), 'utf8');
+// Load + parse an aero table CSV into per-apex arrays
+// ---------------------------------------------------------------------
+function loadAeroTable(filename) {
+  const text = readFileSync(path.join(DATA_DIR, filename), 'utf8');
   const rows = parseCSV(text);
   const byApex = {};
   for (const r of rows) {
@@ -149,6 +202,45 @@ function crossCheckAeroTable(byApex) {
   }
 }
 
+// Cross-check for crab_claw_CL_CD_v2.csv (round 10, R10-1): same integrity
+// purpose as crossCheckAeroTable above, but regenerates against the v2
+// generator (polhamusCLv2/polhamusCDv2, AERO_V2_PARAMS) instead of the raw
+// Polhamus formula — the v2 table is a measured-anchored RESCALING, not a
+// direct Polhamus output, so checking it against the unscaled formula
+// would always fail. Tolerance unchanged (2%) per the work order.
+function crossCheckAeroTableV2(byApex) {
+  const REL_TOL = 0.02;
+  for (const apexStr of Object.keys(byApex)) {
+    const apex = num(apexStr);
+    const table = byApex[apexStr];
+    for (let i = 0; i < table.alphaDeg.length; i++) {
+      const alphaDeg = table.alphaDeg[i];
+      const alphaRad = (alphaDeg * Math.PI) / 180;
+      const CLload = table.CL[i];
+
+      if (alphaDeg === 0 || alphaDeg === 90) {
+        if (Math.abs(CLload) > 1e-6) throw new Error(`aero v2 table integrity: CL(${alphaDeg}) should be 0 at apex ${apex}`);
+        const CDload = table.CD[i];
+        if (alphaDeg === 90 && (CDload < 1.0 || CDload > 1.4)) {
+          throw new Error(`aero v2 table integrity: CD(90) out of sane flat-plate range at apex ${apex}: ${CDload}`);
+        }
+        continue;
+      }
+      const CLgen = polhamusCLv2(alphaRad, apex);
+      const relCL = Math.abs(CLgen - CLload) / Math.max(Math.abs(CLload), 1e-9);
+      if (relCL > REL_TOL) {
+        throw new Error(`aero v2 table integrity: CL mismatch at apex ${apex} alpha ${alphaDeg}deg: table=${CLload} generated=${CLgen.toFixed(4)} (${(relCL * 100).toFixed(2)}%)`);
+      }
+      const CDgen = polhamusCDv2(CLgen, alphaRad, apex);
+      const CDload = table.CD[i];
+      const relCD = Math.abs(CDgen - CDload) / Math.max(Math.abs(CDload), 1e-9);
+      if (relCD > REL_TOL) {
+        throw new Error(`aero v2 table integrity: CD mismatch at apex ${apex} alpha ${alphaDeg}deg: table=${CDload} generated=${CDgen.toFixed(4)} (${(relCD * 100).toFixed(2)}%)`);
+      }
+    }
+  }
+}
+
 function loadBoatParamsCSV() {
   const text = readFileSync(path.join(DATA_DIR, 'example_proa_parameters.csv'), 'utf8');
   const rows = parseCSV(text);
@@ -161,8 +253,15 @@ function loadBoatParamsCSV() {
 // Default CONFIG assembly
 // ---------------------------------------------------------------------
 function buildDefaultConfig() {
-  const aeroTable = loadAeroTable();
-  crossCheckAeroTable(aeroTable);
+  // Round 10 (R10-1): two switchable aero tables — v1 (Marchaj/Polhamus
+  // theoretical) and v2 (Di Piazza 2014 measured-anchored, default) — see
+  // docs/adr/0003. Both loaded unconditionally (tiny CSVs); the active one
+  // is picked by sail.aeroTableVersion and re-derived on every createConfig
+  // call (below) so the boat-design tab can switch it at runtime.
+  const aeroTableV1 = loadAeroTable('crab_claw_CL_CD_polhamus.csv');
+  crossCheckAeroTable(aeroTableV1);
+  const aeroTableV2 = loadAeroTable('crab_claw_CL_CD_v2.csv');
+  crossCheckAeroTableV2(aeroTableV2);
   const p = loadBoatParamsCSV();
   const yawInertiaFactor = 0.06; // tunable — fraction of m*L^2 approximating yaw inertia of a slender hull
 
@@ -273,27 +372,25 @@ function buildDefaultConfig() {
       area: p.sail_area_m2,                // 12 m^2
       apexAngleDeg: p.sail_apex_angle_deg,  // 50 deg (45-60 valid range)
       CEheight: p.CE_height_m,              // 2.0 m
-      // camber/CD0/s: round 7 D-5 detuned these (camber->0, s->1.0, CD0->
-      // 0.09) specifically to drag the TWA-40/TWA-90 polar numbers under
-      // acceptance bands that were themselves calibrated against the OLD,
-      // wave-walled hull. Round 9 (R9-2, ROUND9_physics_fidelity_work_
-      // order.md) found that detune was fixing a hull-limited symptom with
-      // a sail-side knob (Round 7 sec 8/D-5 itself confirmed TWA-90 barely
-      // moves even at CD0=0.20 — hull-wave-resistance-limited, not
-      // sail-limited) — now that R9-1 replaced the wave wall with a
-      // physical residuary model, undone: `s` back down to a partial
-      // (rather than full) leading-edge-suction-loss factor —
-      // data/README_input_data_EN.md's own finding that full suction loss
-      // "underestimates L/D at small angles of attack (gives ~3-4, while
-      // practice indicates up to ~8)" and its own recommended fix (s<1);
-      // `camber` restored to the prompt's documented default (a real crab
-      // claw is cambered; raises close-hauled CL ~35% per cited
-      // practitioner reports); `CD0` back to the data-provenance baseline
-      // estimate. Apply AFTER R9-1 (done above) so the two aren't tuned
-      // against each other.
-      camber: 0.10,
-      CD0: 0.06,
-      s: 0.80,                                 // tunable partial-suction factor (RUNTIME only) — partial recovery per data/README_input_data_EN.md, restores small-alpha L/D toward the practical ~6-8 range
+      // camber/CD0/s: round 10 (R10-1, docs/adr/0003) retune. aero.js never
+      // reads the aeroTable's own CD column (only CL) — CD is recomputed
+      // at RUNTIME from CD0/s below, so switching the CL table to the v2
+      // measured-anchored curve does NOTHING to drag unless these two are
+      // ALSO updated to the same fit (crab_claw_CL_CD_v2.csv's own
+      // generation parameters, AERO_V2_PARAMS in config.js): CD0=0.040
+      // (identical for both apex 45/60 in the fit); `s` interpolated at
+      // apexAngleDeg=50 between the two apex fits (0.406/0.428) -> ~0.41.
+      // `camber`: SET TO 0, changed from round 9's 0.10 — the Di Piazza
+      // Santa Cruz curve is a MEASURED sail's actual CL, already carrying
+      // whatever real camber that sail had; the runtime camber multiplier
+      // (camberCLFactor, aero.js) exists to approximate camber's benefit
+      // on TOP OF the flat, uncambered v1/Polhamus theoretical curve — on
+      // v2 it would double-count camber already baked into the measured
+      // data. Only re-enable camber>0 if aeroTableVersion is switched back
+      // to 'v1'.
+      camber: 0,
+      CD0: 0.040,
+      s: 0.41,                                 // tunable (RUNTIME only) — v2 fit, apexAngleDeg=50-interpolated between apex45 (0.406) and apex60 (0.428); see AERO_V2_PARAMS
       // --- Sheet constraint (ROUND5_CONSOLIDATED_work_order.md P1) ---
       yardSwingRateDegPerSec: 90,             // tunable — max slew rate for state.delta relaxing toward its equilibrium (request's own suggested 60-120deg/s band: "a swinging yard, not a teleport")
       deltaMaxReleaseDeg: 90,                 // the sheet limit is released to this during a shunt's ease/transfer/swap phases, then closes back to the commanded controls.sheet once 'sheet' starts hauling it in (P1.1 point 3)
@@ -334,6 +431,15 @@ function buildDefaultConfig() {
       // this round's scope — deferred, not abandoned; see
       // ROUND9_physics_fidelity_findings.md.
       verticalLiftFraction: 0,
+      // aeroTableVersion (round 10, R10-1, docs/adr/0003): 'v2' (default)
+      // = Di Piazza 2014 measured-anchored table; 'v1' = the original
+      // Marchaj/Polhamus theoretical table. Kept switchable (not a one-way
+      // migration) per the round-0 design intent ("wymienne zestawy
+      // krzywych" — swappable curve sets) so Marchaj-vs-DiPiazza stays a
+      // live comparison, not just a historical note. createConfig()
+      // re-derives `aeroTable` from this field on every call, so the
+      // boat-design tab can switch it at runtime.
+      aeroTableVersion: 'v2',
     },
 
     crew: {
@@ -411,7 +517,9 @@ function buildDefaultConfig() {
       sheetDuration: 1.6,       // s
     },
 
-    aeroTable,
+    aeroTableV1,
+    aeroTableV2,
+    aeroTable: aeroTableV2, // default, matching sail.aeroTableVersion's default above; createConfig() re-derives this after any patch merge
   };
 }
 
@@ -420,6 +528,7 @@ export function validateConfig(config) {
   const inRange = (v, lo, hi, name) => { if (!(v >= lo && v <= hi)) errs.push(`${name}=${v} out of range [${lo},${hi}]`); };
 
   if (config.configVersion !== CONFIG_VERSION) errs.push(`configVersion mismatch: ${config.configVersion} !== ${CONFIG_VERSION}`);
+  if (!['v1', 'v2'].includes(config.sail.aeroTableVersion)) errs.push(`sail.aeroTableVersion must be 'v1' or 'v2', got ${config.sail.aeroTableVersion}`);
   inRange(config.sail.apexAngleDeg, 45, 60, 'sail.apexAngleDeg');
   inRange(config.sail.camber, 0, 0.20, 'sail.camber');
   inRange(config.crew.posMin, -1, 0, 'crew.posMin');
@@ -458,5 +567,13 @@ export function deepMerge(base, patch) {
 export function createConfig(userConfig) {
   const base = buildDefaultConfig();
   const merged = deepMerge(base, userConfig);
+  // Re-derive the active aero table from sail.aeroTableVersion every call
+  // (round 10, R10-1) — a patch touching only sail.aeroTableVersion (e.g.
+  // from the boat-design tab) must not need to also carry the whole table
+  // object; deepMerge only overlays what a patch actually mentions, and
+  // aeroTable/aeroTableV1/aeroTableV2 are never part of a boat-design
+  // patch, so this is the one place that keeps them in sync with the
+  // version flag after any merge.
+  merged.aeroTable = merged.sail.aeroTableVersion === 'v1' ? merged.aeroTableV1 : merged.aeroTableV2;
   return validateConfig(merged);
 }
