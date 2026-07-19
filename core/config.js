@@ -457,9 +457,19 @@ function buildDefaultConfig() {
       // is far too responsive for a real Pjoa. A flow-attached aerodynamic
       // center tracks closer to the leading edge across the practical trim
       // range than the raw geometric midchord, so only a fraction of the
-      // full swing should reach it. 0.2 is empirically landed against the
-      // D-6 target (0.3-1.5deg/s steady sail-trim turn rate at TWS 6,
-      // 5-15deg over a 10s window) — see harness/asserts.js T1/T3/T4/T5.
+      // full swing should reach it.
+      // Round 10b (D1) audit: this comment used to claim "0.2 is
+      // empirically landed against the D-6 target", contradicting the
+      // 0.5 checked in right below it. git history (`git log -p --
+      // core/config.js`) shows 0.5 is the ONLY value ever committed here —
+      // there is no commit where 0.2 was the active, tested value. The
+      // referenced tests (T1/T3/T4/T5) were also retired and replaced by
+      // the R9 follow-up's "Sail steers"/"T2" steeringDrift+steeringOk
+      // checks below. Re-verified directly this round: at 0.5 the current
+      // "Sail steers: trimming the sheet in points up" probe drifts
+      // 2.3deg (passes steeringOk's 2deg floor); at 0.2 it drifts only
+      // 0.17deg — noise-level, FAILS. So 0.5 is what's actually validated
+      // today; the old "0.2" claim was dropped rather than restored.
       ceSwingFraction: 0.5,
       // verticalLiftFraction: round 9, R9-4. Fraction of the sail's force
       // treated as vertical (upward) lift on a normally-trimmed crab claw,
@@ -579,6 +589,10 @@ export function validateConfig(config) {
   if (!['v1', 'v2'].includes(config.sail.aeroTableVersion)) errs.push(`sail.aeroTableVersion must be 'v1' or 'v2', got ${config.sail.aeroTableVersion}`);
   inRange(config.sail.apexAngleDeg, 45, 60, 'sail.apexAngleDeg');
   inRange(config.sail.camber, 0, 0.20, 'sail.camber');
+  // ceSwingFraction is a fraction of the half-chord (round 7, D-6 — see the
+  // comment on its default above for the provenance audit this bound comes
+  // from); values outside (0,1] were never validated by any committed test.
+  inRange(config.sail.ceSwingFraction, 0, 1, 'sail.ceSwingFraction');
   inRange(config.crew.posMin, -1, 0, 'crew.posMin');
   inRange(config.crew.posMax, 0, 2, 'crew.posMax');
   inRange(config.rudder.maxDeflectionDeg, 1, 60, 'rudder.maxDeflectionDeg');
