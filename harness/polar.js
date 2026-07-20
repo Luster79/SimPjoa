@@ -76,17 +76,22 @@ const HEADING_HOLD_TOLERANCE = 15 * DEG;
 //   FIX_REQUEST_step1_review.md MEDIUM-2: a previous version returned it
 //   unconditionally, letting a transient spike from an unsettled, unstable
 //   trim masquerade as the polar's best speed for that heading).
-// simulateToSteady(config, twaDeg, tws, sheetDeg, crewPos, maxSeconds) ->
-// { speed, settled, deltaDeg }. sheetDeg is the SEARCH VARIABLE now (R5-1):
-// the sheet limit, not the actual yard angle — the settled actual yard
-// angle (state.delta) is reported separately as deltaDeg, since the two
-// only coincide when the sheet is taut (see bestForHeading's assertion-
-// facing use in harness/asserts.js).
-function simulateToSteady(config, twaDeg, tws, sheetDeg, crewPos, maxSeconds = 25) {
+// simulateToSteady(config, twaDeg, tws, sheetDeg, crewPos, brailWind,
+// maxSeconds) -> { speed, settled, deltaDeg }. sheetDeg is the SEARCH
+// VARIABLE now (R5-1): the sheet limit, not the actual yard angle — the
+// settled actual yard angle (state.delta) is reported separately as
+// deltaDeg, since the two only coincide when the sheet is taut (see
+// bestForHeading's assertion-facing use in harness/asserts.js). brailWind
+// (round 10c, C1): the windward brail ("carrot") is now also a search
+// variable, but only for deep TWAs (see BRAIL_SEARCH_DEEP below) — the
+// two-regime brailWind characteristic makes a partial carrot pull a real
+// candidate for the polar-optimal deep trim, not just a survival/panic
+// control.
+function simulateToSteady(config, twaDeg, tws, sheetDeg, crewPos, brailWind = 0, maxSeconds = 25) {
   const windDirFrom = HEADING0 + twaDeg * DEG;
   const controls = {
     windDirFrom, windSpeed: tws, sheet: sheetDeg * DEG, rudder: 0,
-    brailLee: 0, brailWind: 0, crewPos, crewPosX: 0, shuntRequest: false,
+    brailLee: 0, brailWind, crewPos, crewPosX: 0, shuntRequest: false,
   };
 
   let state = makeInitialState(Math.min(Math.abs(sheetDeg) * DEG, Math.PI / 2));
@@ -129,12 +134,24 @@ function simulateToSteady(config, twaDeg, tws, sheetDeg, crewPos, maxSeconds = 2
 // sheet and crew position" description — not just a light-air trim detail.
 const CREW_POS_SEARCH = [0, 0.3, 0.6, 1.0];
 
+// BRAIL_SEARCH_DEEP (round 10c, C1): coarse grid, only added for TWA>=135
+// (see bestForHeading) — the manual's "carrot" is a downwind-only
+// technique, and searching it across the whole polar would multiply the
+// (already O(sheet*crewPos)) search cost for no benefit upwind/on a reach,
+// where a partial windward brail is never the fast trim. 0 and 0.6 bracket
+// the TRIM regime (config.sail.brailTrimRange's own default); 0.3 samples
+// its middle.
+const BRAIL_SEARCH_DEEP = [0, 0.3, 0.6];
+
 function bestForHeading(config, twaDeg, tws) {
-  let best = { speed: 0, sheet: 0, delta: 0, crewPos: 0 };
+  let best = { speed: 0, sheet: 0, delta: 0, crewPos: 0, brailWind: 0 };
+  const brailOptions = twaDeg >= 135 ? BRAIL_SEARCH_DEEP : [0];
   for (let sheet = 4; sheet <= 88; sheet += 4) {
     for (const crewPos of CREW_POS_SEARCH) {
-      const { speed, settled, deltaDeg } = simulateToSteady(config, twaDeg, tws, sheet, crewPos);
-      if (settled && speed > best.speed) best = { speed, sheet, delta: deltaDeg, crewPos };
+      for (const brailWind of brailOptions) {
+        const { speed, settled, deltaDeg } = simulateToSteady(config, twaDeg, tws, sheet, crewPos, brailWind);
+        if (settled && speed > best.speed) best = { speed, sheet, delta: deltaDeg, crewPos, brailWind };
+      }
     }
   }
   return best;
@@ -151,6 +168,7 @@ export function computePolar(config, { twsList, twaFrom = 40, twaTo = 170, step 
         bestSheetAngle: best.sheet,
         deltaAngle: best.delta,
         bestCamberUse: config.sail.camber,
+        bestBrailWind: best.brailWind,
       });
     }
   }

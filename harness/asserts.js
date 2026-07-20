@@ -1297,6 +1297,154 @@ export function runAsserts(config) {
     }
   }
 
+  // --- C (Round 10c, ROUND10c_carrot_two_regime.md, C2): two-regime
+  // carrot acceptance tests. The T5 xfail re-run C2 also asks for no
+  // longer applies literally — round 10b (D2) already promoted T5 out of
+  // xfail (it's the direct, non-xfail check above at "T5: the windward
+  // brail (carrot) lowers downwind rudder workload"), so there is no
+  // xfail left to re-run here; that check itself re-verifies under C1
+  // (workload dropped further: see the findings report for the before/
+  // after numbers). Likewise "survival regime regression" is the existing
+  // T6 / stop-scenario / squall-scenario checks elsewhere in this file
+  // continuing to pass unchanged — no new code needed for that item,
+  // just confirmed by the full suite run. ---
+  {
+    // C-speed: deep-course speed sanity, data-anchored. steady speed
+    // ratio speed(TWA160)/speed(TWA105) at TWS6 with optimal trim
+    // (computePolar's own search now includes brailWind for TWA>=135 —
+    // see harness/polar.js BRAIL_SEARCH_DEEP) must bracket the Di Piazza
+    // CR ratio (1.05/1.52 = 0.69) with slack for apparent-wind/hull
+    // effects: [0.55, 0.85]. Single-TWA queries (step=1) rather than the
+    // 10deg sweep grid, since 105/160 aren't on that grid.
+    const tws = 6;
+    const row105 = computePolar(config, { twsList: [tws], twaFrom: 105, twaTo: 105, step: 1 })[0];
+    const row160 = computePolar(config, { twsList: [tws], twaFrom: 160, twaTo: 160, step: 1 })[0];
+    const ratio = row160.bestSpeed / row105.bestSpeed;
+    check('C: deep-course speed ratio speed(TWA160)/speed(TWA105) at TWS6 brackets the Di Piazza CR ratio (0.69)',
+      ratio >= 0.55 && ratio <= 0.85,
+      `speed(105)=${row105.bestSpeed.toFixed(3)} (sheet=${row105.bestSheetAngle},brail=${row105.bestBrailWind}) speed(160)=${row160.bestSpeed.toFixed(3)} (sheet=${row160.bestSheetAngle},brail=${row160.bestBrailWind}) ratio=${ratio.toFixed(3)}`);
+  }
+
+  {
+    // C-bearaway: bear-away authority. From TWA140, applying carrot 0.5
+    // WITH rudder authority capped at 0.3 (not the autopilot's full [-1,1]
+    // budget) must still reach and hold TWA165 — demonstrating the
+    // carrot's OWN yaw moment does the bulk of the work, restating 10b/D4
+    // now that the carrot is fixed. Direction-strict, magnitude-loose
+    // (steeringOk-style philosophy): windDirFrom is fixed at HEADING0+
+    // 140deg, so TWA165 corresponds to heading = HEADING0-25deg.
+    const startTwaDeg = 140, targetTwaDeg = 165, tws = 6, sheetDeg = 52;
+    const windDirFrom = HEADING0 + startTwaDeg * DEG;
+    const targetHeading = HEADING0 - (targetTwaDeg - startTwaDeg) * DEG;
+    const dt = config.dt;
+    let state = freshState(sheetDeg * DEG);
+    // Phase 1: settle at TWA140 under full autopilot authority, no carrot.
+    for (let i = 0; i < Math.round(20 / dt); i++) {
+      const controls = { windDirFrom, windSpeed: tws, sheet: sheetDeg * DEG,
+        rudder: headingHoldRudder(state, HEADING0, config),
+        brailLee: 0, brailWind: 0, crewPos: 0.2, crewPosX: 0, shuntRequest: false };
+      state = integrate(state, controls, config, dt);
+    }
+    // Phase 2: apply the carrot, target the deeper heading, cap the
+    // autopilot's own rudder output at 0.3 of full authority.
+    const totalSteps = Math.round(60 / dt);
+    const tailStart = Math.round(50 / dt);
+    let maxRudderUsed = 0, tailMinTwa = Infinity, tailMaxTwa = -Infinity;
+    for (let i = 0; i < totalSteps; i++) {
+      const raw = headingHoldRudder(state, targetHeading, config);
+      const rudder = Math.max(-0.3, Math.min(0.3, raw));
+      maxRudderUsed = Math.max(maxRudderUsed, Math.abs(rudder));
+      const controls = { windDirFrom, windSpeed: tws, sheet: sheetDeg * DEG, rudder,
+        brailLee: 0, brailWind: 0.5, crewPos: 0.2, crewPosX: 0, shuntRequest: false };
+      state = integrate(state, controls, config, dt);
+      const twaNow = Math.abs(normalizeAngle(windDirFrom - state.heading)) / DEG;
+      if (i >= tailStart) { tailMinTwa = Math.min(tailMinTwa, twaNow); tailMaxTwa = Math.max(tailMaxTwa, twaNow); }
+    }
+    check('C: bear-away authority — carrot 0.5 with rudder capped at 0.3 takes TWA140 to holding TWA165 (10b/D4 restated)',
+      !state.capsized && tailMinTwa >= targetTwaDeg - 10 && tailMaxTwa <= targetTwaDeg + 10,
+      `tail TWA range [${tailMinTwa.toFixed(1)}, ${tailMaxTwa.toFixed(1)}] target=${targetTwaDeg} maxRudderUsed=${maxRudderUsed.toFixed(2)}`);
+  }
+
+  {
+    // C-deadrun: dead-run release. Trimmed to TWA178 with the carrot,
+    // releasing the rudder entirely must not luff (round up) past TWA160
+    // within 30s — quantifies the user's "set to 180, luffs on release"
+    // complaint (recordings/kurspelny2.json's own recorded technique).
+    const twaDeg = 178, tws = 6, sheetDeg = 60; // sheet matches D4-2's own polar-optimal dead-run trim
+    const windDirFrom = HEADING0 + twaDeg * DEG;
+    const dt = config.dt;
+    let state = freshState(sheetDeg * DEG);
+    for (let i = 0; i < Math.round(20 / dt); i++) {
+      const controls = { windDirFrom, windSpeed: tws, sheet: sheetDeg * DEG,
+        rudder: headingHoldRudder(state, HEADING0, config),
+        brailLee: 0, brailWind: 0.5, crewPos: 0.2, crewPosX: 0, shuntRequest: false };
+      state = integrate(state, controls, config, dt);
+    }
+    let minTwa = Infinity;
+    for (let i = 0; i < Math.round(30 / dt); i++) {
+      const controls = { windDirFrom, windSpeed: tws, sheet: sheetDeg * DEG, rudder: 0,
+        brailLee: 0, brailWind: 0.5, crewPos: 0.2, crewPosX: 0, shuntRequest: false };
+      state = integrate(state, controls, config, dt);
+      minTwa = Math.min(minTwa, Math.abs(normalizeAngle(windDirFrom - state.heading)) / DEG);
+    }
+    check('C: dead-run release — TWA178+carrot, releasing the rudder does not luff past TWA160 within 30s',
+      !state.capsized && minTwa >= 160,
+      `minTwa=${minTwa.toFixed(1)} capsized=${state.capsized}`);
+  }
+
+  // --- C-kurspelny2 (Round 10c): recordings/kurspelny2.json as a replay
+  // fixture. The user's own recorded downwind carrot technique (mean
+  // brailWind 0.93, TWA staying in 146.6-154.8deg throughout) replayed
+  // under TODAY's live config must sail faster than the recording's OWN
+  // measured deep-leg speed (2.5883462493946987 m/s, no capsize, over
+  // all 12349 frames — TWA never left the deep-course band, so this IS
+  // the whole leg), with no capsize.
+  //
+  // Ground-truth baseline provenance: createConfig(recording.configSnapshot)
+  // does NOT reconstruct the pre-C1 model, because deepMerge overlays the
+  // recorded snapshot onto TODAY's buildDefaultConfig() — any field C1
+  // introduced (brailTrimRange/brailCamberGain/yceBrailShift) that the
+  // pre-C1 snapshot never mentions just falls through to today's default,
+  // silently running the recorded config through the NEW two-regime
+  // formula too (same pitfall D4-4a's own frozen-configSnapshot replay
+  // would hit if this round had changed any of ITS old field values —
+  // it didn't, only added new ones, which is exactly what makes this
+  // silent pass-through possible here). So — matching D4-4a's own
+  // pattern of citing the recording's actual measured number rather than
+  // re-deriving it live — the baseline below is the recording's control
+  // sequence replayed under the genuine pre-C1 code+config (a `git
+  // worktree` checkout of dee918e, this round's own start point, verified
+  // directly before writing this assertion; codeVersion dee918e matches
+  // the recording's own metadata, so this is an exact, not cross-version-
+  // approximate, replay).
+  {
+    const recPath = path.join(__dirname, '..', 'recordings', 'kurspelny2.json');
+    let recording = null, recErr = null;
+    try { recording = JSON.parse(readFileSync(recPath, 'utf8')); } catch (e) { recErr = e; }
+
+    if (recording) {
+      const PRE_C1_MEAN_SPEED = 2.5883462493946987;
+      let state = { ...recording.initialState, shunt: { ...recording.initialState.shunt } };
+      let lastShuntRequest = Boolean(recording.initialLastShuntRequest);
+      let sumSpeed = 0, n = 0;
+      for (const frame of recording.frames) {
+        const edge = Boolean(frame.controls.shuntRequest) && !lastShuntRequest;
+        lastShuntRequest = Boolean(frame.controls.shuntRequest);
+        const stepControls = { ...frame.controls, shuntRequest: edge };
+        const nSub = Math.max(1, Math.round(frame.dt / config.dt));
+        const subDt = frame.dt / nSub;
+        for (let k = 0; k < nSub; k++) state = integrate(state, stepControls, config, subDt);
+        sumSpeed += Math.hypot(state.u, state.v); n++;
+      }
+      const meanSpeed = sumSpeed / n;
+      check('C-kurspelny2: the fixed model sails the recording\'s OWN recorded control sequence faster on the deep leg, no capsize',
+        !state.capsized && meanSpeed > PRE_C1_MEAN_SPEED,
+        `meanSpeed: pre-C1=${PRE_C1_MEAN_SPEED.toFixed(3)} -> live-config=${meanSpeed.toFixed(3)} m/s (delta=${(meanSpeed - PRE_C1_MEAN_SPEED).toFixed(3)})`);
+    } else {
+      check('C-kurspelny2: kurspelny2.json replay fixture loads', false, `could not load ${recPath}: ${recErr?.message}`);
+    }
+  }
+
   // --- R6-1 determinism self-test (ROUND6_flight_recorder.md): the
   // recorder/replay tool's entire premise is that the core has NO hidden
   // nondeterminism (Math.random, Date.now/performance.now, iteration-order

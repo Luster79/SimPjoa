@@ -54,8 +54,8 @@ function main() {
 
   console.log('Computing + exporting polar.csv...');
   const polar = computePolar(config, { twsList: [4, 6, 10], twaFrom: 40, twaTo: 170, step: 10 });
-  const polarCsv = ['twa,tws,bestSpeed,bestSheetAngle,deltaAngle,bestCamberUse']
-    .concat(polar.map((r) => `${r.twa},${r.tws},${r.bestSpeed.toFixed(4)},${r.bestSheetAngle},${r.deltaAngle.toFixed(2)},${r.bestCamberUse}`))
+  const polarCsv = ['twa,tws,bestSpeed,bestSheetAngle,deltaAngle,bestCamberUse,bestBrailWind']
+    .concat(polar.map((r) => `${r.twa},${r.tws},${r.bestSpeed.toFixed(4)},${r.bestSheetAngle},${r.deltaAngle.toFixed(2)},${r.bestCamberUse},${r.bestBrailWind}`))
     .join('\n');
   writeFileSync('out/polar.csv', polarCsv);
 
