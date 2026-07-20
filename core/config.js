@@ -562,9 +562,20 @@ function buildDefaultConfig() {
     rudder: {
       maxDeflectionDeg: 35,
       area: 0.4,                // m^2 — tunable estimate, steering-oar blade
-      // coeff: halved from 3.5 (user feedback: reacted too sharply for a
-      // hand-held steering oar, not a proper rudder — see core/rudder.js).
-      coeff: 1.75,
+      // coeff: round 10b (D3, docs/adr/0005) — derived, not felt. The blade
+      // is a low-AR (~1-2) lifting surface; core/rudder.js's CL(deflection)
+      // = coeff*sin(deflection) stays in the small/moderate-angle range
+      // for the whole 35deg mechanical travel, so coeff is matched against
+      // the Helmbold low-AR lift-curve SLOPE (2*pi*AR/(2+sqrt(AR^2+4))),
+      // not a stall CLmax the model doesn't represent. AR=1-2 spans
+      // 1.48-2.60/rad; AR=1.5 midpoint gives 2.09 (rounded 2.1). Cross-
+      // checks against Hoerner's independently measured CLmax~1.0-1.2 for
+      // AR~1-2 flat plates at high AoA: CL(35deg)=2.1*sin(35deg)=1.20,
+      // inside that range. Replaces the previous feel-based "halved from
+      // 3.5" (1.75) — see ADR 0005 for the full derivation and why the
+      // "too sharp" ergonomic complaint that motivated that halving
+      // belongs in UI input shaping (ui/app.js), not the blade physics.
+      coeff: 2.1,
     },
 
     shunt: {
