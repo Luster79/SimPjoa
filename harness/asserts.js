@@ -1174,6 +1174,129 @@ export function runAsserts(config) {
       maxAbsR / DEG < 2 && !state.capsized, `max|r|=${(maxAbsR / DEG).toFixed(2)}deg/s capsized=${state.capsized}`);
   }
 
+  // --- D4 (Round 10b, ROUND10b_downwind_wall.md): downwind acceptance
+  // tests. Direction-strict, magnitude-loose, same spirit as steeringOk —
+  // these check that deep, eased sailing genuinely WORKS (not that it hits
+  // a specific number), now that D1-D3 removed the wall's contributing
+  // causes. ---
+  {
+    // D4-1: sheet eased to the polar-optimal deep trim at TWA165 (found via
+    // computePolar's own search: sheet=88deg, i.e. essentially fully eased)
+    // plus carrot 0.5 holds TWA165+-10 for 60s under the small-signal
+    // autopilot, with moderate (not full-authority) rudder, at a real speed.
+    const twaDeg = 165, sheetDeg = 88;
+    const windDirFrom = HEADING0 + twaDeg * DEG;
+    let state = freshState(sheetDeg * DEG);
+    const dt = config.dt;
+    let sum = 0, n = 0;
+    for (let i = 0; i < Math.round(60 / dt); i++) {
+      const controls = { windDirFrom, windSpeed: 6, sheet: sheetDeg * DEG,
+        rudder: headingHoldRudder(state, HEADING0, config),
+        brailLee: 0, brailWind: 0.5, crewPos: 0.2, crewPosX: 0, shuntRequest: false };
+      state = integrate(state, controls, config, dt);
+      if (i > Math.round(10 / dt)) { sum += Math.abs(controls.rudder); n++; }
+    }
+    const twaFinal = Math.abs(normalizeAngle(windDirFrom - state.heading)) / DEG;
+    const speed = Math.hypot(state.u, state.v);
+    const polar120 = computePolar(config, { twsList: [6], twaFrom: 120, twaTo: 120, step: 1 })[0];
+    const halfPolar120 = polar120.bestSpeed / 2;
+    check('D4-1: eased polar-optimal trim + carrot holds TWA165+-10 with moderate rudder at real speed',
+      !state.capsized && Math.abs(twaFinal - twaDeg) <= 10 && (sum / n) <= 0.5 && speed > halfPolar120,
+      `twaFinal=${twaFinal.toFixed(1)} mean|rudder|=${(sum / n).toFixed(4)} speed=${speed.toFixed(2)} (half TWA120 polar=${halfPolar120.toFixed(2)})`);
+
+    // D4-2: dead run (TWA175) is holdable without sternway, at that TWA's
+    // own polar-optimal sheet (60deg).
+    const deadTwaDeg = 175, deadSheetDeg = 60;
+    const deadWindDirFrom = HEADING0 + deadTwaDeg * DEG;
+    let deadState = freshState(deadSheetDeg * DEG);
+    let minU = Infinity;
+    for (let i = 0; i < Math.round(45 / dt); i++) {
+      const controls = { windDirFrom: deadWindDirFrom, windSpeed: 6, sheet: deadSheetDeg * DEG,
+        rudder: headingHoldRudder(deadState, HEADING0, config),
+        brailLee: 0, brailWind: 0, crewPos: 0.2, crewPosX: 0, shuntRequest: false };
+      deadState = integrate(deadState, controls, config, dt);
+      minU = Math.min(minU, deadState.u);
+    }
+    const deadTwaFinal = Math.abs(normalizeAngle(deadWindDirFrom - deadState.heading)) / DEG;
+    check('D4-2: dead run (TWA175) holdable without sternway',
+      !deadState.capsized && Math.abs(deadTwaFinal - deadTwaDeg) <= 10 && minU > 0,
+      `twaFinal=${deadTwaFinal.toFixed(1)} minU=${minU.toFixed(3)}`);
+
+    // D4-3: the strapped-amidships mode must NOT be the fastest deep mode —
+    // at TWA150, the polar-optimal eased trim (sheet=68deg) beats a
+    // strapped trim (sheet=8deg, matching the user's own discovered
+    // recipe in recordings/kurspelny.json) on speed.
+    function settleSpeed(sheetDegSettle, seconds = 40) {
+      const twa150WindDirFrom = HEADING0 + 150 * DEG;
+      let s = freshState(sheetDegSettle * DEG);
+      for (let i = 0; i < Math.round(seconds / dt); i++) {
+        const controls = { windDirFrom: twa150WindDirFrom, windSpeed: 6, sheet: sheetDegSettle * DEG,
+          rudder: headingHoldRudder(s, HEADING0, config),
+          brailLee: 0, brailWind: 0, crewPos: 0.2, crewPosX: 0, shuntRequest: false };
+        s = integrate(s, controls, config, dt);
+      }
+      return { speed: Math.hypot(s.u, s.v), capsized: s.capsized };
+    }
+    const eased150 = settleSpeed(68);
+    const strapped150 = settleSpeed(8);
+    check('D4-3: at TWA150, the eased-optimal trim beats the strapped-amidships trim on speed',
+      !eased150.capsized && !strapped150.capsized && eased150.speed > strapped150.speed,
+      `eased(sheet68)=${eased150.speed.toFixed(3)} strapped(sheet8)=${strapped150.speed.toFixed(3)} m/s`);
+  }
+
+  // --- D4-4 (Round 10b): recordings/kurspelny.json as a replay fixture.
+  // Same R7-4b pattern (replay under the recording's OWN configSnapshot,
+  // so this stays a stable regression check independent of later physics
+  // retuning) plus a NEW eased+carrot recipe run from the recording's own
+  // starting state/wind under TODAY's live config, checked against the
+  // recording's own measured max TWA (137.3264762387109deg). ---
+  {
+    const recPath = path.join(__dirname, '..', 'recordings', 'kurspelny.json');
+    let recording = null, recErr = null;
+    try { recording = JSON.parse(readFileSync(recPath, 'utf8')); } catch (e) { recErr = e; }
+
+    if (recording) {
+      const recConfig = createConfig(recording.configSnapshot);
+      let repState = { ...recording.initialState, shunt: { ...recording.initialState.shunt } };
+      let lastShuntRequest = Boolean(recording.initialLastShuntRequest);
+      let maxTwaDeg = -Infinity;
+      for (const frame of recording.frames) {
+        const edge = Boolean(frame.controls.shuntRequest) && !lastShuntRequest;
+        lastShuntRequest = Boolean(frame.controls.shuntRequest);
+        const stepControls = { ...frame.controls, shuntRequest: edge };
+        const nSub = Math.max(1, Math.round(frame.dt / recConfig.dt));
+        const subDt = frame.dt / nSub;
+        for (let k = 0; k < nSub; k++) repState = integrate(repState, stepControls, recConfig, subDt);
+        const twaDeg = Math.abs(normalizeAngle(frame.controls.windDirFrom - repState.heading)) / DEG;
+        maxTwaDeg = Math.max(maxTwaDeg, twaDeg);
+      }
+      check('D4-4a: kurspelny.json replay — the recorded strapped equilibrium remains reachable (no regression)',
+        !repState.capsized && Math.abs(maxTwaDeg - 137.3264762387109) < 1,
+        `maxTwaDeg=${maxTwaDeg.toFixed(2)} (recorded 137.33)`);
+
+      // New recipe, live config: same fixed wind/initial state as the
+      // recording, sheet eased to 35deg (found by sweep to out-perform the
+      // recording's own 6-8deg strap) plus carrot 0.5, pure trim (rudder=0,
+      // matching the recording's own control style).
+      const windDirFrom = recording.frames[0].controls.windDirFrom;
+      let newState = { ...recording.initialState, shunt: { ...recording.initialState.shunt } };
+      const newSheetDeg = 35;
+      let newMaxTwa = -Infinity;
+      for (let i = 0; i < Math.round(60 / config.dt); i++) {
+        const controls = { windDirFrom, windSpeed: 6, sheet: newSheetDeg * DEG, rudder: 0,
+          brailLee: 0, brailWind: 0.5, crewPos: -0.105, crewPosX: -0.7545, shuntRequest: false };
+        newState = integrate(newState, controls, config, config.dt);
+        const twaDeg = Math.abs(normalizeAngle(windDirFrom - newState.heading)) / DEG;
+        newMaxTwa = Math.max(newMaxTwa, twaDeg);
+      }
+      check('D4-4b: a new eased(35deg)+carrot(0.5) recipe reaches deeper TWA than the recording\'s 137.3 max',
+        !newState.capsized && newMaxTwa > 137.3264762387109,
+        `newMaxTwa=${newMaxTwa.toFixed(2)} (recorded 137.33)`);
+    } else {
+      check('D4-4: kurspelny.json replay fixture loads', false, `could not load ${recPath}: ${recErr?.message}`);
+    }
+  }
+
   // --- R6-1 determinism self-test (ROUND6_flight_recorder.md): the
   // recorder/replay tool's entire premise is that the core has NO hidden
   // nondeterminism (Math.random, Date.now/performance.now, iteration-order
