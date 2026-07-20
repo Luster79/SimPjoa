@@ -449,6 +449,45 @@ function buildDefaultConfig() {
       // longer reads it — see hull.lead above and ceSwingFraction below.
       tackXFraction: 0.06,                    // fraction of hull half-length — mast/tack position, active-bow side of CG (UI drawing only, round 7)
       ceBrailShift: 0.3,                      // tunable (P2-3), fraction of the half-chord the CE shifts toward the tack at brailWind=1 (spilling the sail's rear/upper area), request's own suggested ~0.25-0.35 band
+      // yceBrailShift (round 10c, C1, ROUND10c_carrot_two_regime.md):
+      // SEPARATE from ceBrailShift above — round 10b (D2) unified xCE/yCE
+      // onto the same shrinking half-chord, but the manual's downwind
+      // "carrot" technique needs the LATERAL arm (yCE) to shrink harder
+      // than the fore-aft one: gathering the sail's rear/upper area toward
+      // the yard's pivot pulls the pressure centroid inboard/up on both
+      // axes, but it's specifically the lateral (yCE) collapse that attacks
+      // the deep-course luffing/yaw moment (-yCE*Fx in aero.js's
+      // yawMoment) — the mechanism this round's bear-away/dead-run-release
+      // acceptance tests depend on. Set stronger than ceBrailShift (0.3);
+      // kept < 1 so halfChordEffY never reverses sign at brailWind=1.
+      yceBrailShift: 0.6,
+      // brailTrimRange (round 10c, C1): the windward brail's two real
+      // roles per the manual — TRIM (partial pull: deepens the belly,
+      // shifts CE toward the tack, sail keeps drawing) vs SURVIVAL (pull
+      // past this point: spills power, panic/furl territory) — were
+      // conflated by round 5's single linear CL/moment cut. Below this
+      // fraction of brailWind, aero.js's brailRegimeBlend() applies only
+      // the mild TRIM-regime cuts; above it, cuts ramp to the original
+      // strong SURVIVAL-regime values (preserving T6/panic and the stop/
+      // squall scenarios). 0.6 is this round's own suggested default —
+      // not independently measured, same status as ceBrailShift/
+      // ceSwingFraction.
+      brailTrimRange: 0.6,
+      // brailCamberGain (round 10c, C1): the manual's TRIM-regime
+      // technique deepens the sail's belly under partial windward-brail
+      // pull (gathering the leech doesn't just spill area, it also bags
+      // the remaining draft) — reuses the existing camber->CL machinery
+      // (camberCLFactor/camberCDf in aero.js) rather than a new curve.
+      // Peaks at brailTrimRange (full TRIM-regime pull) via
+      // brailRegimeBlend, fading back to 0 by brailWind=1 (a fully spilled
+      // SURVIVAL-regime sail is gathered, not bagged). NOTE: camberCLFactor
+      // itself zeroes any camber benefit above alphaAbsDeg=45deg (tuned
+      // for the v1/Polhamus table, aero.js) — deep-course trims often sit
+      // at or above that alpha (see ROUND10c probe table), so this term's
+      // measured effect is smaller than its nominal magnitude suggests;
+      // reused as specified rather than also reshaping camberCLFactor's
+      // own window, which is out of this round's scope.
+      brailCamberGain: 0.45,
       // ceSwingFraction: round 7, D-6. The yard's swing (delta) still
       // moves the CE fore-aft/athwartship (a real crab-claw's CE genuinely
       // shifts with trim — that's the whole mechanism by which trimming
@@ -604,6 +643,10 @@ export function validateConfig(config) {
   // comment on its default above for the provenance audit this bound comes
   // from); values outside (0,1] were never validated by any committed test.
   inRange(config.sail.ceSwingFraction, 0, 1, 'sail.ceSwingFraction');
+  // brailTrimRange (round 10c, C1): the TRIM/SURVIVAL regime split point
+  // (aero.js brailRegimeBlend) — must stay strictly inside (0,1) since it's
+  // used as a division denominator on both sides of the split.
+  inRange(config.sail.brailTrimRange, 0.01, 0.99, 'sail.brailTrimRange');
   inRange(config.crew.posMin, -1, 0, 'crew.posMin');
   inRange(config.crew.posMax, 0, 2, 'crew.posMax');
   inRange(config.rudder.maxDeflectionDeg, 1, 60, 'rudder.maxDeflectionDeg');

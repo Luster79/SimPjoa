@@ -98,6 +98,31 @@ function camberCLFactor(alphaAbsDeg, camber) {
   return lerp(1 + 1.75 * camber, 1.0, t);
 }
 
+function smoothstep01(t) {
+  const c = Math.min(Math.max(t, 0), 1);
+  return c * c * (3 - 2 * c);
+}
+
+// brailRegimeBlend (round 10c, C1, ROUND10c_carrot_two_regime.md): the
+// manual's windward brail has two real roles the old single linear cut
+// conflated — TRIM (partial pull, b in [0, trimRange]: deepens the belly,
+// sail keeps drawing) and SURVIVAL (b in (trimRange, 1]: spills power,
+// panic/furl territory). Each regime is a plain lerp from its own two
+// endpoint values, but the interpolation PARAMETER is smoothstep(t) rather
+// than raw t — smoothstep's derivative is exactly 0 at both t=0 and t=1,
+// so the two regimes' curves meet at b=trimRange with matching VALUE (both
+// evaluate valAtTrim there) AND matching slope (0 from both sides): a
+// single brailTrimRange knob is enough to get a smooth (no-kink) join
+// without a separate blend-width parameter. Used for the CL and heel-
+// moment multipliers below, and for the trim-regime camber bonus.
+function brailRegimeBlend(b, trimRange, valAtZero, valAtTrim, valAtOne) {
+  const bc = Math.min(Math.max(b, 0), 1);
+  if (trimRange <= 0) return lerp(valAtTrim, valAtOne, smoothstep01(bc));
+  if (trimRange >= 1) return lerp(valAtZero, valAtTrim, smoothstep01(bc));
+  if (bc <= trimRange) return lerp(valAtZero, valAtTrim, smoothstep01(bc / trimRange));
+  return lerp(valAtTrim, valAtOne, smoothstep01((bc - trimRange) / (1 - trimRange)));
+}
+
 // sailCoefficients(alpha, controls, config) -> { CL, CD }
 // alpha: signed angle of attack [rad], raw atan2 range (-pi, pi]. |alpha| up
 // to 90deg is the sail's front face working normally; beyond that the flow
@@ -127,16 +152,34 @@ export function sailCoefficients(alpha, controls, config) {
   const luffFrac = Math.max(0, 1 - alphaAbsDeg / LUFF_WINDOW_DEG);
   const floggingCD = sail.floggingCDFactor * sail.CD0 * luffFrac;
 
-  const camberCLf = camberCLFactor(alphaAbsDeg, sail.camber);
-  const camberCDf = 1 + 1.0 * sail.camber;
+  const brailLee = controls.brailLee ?? 0;
+  const brailWind = controls.brailWind ?? 0;
+  const brailTrimRange = sail.brailTrimRange ?? 0.6;
+
+  // Trim-regime camber bonus (C1): the manual's partial windward-brail
+  // technique bags the remaining draft, not just spills area — peaks at
+  // brailTrimRange (full TRIM pull), fades back to sail.camber's own
+  // baseline by brailWind=1 (a fully spilled SURVIVAL sail is gathered,
+  // not bagged). Reuses camberCLFactor/camberCDf unchanged (see
+  // sail.brailCamberGain's config.js comment for that mechanism's own
+  // alphaAbsDeg>=45deg ceiling).
+  const brailCamberGain = sail.brailCamberGain ?? 0;
+  const camberEff = sail.camber + brailRegimeBlend(brailWind, brailTrimRange, 0, brailCamberGain, 0);
+
+  const camberCLf = camberCLFactor(alphaAbsDeg, camberEff);
+  const camberCDf = 1 + 1.0 * camberEff;
 
   let CL1 = CLtable * camberCLf;
   let CD1 = (CDbase + floggingCD) * camberCDf;
 
-  const brailLee = controls.brailLee ?? 0;
-  const brailWind = controls.brailWind ?? 0;
-
-  let CL2 = CL1 * (1 - 0.7 * brailLee) * (1 - 0.8 * brailWind);
+  // Windward-brail CL cut (C1): two-regime, see brailRegimeBlend() above.
+  // TRIM (b<=brailTrimRange): mild, x(1-0.15*b_norm) at the endpoint — the
+  // sail stays powered, consistent with the manual's downwind chapter.
+  // SURVIVAL (b>brailTrimRange): ramps to the original strong cut, x0.2 at
+  // b=1 — preserves T6/panic, the stop scenario, and the squall
+  // controller's semantics unchanged at full pull.
+  const brailWindCLFactor = brailRegimeBlend(brailWind, brailTrimRange, 1, 0.85, 0.2);
+  let CL2 = CL1 * (1 - 0.7 * brailLee) * brailWindCLFactor;
   let CD2 = CD1 * (1 - 0.3 * brailLee);
 
   // Both brails fully on: sail furled against the yard, forces -> spar drag only.
@@ -205,7 +248,14 @@ export function sailForces(state, controls, config) {
   // genuinely contested — this does NOT touch Fx/Fy (drive/side force),
   // only unloads the heeling arm.
   const verticalLiftFraction = config.sail.verticalLiftFraction ?? 0;
-  const heelMoment = Fy * config.sail.CEheight * (1 - verticalLiftFraction) * (1 - 0.9 * brailWind);
+  // Windward-brail heel-moment cut (C1): two-regime, mirroring the CL cut
+  // above. TRIM: moderate, x(1-0.3*b_norm) at the endpoint — vertical
+  // redirection of the deep belly, sail still drawing. SURVIVAL: ramps to
+  // the original strong cut, x0.1 at b=1 (unchanged panic/survival
+  // authority).
+  const brailTrimRangeHeel = config.sail.brailTrimRange ?? 0.6;
+  const brailWindHeelFactor = brailRegimeBlend(brailWind, brailTrimRangeHeel, 1, 0.7, 0.1);
+  const heelMoment = Fy * config.sail.CEheight * (1 - verticalLiftFraction) * brailWindHeelFactor;
 
   // CE geometry — round 7, D-6 (ROUND7_DECISION.md): rebuilt around a
   // classical yacht-design "lead" (the CE-CLR longitudinal separation,
@@ -245,20 +295,30 @@ export function sailForces(state, controls, config) {
   // argument about net magnitude, not a physical one, and round 5's own
   // spilling-line description (gathering the sail toward the yard pulls
   // the pressure centroid inboard/up) applies to both axes. Round 10b
-  // (D2) unifies them: the SAME effective half-chord (shrunk by
-  // ceBrailShift*brailWind) now sets both xCE's and yCE's excursion,
-  // projected onto cos(delta)/sin(delta) respectively — see
-  // ROUND10b_downwind_wall.md and ROUND10b_downwind_wall_findings.md for
-  // the before/after measurement this changed.
+  // (D2) unified them onto the SAME effective half-chord (shrunk by
+  // ceBrailShift*brailWind), projected onto cos(delta)/sin(delta)
+  // respectively — see ROUND10b_downwind_wall.md and
+  // ROUND10b_downwind_wall_findings.md for that before/after measurement.
+  //
+  // Round 10c (C1) splits xCE and yCE back onto their OWN half-chords:
+  // xCE keeps ceBrailShift (the fore-aft "CE shift toward the tack" bear-
+  // away lever, unchanged, full strength across brailWind) while yCE gets
+  // its own, stronger sail.yceBrailShift — the lateral arm is what
+  // directly attacks the deep-course luffing/yaw moment (-yCE*Fx below),
+  // which is what this round's carrot fix is actually chasing (see
+  // ROUND10c_carrot_two_regime.md C1 and sail.yceBrailShift's config.js
+  // comment).
   const chord = config.sail.CEheight / 2;
   const halfChord = chord / 2;
   const lead = config.hull.lead ?? 0.15 * config.hull.length;
   const clrXNeutral = clrXPosition(0, config);
   const ceSwingFraction = config.sail.ceSwingFraction ?? 0.5;
   const ceBrailShift = config.sail.ceBrailShift ?? 0.3;
+  const yceBrailShift = config.sail.yceBrailShift ?? 0.6;
   const halfChordEff = halfChord * ceSwingFraction * (1 - ceBrailShift * brailWind);
+  const halfChordEffY = halfChord * ceSwingFraction * (1 - yceBrailShift * brailWind);
   const xCE = clrXNeutral + lead - halfChordEff * Math.cos(delta);
-  const yCE = -state.end * halfChordEff * Math.sin(delta);
+  const yCE = -state.end * halfChordEffY * Math.sin(delta);
 
   // Heel-course coupling (pure geometry, FIX_REQUEST_round4_roll_dof.md
   // 1.4): heeling tips the mast, offsetting the CE laterally by
