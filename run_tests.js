@@ -4,7 +4,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { createConfig } from './core/config.js';
 import { runAsserts } from './harness/asserts.js';
-import { scenarioSquall, scenarioShunt, scenarioAback, scenarioStop } from './harness/scenarios.js';
+import { scenarioSquall, scenarioShunt, scenarioAback, scenarioStop, scenarioThroughGybeAback } from './harness/scenarios.js';
 import { computePolar } from './harness/polar.js';
 import { toCSV } from './harness/export.js';
 
@@ -51,6 +51,7 @@ function main() {
   writeFileSync('out/scenario_shunt.csv', toCSV(scenarioShunt(config)));
   writeFileSync('out/scenario_aback.csv', toCSV(scenarioAback(config)));
   writeFileSync('out/scenario_stop.csv', toCSV(scenarioStop(config)));
+  writeFileSync('out/scenario_through_gybe_aback.csv', toCSV(scenarioThroughGybeAback(config)));
 
   console.log('Computing + exporting polar.csv...');
   const polar = computePolar(config, { twsList: [4, 6, 10], twaFrom: 40, twaTo: 170, step: 10 });

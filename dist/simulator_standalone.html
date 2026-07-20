@@ -27,6 +27,7 @@
   #banner { position: absolute; top: 0; left: 0; right: 0; text-align: center; padding: 10px; font-weight: 700; font-size: 16px; letter-spacing: 0.03em; display: none; }
   #banner.aback { display: block; background: rgba(200,40,40,0.85); animation: pulse 1s infinite; }
   #banner.overload { display: block; background: rgba(200,140,20,0.85); }
+  #banner.pressed { display: block; background: rgba(180,110,30,0.85); }
   #capsizeOverlay { position: absolute; inset: 0; background: rgba(5,8,12,0.86); display: none; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; }
   #capsizeOverlay.show { display: flex; }
   #capsizeOverlay h1 { margin: 0; font-size: 28px; color: #ff6b6b; }
@@ -42,6 +43,16 @@
   .row input[type=range] { flex: 1; }
   .row output { flex: 0 0 46px; text-align: right; font-variant-numeric: tabular-nums; }
   .row .stepBtn { flex: 0 0 auto; padding: 2px 8px; font-size: 12px; line-height: 1.4; }
+  /* Brail (wind) two-tone TRIM/SURVIVAL track (round 10d, C-B): the
+     boundary position (--trim-pct) is set from CONFIG.sail.brailTrimRange
+     by app.js, not hardcoded here — see updateBrailZoneUI(). */
+  .sliderWrap { position: relative; flex: 1; display: flex; align-items: center; }
+  .sliderWrap input[type=range] { flex: 1; }
+  #brailWind { -webkit-appearance: none; appearance: none; height: 6px; border-radius: 3px; background: linear-gradient(to right, #2fae6a var(--trim-pct, 60%), #d8a52a var(--trim-pct, 60%)); }
+  #brailWind::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: #dbe7f2; border: 2px solid #2b4460; margin-top: 0; cursor: pointer; }
+  #brailWind::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: #dbe7f2; border: 2px solid #2b4460; cursor: pointer; }
+  #brailWind::-moz-range-track { height: 6px; border-radius: 3px; background: linear-gradient(to right, #2fae6a var(--trim-pct, 60%), #d8a52a var(--trim-pct, 60%)); }
+  .brailTick { position: absolute; top: 50%; width: 2px; height: 12px; background: #dbe7f2; transform: translate(-1px, -50%); pointer-events: none; }
   .pad2DWrap { flex: 1; }
   .pad2D { position: relative; width: 100%; max-width: 220px; height: 140px; background: #0e1927; border: 1px solid #2b4460; border-radius: 6px; cursor: crosshair; touch-action: none; user-select: none; }
   .padAxis { position: absolute; background: #1e2f42; }
@@ -144,7 +155,7 @@
       <div class="hint" data-i18n="hint.yard">&larr;/&rarr; arrow keys ease/sheet</div>
       <div class="row"><label for="brailLee" data-i18n="lbl.brailLee">Brail (lee)</label><input id="brailLee" type="range" min="0" max="100" step="1" value="0"><output id="brailLeeOut">0%</output></div>
       <div class="hint" data-i18n="hint.brailLee">Q sheets in, Z eases</div>
-      <div class="row"><label for="brailWind" data-i18n="lbl.brailWind">Brail (wind)</label><input id="brailWind" type="range" min="0" max="100" step="1" value="0"><output id="brailWindOut">0%</output></div>
+      <div class="row"><label for="brailWind" data-i18n="lbl.brailWind">Brail (wind)</label><div class="sliderWrap"><input id="brailWind" type="range" min="0" max="100" step="1" value="0"><div id="brailWindTick" class="brailTick"></div></div><output id="brailWindOut">0%</output></div>
       <div class="hint" data-i18n="hint.brailWind">W sheets in, X eases</div>
 
       <h2 data-i18n="h.steering">Steering &amp; trim</h2>
@@ -719,7 +730,33 @@ function buildDefaultConfig() {
       // zero near 55-58deg, giving a stable, rudder-free pointing attractor.
       // Only the baseline shifts — the delta-dependent trim steering
       // (halfChordEff*cos(delta)) is untouched, so T3/T4's directions hold.
-      lead: 0.05 * p.boat_length_m,
+      //
+      // Round 10d (H1, ROUND10d_helm_balance.md): 0.05*L passed every
+      // DIFFERENTIAL steering test (T1-4, C-bearaway, ...) but none of
+      // those bound the ABSOLUTE helm balance at a fixed trim — a gap this
+      // round's new "rudder-free release at the polar-optimal beam reach"
+      // test closes. At 0.05*L that test measured a genuine but marginal
+      // WEATHER-side drift (initial rate 0.31deg/s, fine; but 60s excursion
+      // 16.2deg, just over the 15deg ceiling). A fine sweep of lead within
+      // the mandated 5-25%*LWL band (probe: TWA90/TWS6/crewPos0.35, sheet
+      // re-optimized per point, rudder released after a 30s settle) found
+      // the balance is a KNIFE EDGE in this narrow window — the drift's own
+      // sign flips from weather to lee between lead=0.065*L and 0.07*L, so
+      // 0.05-0.065*L is the only sub-range that is BOTH in-range and
+      // weather-side. 0.06*L (initial rate 0.14deg/s, 60s excursion 7.2deg,
+      // both comfortably inside the acceptance band) is picked over values
+      // closer to the flip (e.g. 0.065*L, excursion 2.8deg) specifically
+      // for that margin from the knife edge — a boat this close to a sign
+      // flip is not a robustly-calibrated one, even though 0.065 alone also
+      // technically passes. Direction (weather) matches the manual's
+      // "hands-off canoe settles toward the wind" convention this round's
+      // acceptance criterion cites; the sail-trim-response DIRECTIONS this
+      // shift moves through are unchanged (still 0.05<lead<0.07, nowhere
+      // near the ~0.15-0.2*L range where D-6's original diagnosis found the
+      // opposite, structural lee-helm regime) — see
+      // ROUND10d_helm_balance_findings.md for the full before/after
+      // moment-budget table and the re-run D-6/T3/T4 differential numbers.
+      lead: 0.06 * p.boat_length_m,
     },
 
     ama: {
@@ -771,13 +808,28 @@ function buildDefaultConfig() {
       // apexAngleDeg=50 between the two apex fits (0.406/0.428) -> ~0.41.
       // `camber`: SET TO 0, changed from round 9's 0.10 — the Di Piazza
       // Santa Cruz curve is a MEASURED sail's actual CL, already carrying
-      // whatever real camber that sail had; the runtime camber multiplier
-      // (camberCLFactor, aero.js) exists to approximate camber's benefit
-      // on TOP OF the flat, uncambered v1/Polhamus theoretical curve — on
-      // v2 it would double-count camber already baked into the measured
-      // data. Only re-enable camber>0 if aeroTableVersion is switched back
-      // to 'v1'.
+      // whatever real camber that sail had. Round 10d (C-C,
+      // ROUND10d_helm_balance.md) redefined what this value MEANS rather
+      // than just leaving it at 0: aero.js's camberCLDelta() now reads
+      // `camber` (and brailCamberGain below) as a DELTA beyond the active
+      // table's own built-in camber (aeroV2BuiltinCamber for v2, 0 for
+      // v1 — a genuinely flat theoretical table), not an absolute camber
+      // ratio applied on top of a flat plate — see camberCLDelta's own
+      // comment in aero.js for the double-counting this fixes (the OLD
+      // camberCLFactor call always assumed a flat-plate baseline, which
+      // was only ever true for v1). camber=0 stays a no-op for v2's own
+      // baseline exactly as before (delta=0); the fix specifically
+      // corrects brailCamberGain below, which is the only thing that
+      // makes camberEff nonzero by default.
       camber: 0,
+      // aeroV2BuiltinCamber (round 10d, C-C): the v2 table's own built-in
+      // camber ratio, "1:10" per the work order (Di Piazza's Santa Cruz
+      // sail — a real rigid crab-claw, not a flat theoretical plate — this
+      // is an order-of-magnitude literature figure for that class of sail,
+      // not independently re-measured from the digitized curve itself).
+      // Only read when sail.aeroTableVersion is 'v2' (aero.js); v1 uses 0
+      // (a genuinely flat, uncambered theoretical table) unconditionally.
+      aeroV2BuiltinCamber: 0.10,
       CD0: 0.040,
       s: 0.41,                                 // tunable (RUNTIME only) — v2 fit, apexAngleDeg=50-interpolated between apex45 (0.406) and apex60 (0.428); see AERO_V2_PARAMS
       // --- Sheet constraint (ROUND5_CONSOLIDATED_work_order.md P1) ---
@@ -818,16 +870,26 @@ function buildDefaultConfig() {
       // technique deepens the sail's belly under partial windward-brail
       // pull (gathering the leech doesn't just spill area, it also bags
       // the remaining draft) — reuses the existing camber->CL machinery
-      // (camberCLFactor/camberCDf in aero.js) rather than a new curve.
+      // (camberCLDelta/camberCDf in aero.js) rather than a new curve.
       // Peaks at brailTrimRange (full TRIM-regime pull) via
       // brailRegimeBlend, fading back to 0 by brailWind=1 (a fully spilled
-      // SURVIVAL-regime sail is gathered, not bagged). NOTE: camberCLFactor
-      // itself zeroes any camber benefit above alphaAbsDeg=45deg (tuned
-      // for the v1/Polhamus table, aero.js) — deep-course trims often sit
-      // at or above that alpha (see ROUND10c probe table), so this term's
-      // measured effect is smaller than its nominal magnitude suggests;
-      // reused as specified rather than also reshaping camberCLFactor's
-      // own window, which is out of this round's scope.
+      // SURVIVAL-regime sail is gathered, not bagged). Round 10d (C-C)
+      // fixed two things this round 10c comment used to flag as known
+      // gaps: (1) this value is now read as a DELTA beyond the v2 table's
+      // own built-in camber (aeroV2BuiltinCamber above), not an absolute
+      // ratio double-counting it — the OLD camberCLFactor call was
+      // silently applying MORE bonus than a value this size should give,
+      // on top of a curve that was already cambered; (2) camberCLFactor's
+      // own fade window was extended 45deg -> 75deg (aero.js
+      // CAMBER_FADE_END_DEG) — deep-course TRIM-regime trims sampled at
+      // 32-85deg alphaSailor (D4/C's own recipes), mostly PAST the old
+      // 45deg cutoff, so this term was silently near-inactive for most of
+      // its own intended use case. Magnitude itself (0.45) unchanged —
+      // still this round's own suggested default, not independently
+      // measured, same status as ceBrailShift/ceSwingFraction; the C2
+      // deep-course speed-ratio test is re-anchored against the corrected
+      // (smaller, since it no longer double-counts) effective bonus — see
+      // ROUND10d_helm_balance_findings.md.
       brailCamberGain: 0.45,
       // ceSwingFraction: round 7, D-6. The yard's swing (delta) still
       // moves the CE fore-aft/athwartship (a real crab-claw's CE genuinely
@@ -1129,11 +1191,56 @@ function blendApexCL(apexDeg, alphaAbsDeg, aeroTable) {
   return lerp(clLo, clHi, w);
 }
 
+// camberCLFactor (round 10d, C-C, ROUND10d_helm_balance.md): CL multiplier
+// for a given ABSOLUTE camber ratio, low-alpha value unchanged since round
+// 5 (1+1.75*camber, calibrated against the flat/theoretical v1/Polhamus
+// table, where camber=0 genuinely means a flat plate) — see camberCLDelta
+// below for the v2-table-relative wrapper callers actually use.
+//
+// CAMBER_FADE_END_DEG extended 45 -> 75 (was: hard zero above 45deg,
+// exactly where deep-course trims live — flagged as a known limitation at
+// C1's brailCamberGain, round 10c, and left out of scope there). Sampled
+// alphaSailor across the TRIM-regime deep-course scenarios this bonus
+// actually targets (D4/C's own TWA140-178 recipes): 32-85deg, i.e. mostly
+// PAST the old 45deg cutoff — the camber bonus was silently inactive for
+// most of its own intended use case. 75deg (not a flat extension to 90)
+// keeps a taper-to-zero near true flat-plate/stalled flow (alpha~90),
+// where camber stops being a meaningful attached-flow concept at all —
+// empirically chosen to cover the sampled range without claiming
+// camber still matters at the most extreme, most-separated angles.
+const CAMBER_FADE_END_DEG = 75;
 function camberCLFactor(alphaAbsDeg, camber) {
   if (alphaAbsDeg <= 30) return 1 + 1.75 * camber;
-  if (alphaAbsDeg >= 45) return 1.0;
-  const t = (alphaAbsDeg - 30) / 15;
+  if (alphaAbsDeg >= CAMBER_FADE_END_DEG) return 1.0;
+  const t = (alphaAbsDeg - 30) / (CAMBER_FADE_END_DEG - 30);
   return lerp(1 + 1.75 * camber, 1.0, t);
+}
+
+// camberCLDelta(alphaAbsDeg, camberDelta, builtinCamber) -> CL multiplier
+// relative to the aero TABLE's own baked-in camber, not a flat plate (C-C:
+// "the v2 aero table was digitized from ALREADY-CAMBERED rigid sails,
+// while the legacy camber machinery still multiplies on top" — the old
+// call site fed sail.camber/brailCamberGain straight into camberCLFactor,
+// which computes its multiplier RELATIVE TO A FLAT PLATE; on the v2 table
+// (already carrying the source sail's own ~1:10 camber, config.js
+// AERO_V2_BUILTIN_CAMBER) that double-counts the table's built-in camber
+// every time camberDelta is nonzero — i.e. every TRIM-regime brail pull,
+// which is exactly the deep-course case this round's other items are
+// tuning). Fix: treat camberDelta as ADDITIONAL camber beyond
+// builtinCamber, and take the RATIO of the two absolute camberCLFactor
+// evaluations, so the table's own baseline cancels out algebraically:
+//   ratio = camberCLFactor(alpha, builtin+delta) / camberCLFactor(alpha, builtin)
+// At camberDelta=0 this is an exact identity (ratio=1, no change) for ANY
+// builtinCamber — matching today's already-correct camberDelta=0 default
+// exactly. At builtinCamber=0 (v1, a genuinely flat theoretical table)
+// this reduces algebraically to camberCLFactor(alpha, delta)/1, i.e. the
+// OLD absolute formula, unchanged — v1's camber semantics (config.js:
+// "Only re-enable camber>0 if aeroTableVersion is switched back to v1")
+// are untouched by this change.
+function camberCLDelta(alphaAbsDeg, camberDelta, builtinCamber) {
+  const atBuiltin = camberCLFactor(alphaAbsDeg, builtinCamber);
+  const atBuiltinPlusDelta = camberCLFactor(alphaAbsDeg, builtinCamber + camberDelta);
+  return atBuiltinPlusDelta / atBuiltin;
 }
 
 function smoothstep01(t) {
@@ -1198,13 +1305,15 @@ function sailCoefficients(alpha, controls, config) {
   // technique bags the remaining draft, not just spills area — peaks at
   // brailTrimRange (full TRIM pull), fades back to sail.camber's own
   // baseline by brailWind=1 (a fully spilled SURVIVAL sail is gathered,
-  // not bagged). Reuses camberCLFactor/camberCDf unchanged (see
-  // sail.brailCamberGain's config.js comment for that mechanism's own
-  // alphaAbsDeg>=45deg ceiling).
+  // not bagged). camberEff is now a DELTA beyond the active table's own
+  // built-in camber (round 10d, C-C — see camberCLDelta's own comment for
+  // the double-counting this fixes and why camberEff=0 is an unchanged
+  // no-op either way).
   const brailCamberGain = sail.brailCamberGain ?? 0;
   const camberEff = sail.camber + brailRegimeBlend(brailWind, brailTrimRange, 0, brailCamberGain, 0);
+  const builtinCamber = sail.aeroTableVersion === 'v2' ? (sail.aeroV2BuiltinCamber ?? 0.10) : 0;
 
-  const camberCLf = camberCLFactor(alphaAbsDeg, camberEff);
+  const camberCLf = camberCLDelta(alphaAbsDeg, camberEff, builtinCamber);
   const camberCDf = 1 + 1.0 * camberEff;
 
   let CL1 = CLtable * camberCLf;
@@ -1829,7 +1938,7 @@ function computeAmaLoad(phi, config) {
   return Math.abs(phi) / (stability.phiSubmergeDeg * DEG__b5);
 }
 
-// updateAback(state, amaLoad, dt, config) -> { abackTimer, capsized }
+// updateAback(state, amaLoad, Msail, dt, config) -> { abackTimer, capsized, abackWarning }
 //   Round 8 (ROUND8_physical_capsize.md, R8-1) retires the phi>=0
 //   "overload timer" as a capsize trigger. It was a v0.1 proxy from
 //   before roll dynamics existed at all (FIX_REQUEST_step1_review.md) —
@@ -1849,29 +1958,60 @@ function computeAmaLoad(phi, config) {
 //   derived on the fly from state.phi/amaLoad — no stored timer, nothing
 //   to retire further if the warning's own display logic ever changes).
 //
-//   The aback/pressed path (phi<0) is UNCHANGED (R8-1(b)): counting time
-//   past buoyancy saturation is already a physical mechanism (the ama
-//   fully submerged and still being driven down harder every second is
-//   a genuine, physically-motivated "how long can this go on" question,
-//   not a proxy standing in for something else) — this is the
-//   "physical mechanism instead of a bare timer" from
-//   FIX_REQUEST_round4_roll_dof.md 1.2/1.6: previously aback was
-//   detected purely from the apparent-wind angle (a proxy for "this will
-//   press the ama down"); a backwinded sail drives heelMoment the wrong
-//   way, which now drives phi negative directly through the roll ODE, so
-//   reading state.phi's sign is strictly more direct than the old proxy.
-function updateAback(state, amaLoad, dt, config) {
+//   The aback/pressed path's TIMER (phi<0 && amaLoad>1.0, i.e. the ama
+//   genuinely fully submerged) is UNCHANGED (R8-1(b), then round 10d H2
+//   re-audit: touching this gate to also fire on transient Msail<0
+//   blips — tried first — broke several deep-course scenarios that sail
+//   fine today, D4-1/D4-2/D4-3/C-deadrun, into false capsizes: ordinary
+//   downwind sailing routinely has brief negative-phi/negative-Msail
+//   moments that are NOT a sustained press and must not feed the same
+//   timer that governs real capsize). Counting time past full
+//   submersion stays the physically-motivated capsize question it always
+//   was.
+//
+//   abackWarning (NEW, round 10d, H2, ROUND10d_helm_balance.md) is a
+//   SEPARATE, non-capsize-affecting signal for the through-gybe gap the
+//   round's diagnosis actually found: several reproduced through-gybe
+//   trajectories (wind crossing to the ama-leeward side via a bear-away,
+//   yard slammed to delta~0 against the mast, sheet.js regime c) settle
+//   phi at a genuinely pressed, SUSTAINED -3..-9deg (amaLoad 0.3-0.9,
+//   short of the 1.0 full-submersion bar) — the buoyancy-side restoring
+//   arm is strong enough (ama.maxBuoyancy vs the flying side's much
+//   lighter ama.mass, R8's own asymmetry) to hold it there indefinitely,
+//   sail jammed, unable to trim — with the old detector completely
+//   silent for the boat's entire time in that state, timer or warning.
+//   amaLoad>1 (full submersion) is a severe, LATER-STAGE CONSEQUENCE of
+//   sustained aback, not aback's own nautical definition (wind on the
+//   wrong side of the sail); `phi<0 && Msail<0` (the sail's OWN current
+//   roll-moment contribution — "the pressing moment on the ama" — already
+//   computed every step in integrator.js's breakdown) is the direct,
+//   physical reading of that definition: pressed, AND actively being
+//   pressed right now (not coasting on residual momentum from a past
+//   press, and not a geometry-only alpha reading that would false-
+//   positive during a force-faded shunt transition — see aero.js
+//   shuntForceFade, which already zeroes Msail through 'transfer'/
+//   'swap'). Kept OUT of abackTimer/capsized specifically because it
+//   fires far more readily than full submersion (see above); it exists
+//   so the pressed-through-gybe state is no longer silent (ui/app.js
+//   surfaces it the same on-the-fly way as "AMA FLYING", no stored
+//   state), while a genuinely severe crossing still reaches full
+//   submersion fast enough (verified: within a few seconds of the wind
+//   crossing) that the EXISTING, unchanged timer/capsize path still
+//   fires on its own for that case — see the H2 scenario/assertion in
+//   harness/scenarios.js and harness/asserts.js.
+function updateAback(state, amaLoad, Msail, dt, config) {
   const { abackCapsizeTime, phiCapsizeDeg, capsizeTriggerMarginDeg } = config.stability;
 
   const isAback = state.phi < 0 && amaLoad > 1.0;
   const abackTimer = isAback ? state.abackTimer + dt : 0;
+  const abackWarning = state.phi < 0 && Msail < 0;
 
   const flyingCapsizeRad = (phiCapsizeDeg + capsizeTriggerMarginDeg) * DEG__b5;
   const capsized = state.capsized
     || abackTimer > abackCapsizeTime
     || state.phi >= flyingCapsizeRad;
 
-  return { abackTimer, capsized };
+  return { abackTimer, capsized, abackWarning };
 }
 
 
@@ -2194,7 +2334,7 @@ function integrate(state, controls, config, dt) {
 
   const finalState = { ...state, ...next, t: state.t + dt };
   const forcesAtNew = computeForces(finalState, controls, config);
-  const aback = updateAback(finalState, forcesAtNew.amaLoad, dt, config);
+  const aback = updateAback(finalState, forcesAtNew.amaLoad, forcesAtNew.breakdown.roll.Msail, dt, config);
 
   return {
     ...finalState,
@@ -2502,14 +2642,14 @@ const MS_TO_KN = 1.9438;
 // recording's codeVersion is meaningful (harness/replay.js warns on
 // mismatch) for a downloaded bundle without requiring a build step for
 // plain `python3 -m http.server` development.
-const CODE_VERSION = "dee918e";
+const CODE_VERSION = "fd5cb89";
 // BUILD_TIME: same pattern as CODE_VERSION above — tools/bundle.js
 // replaces this with the COMMIT's timestamp (not wall-clock build time),
 // so it stays stable across re-bundling the same commit and always
 // matches CODE_VERSION's hash. Shown in the bottom-right version footer
 // so a bug report/recording can be tied to an exact, dated build without
 // having to separately ask "which commit was this."
-const BUILD_TIME = "2026-07-20T06:59:55+02:00";
+const BUILD_TIME = "2026-07-20T08:30:08+02:00";
 
 // ---------------------------------------------------------------------
 // i18n — EN/PL. Static labels are marked with data-i18n="key" in
@@ -2529,6 +2669,10 @@ const TRANSLATIONS = {
     'h.sail': 'Sail', 'lbl.sheet': 'Sheet (szot)', 'hint.yard': '←/→ arrow keys ease/sheet',
     'lbl.brailLee': 'Brail (lee)', 'hint.brailLee': 'Q sheets in, Z eases',
     'lbl.brailWind': 'Brail (wind)', 'hint.brailWind': 'W sheets in, X eases',
+    // C-B (round 10c review, ROUND10d_helm_balance.md): the windward brail
+    // has two real regimes (aero.js brailRegimeBlend) — this tooltip names
+    // both so the split isn't only discoverable by reading the source.
+    'tooltip.brailWindZones': (pct) => `0-${pct}%: trim (carrot) — sail keeps drawing · ${pct}-100%: power dump — spills power, panic/furl`,
     'h.steering': 'Steering & trim', 'lbl.rudder': 'Rudder', 'hint.rudder': 'A/D deflect, auto-centers on release',
     'lbl.rudderUp': 'Rudder up (shipped)', 'hint.rudderUp': 'A steering oar, not a fixed rudder — usually out of the water; produces no force while shipped',
     'lbl.crewPos': 'Crew position', 'hint.crewPos': 'Drag the dot, or J/L (lateral), I/K (fore-aft)',
@@ -2543,6 +2687,10 @@ const TRANSLATIONS = {
     'shunt.lockoutHint': (v) => `Speed lockout: ease sail first (>${v} m/s)`,
     'alarm.aback': (t) => `ABACK — ama to leeward — capsize in ${t}s`,
     'alarm.amaFlying': 'AMA FLYING',
+    // H2 (round 10d, ROUND10d_helm_balance.md): pressed-but-not-yet-timing
+    // warning — sail genuinely backwinded and actively pressing the ama,
+    // short of the full-submersion bar that starts the real countdown.
+    'alarm.abackWarning': 'ABACK WARNING — sail pressed, ama loading',
     'capsize.causeAback': 'Cause: sustained ABACK (ama to leeward too long)',
     'capsize.causeOverload': 'Cause: heel passed the point of no return (ama flying)',
     'shuntPhase.none': 'none', 'shuntPhase.ease': 'easing', 'shuntPhase.transfer': 'transfer',
@@ -2582,6 +2730,7 @@ const TRANSLATIONS = {
     'h.sail': 'Żagiel', 'lbl.sheet': 'Szot', 'hint.yard': 'Strzałki ←/→: luzuj / wybieraj',
     'lbl.brailLee': 'Gejtawa zawietrzna', 'hint.brailLee': 'Q wybiera, Z luzuje',
     'lbl.brailWind': 'Gejtawa nawietrzna', 'hint.brailWind': 'W wybiera, X luzuje',
+    'tooltip.brailWindZones': (pct) => `0-${pct}%: trym (marchewka) — żagiel dalej ciągnie · ${pct}-100%: zrzut mocy — panika/refowanie`,
     'h.steering': 'Sterowanie i wyważenie', 'lbl.rudder': 'Ster', 'hint.rudder': 'A/D wychyla ster, centruje się po puszczeniu',
     'lbl.rudderUp': 'Wiosło wyjęte', 'hint.rudderUp': 'Ster to wiosło, nie stały ster — zwykle jest wyjęte z wody; nie wytwarza wtedy żadnej siły',
     'lbl.crewPos': 'Pozycja załogi', 'hint.crewPos': 'Przeciągnij kropkę, lub J/L (bok), I/K (wzdłuż)',
@@ -2596,6 +2745,7 @@ const TRANSLATIONS = {
     'shunt.lockoutHint': (v) => `Blokada zwrotu: najpierw wyluzuj żagiel (>${v} m/s)`,
     'alarm.aback': (t) => `ABACK — ama po zawietrznej — wywrotka za ${t}s`,
     'alarm.amaFlying': 'AMA W POWIETRZU',
+    'alarm.abackWarning': 'OSTRZEŻENIE ABACK — żagiel dociska amę',
     'capsize.causeAback': 'Przyczyna: długotrwały ABACK (ama zbyt długo po zawietrznej)',
     'capsize.causeOverload': 'Przyczyna: przechył minął punkt bez powrotu (ama w powietrzu)',
     'shuntPhase.none': 'brak', 'shuntPhase.ease': 'luzowanie', 'shuntPhase.transfer': 'przenoszenie',
@@ -2647,6 +2797,7 @@ function setLang(lang) {
   currentLang = lang;
   localStorage.setItem('proaLang', lang);
   applyStaticTranslations();
+  updateBrailZoneUI();
   // Canvas text (drawPolarView) is baked into pixels, not DOM — re-render
   // immediately so a language switch doesn't leave stale text on screen
   // until the next natural redraw. drawPolarView is a hoisted function
@@ -2675,6 +2826,7 @@ const amaBarWrap = document.getElementById('amaBar');
 const heelBarWrap = document.getElementById('heelBar');
 const heelNeedle = document.getElementById('heelNeedle');
 const shuntHint = document.getElementById('shuntHint');
+const brailWindTick = document.getElementById('brailWindTick');
 
 const sliders = {
   windDir: document.getElementById('windDir'),
@@ -2767,6 +2919,19 @@ function syncSlidersFromControls() {
   refreshOutputs();
 }
 
+// C-B (round 10c review, ROUND10d_helm_balance.md): the brailWind slider's
+// TRIM/SURVIVAL two-tone track, boundary tick, and tooltip are all read
+// from CONFIG.sail.brailTrimRange (aero.js brailRegimeBlend's own split
+// point) rather than hardcoded, so a boat-design change to it (or a
+// language switch, for the tooltip text) stays in sync. Re-run wherever
+// `dims` is (re)assigned or the language changes.
+function updateBrailZoneUI() {
+  const pct = Math.round(dims.sail.brailTrimRange * 100);
+  sliders.brailWind.style.setProperty('--trim-pct', `${pct}%`);
+  brailWindTick.style.left = `${pct}%`;
+  sliders.brailWind.title = t('tooltip.brailWindZones', pct);
+}
+
 function refreshOutputs() {
   outs.windDir.textContent = `${Math.round(controls.windDirFrom / DEG__b12)}°`;
   outs.windSpeed.textContent = controls.windSpeed.toFixed(1);
@@ -2844,6 +3009,7 @@ rudderUpCheckbox.addEventListener('change', () => {
 });
 
 syncSlidersFromControls();
+updateBrailZoneUI();
 
 // ---------------------------------------------------------------------
 // Keyboard
@@ -3451,8 +3617,15 @@ function updateHud(state, forces) {
 // longer a countdown — amaLoad>1 ("ama flying") is a WARNING condition,
 // not a timer toward an automatic capsize, so the banner just shows the
 // tag while it's true, with no "capsize in Xs" text (there's nothing
-// counting down anymore). The aback (phi<0) side is unchanged, still a
-// real timer with a real countdown.
+// counting down anymore). The aback (phi<0) side keeps its real timer
+// with a real countdown once it starts (abackTimer>0, gated on full ama
+// submersion — stability.js updateAback), but round 10d (H2) adds a
+// lighter WARNING below it, same on-the-fly-derived pattern as "AMA
+// FLYING": phi<0 while the sail's own roll moment is still actively
+// pressing it (forces.breakdown.roll.Msail<0) is genuine aback in the
+// nautical sense well before full submersion — see stability.js
+// updateAback's own abackWarning comment for the through-gybe diagnosis
+// this closes.
 function updateAlarms(state, forces) {
   banner.className = '';
   if (state.capsized) {
@@ -3464,6 +3637,9 @@ function updateAlarms(state, forces) {
   } else if (state.phi >= 0 && forces.amaLoad > 1.0) {
     banner.className = 'overload';
     banner.textContent = t('alarm.amaFlying');
+  } else if (state.phi < 0 && forces.breakdown.roll.Msail < 0) {
+    banner.className = 'pressed';
+    banner.textContent = t('alarm.abackWarning');
   }
 
   if (state.capsized && !capsizeOverlay.classList.contains('show')) {
@@ -4127,6 +4303,7 @@ function applyBoatPatch(patch) {
     return false;
   }
   dims = validated;
+  updateBrailZoneUI();
   sim.setConfig(patch);
   sim.reset();
   boatErrorEl.style.color = '#7fe3a3';
@@ -4141,6 +4318,7 @@ document.getElementById('btnApplyBoat').addEventListener('click', () => {
 
 document.getElementById('btnResetBoatDefaults').addEventListener('click', () => {
   dims = createConfig();
+  updateBrailZoneUI();
   buildBoatPanel();
 });
 

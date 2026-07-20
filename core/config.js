@@ -378,7 +378,33 @@ function buildDefaultConfig() {
       // zero near 55-58deg, giving a stable, rudder-free pointing attractor.
       // Only the baseline shifts — the delta-dependent trim steering
       // (halfChordEff*cos(delta)) is untouched, so T3/T4's directions hold.
-      lead: 0.05 * p.boat_length_m,
+      //
+      // Round 10d (H1, ROUND10d_helm_balance.md): 0.05*L passed every
+      // DIFFERENTIAL steering test (T1-4, C-bearaway, ...) but none of
+      // those bound the ABSOLUTE helm balance at a fixed trim — a gap this
+      // round's new "rudder-free release at the polar-optimal beam reach"
+      // test closes. At 0.05*L that test measured a genuine but marginal
+      // WEATHER-side drift (initial rate 0.31deg/s, fine; but 60s excursion
+      // 16.2deg, just over the 15deg ceiling). A fine sweep of lead within
+      // the mandated 5-25%*LWL band (probe: TWA90/TWS6/crewPos0.35, sheet
+      // re-optimized per point, rudder released after a 30s settle) found
+      // the balance is a KNIFE EDGE in this narrow window — the drift's own
+      // sign flips from weather to lee between lead=0.065*L and 0.07*L, so
+      // 0.05-0.065*L is the only sub-range that is BOTH in-range and
+      // weather-side. 0.06*L (initial rate 0.14deg/s, 60s excursion 7.2deg,
+      // both comfortably inside the acceptance band) is picked over values
+      // closer to the flip (e.g. 0.065*L, excursion 2.8deg) specifically
+      // for that margin from the knife edge — a boat this close to a sign
+      // flip is not a robustly-calibrated one, even though 0.065 alone also
+      // technically passes. Direction (weather) matches the manual's
+      // "hands-off canoe settles toward the wind" convention this round's
+      // acceptance criterion cites; the sail-trim-response DIRECTIONS this
+      // shift moves through are unchanged (still 0.05<lead<0.07, nowhere
+      // near the ~0.15-0.2*L range where D-6's original diagnosis found the
+      // opposite, structural lee-helm regime) — see
+      // ROUND10d_helm_balance_findings.md for the full before/after
+      // moment-budget table and the re-run D-6/T3/T4 differential numbers.
+      lead: 0.06 * p.boat_length_m,
     },
 
     ama: {
@@ -430,13 +456,28 @@ function buildDefaultConfig() {
       // apexAngleDeg=50 between the two apex fits (0.406/0.428) -> ~0.41.
       // `camber`: SET TO 0, changed from round 9's 0.10 — the Di Piazza
       // Santa Cruz curve is a MEASURED sail's actual CL, already carrying
-      // whatever real camber that sail had; the runtime camber multiplier
-      // (camberCLFactor, aero.js) exists to approximate camber's benefit
-      // on TOP OF the flat, uncambered v1/Polhamus theoretical curve — on
-      // v2 it would double-count camber already baked into the measured
-      // data. Only re-enable camber>0 if aeroTableVersion is switched back
-      // to 'v1'.
+      // whatever real camber that sail had. Round 10d (C-C,
+      // ROUND10d_helm_balance.md) redefined what this value MEANS rather
+      // than just leaving it at 0: aero.js's camberCLDelta() now reads
+      // `camber` (and brailCamberGain below) as a DELTA beyond the active
+      // table's own built-in camber (aeroV2BuiltinCamber for v2, 0 for
+      // v1 — a genuinely flat theoretical table), not an absolute camber
+      // ratio applied on top of a flat plate — see camberCLDelta's own
+      // comment in aero.js for the double-counting this fixes (the OLD
+      // camberCLFactor call always assumed a flat-plate baseline, which
+      // was only ever true for v1). camber=0 stays a no-op for v2's own
+      // baseline exactly as before (delta=0); the fix specifically
+      // corrects brailCamberGain below, which is the only thing that
+      // makes camberEff nonzero by default.
       camber: 0,
+      // aeroV2BuiltinCamber (round 10d, C-C): the v2 table's own built-in
+      // camber ratio, "1:10" per the work order (Di Piazza's Santa Cruz
+      // sail — a real rigid crab-claw, not a flat theoretical plate — this
+      // is an order-of-magnitude literature figure for that class of sail,
+      // not independently re-measured from the digitized curve itself).
+      // Only read when sail.aeroTableVersion is 'v2' (aero.js); v1 uses 0
+      // (a genuinely flat, uncambered theoretical table) unconditionally.
+      aeroV2BuiltinCamber: 0.10,
       CD0: 0.040,
       s: 0.41,                                 // tunable (RUNTIME only) — v2 fit, apexAngleDeg=50-interpolated between apex45 (0.406) and apex60 (0.428); see AERO_V2_PARAMS
       // --- Sheet constraint (ROUND5_CONSOLIDATED_work_order.md P1) ---
@@ -477,16 +518,26 @@ function buildDefaultConfig() {
       // technique deepens the sail's belly under partial windward-brail
       // pull (gathering the leech doesn't just spill area, it also bags
       // the remaining draft) — reuses the existing camber->CL machinery
-      // (camberCLFactor/camberCDf in aero.js) rather than a new curve.
+      // (camberCLDelta/camberCDf in aero.js) rather than a new curve.
       // Peaks at brailTrimRange (full TRIM-regime pull) via
       // brailRegimeBlend, fading back to 0 by brailWind=1 (a fully spilled
-      // SURVIVAL-regime sail is gathered, not bagged). NOTE: camberCLFactor
-      // itself zeroes any camber benefit above alphaAbsDeg=45deg (tuned
-      // for the v1/Polhamus table, aero.js) — deep-course trims often sit
-      // at or above that alpha (see ROUND10c probe table), so this term's
-      // measured effect is smaller than its nominal magnitude suggests;
-      // reused as specified rather than also reshaping camberCLFactor's
-      // own window, which is out of this round's scope.
+      // SURVIVAL-regime sail is gathered, not bagged). Round 10d (C-C)
+      // fixed two things this round 10c comment used to flag as known
+      // gaps: (1) this value is now read as a DELTA beyond the v2 table's
+      // own built-in camber (aeroV2BuiltinCamber above), not an absolute
+      // ratio double-counting it — the OLD camberCLFactor call was
+      // silently applying MORE bonus than a value this size should give,
+      // on top of a curve that was already cambered; (2) camberCLFactor's
+      // own fade window was extended 45deg -> 75deg (aero.js
+      // CAMBER_FADE_END_DEG) — deep-course TRIM-regime trims sampled at
+      // 32-85deg alphaSailor (D4/C's own recipes), mostly PAST the old
+      // 45deg cutoff, so this term was silently near-inactive for most of
+      // its own intended use case. Magnitude itself (0.45) unchanged —
+      // still this round's own suggested default, not independently
+      // measured, same status as ceBrailShift/ceSwingFraction; the C2
+      // deep-course speed-ratio test is re-anchored against the corrected
+      // (smaller, since it no longer double-counts) effective bonus — see
+      // ROUND10d_helm_balance_findings.md.
       brailCamberGain: 0.45,
       // ceSwingFraction: round 7, D-6. The yard's swing (delta) still
       // moves the CE fore-aft/athwartship (a real crab-claw's CE genuinely

@@ -64,6 +64,10 @@ const TRANSLATIONS = {
     'h.sail': 'Sail', 'lbl.sheet': 'Sheet (szot)', 'hint.yard': '←/→ arrow keys ease/sheet',
     'lbl.brailLee': 'Brail (lee)', 'hint.brailLee': 'Q sheets in, Z eases',
     'lbl.brailWind': 'Brail (wind)', 'hint.brailWind': 'W sheets in, X eases',
+    // C-B (round 10c review, ROUND10d_helm_balance.md): the windward brail
+    // has two real regimes (aero.js brailRegimeBlend) — this tooltip names
+    // both so the split isn't only discoverable by reading the source.
+    'tooltip.brailWindZones': (pct) => `0-${pct}%: trim (carrot) — sail keeps drawing · ${pct}-100%: power dump — spills power, panic/furl`,
     'h.steering': 'Steering & trim', 'lbl.rudder': 'Rudder', 'hint.rudder': 'A/D deflect, auto-centers on release',
     'lbl.rudderUp': 'Rudder up (shipped)', 'hint.rudderUp': 'A steering oar, not a fixed rudder — usually out of the water; produces no force while shipped',
     'lbl.crewPos': 'Crew position', 'hint.crewPos': 'Drag the dot, or J/L (lateral), I/K (fore-aft)',
@@ -78,6 +82,10 @@ const TRANSLATIONS = {
     'shunt.lockoutHint': (v) => `Speed lockout: ease sail first (>${v} m/s)`,
     'alarm.aback': (t) => `ABACK — ama to leeward — capsize in ${t}s`,
     'alarm.amaFlying': 'AMA FLYING',
+    // H2 (round 10d, ROUND10d_helm_balance.md): pressed-but-not-yet-timing
+    // warning — sail genuinely backwinded and actively pressing the ama,
+    // short of the full-submersion bar that starts the real countdown.
+    'alarm.abackWarning': 'ABACK WARNING — sail pressed, ama loading',
     'capsize.causeAback': 'Cause: sustained ABACK (ama to leeward too long)',
     'capsize.causeOverload': 'Cause: heel passed the point of no return (ama flying)',
     'shuntPhase.none': 'none', 'shuntPhase.ease': 'easing', 'shuntPhase.transfer': 'transfer',
@@ -117,6 +125,7 @@ const TRANSLATIONS = {
     'h.sail': 'Żagiel', 'lbl.sheet': 'Szot', 'hint.yard': 'Strzałki ←/→: luzuj / wybieraj',
     'lbl.brailLee': 'Gejtawa zawietrzna', 'hint.brailLee': 'Q wybiera, Z luzuje',
     'lbl.brailWind': 'Gejtawa nawietrzna', 'hint.brailWind': 'W wybiera, X luzuje',
+    'tooltip.brailWindZones': (pct) => `0-${pct}%: trym (marchewka) — żagiel dalej ciągnie · ${pct}-100%: zrzut mocy — panika/refowanie`,
     'h.steering': 'Sterowanie i wyważenie', 'lbl.rudder': 'Ster', 'hint.rudder': 'A/D wychyla ster, centruje się po puszczeniu',
     'lbl.rudderUp': 'Wiosło wyjęte', 'hint.rudderUp': 'Ster to wiosło, nie stały ster — zwykle jest wyjęte z wody; nie wytwarza wtedy żadnej siły',
     'lbl.crewPos': 'Pozycja załogi', 'hint.crewPos': 'Przeciągnij kropkę, lub J/L (bok), I/K (wzdłuż)',
@@ -131,6 +140,7 @@ const TRANSLATIONS = {
     'shunt.lockoutHint': (v) => `Blokada zwrotu: najpierw wyluzuj żagiel (>${v} m/s)`,
     'alarm.aback': (t) => `ABACK — ama po zawietrznej — wywrotka za ${t}s`,
     'alarm.amaFlying': 'AMA W POWIETRZU',
+    'alarm.abackWarning': 'OSTRZEŻENIE ABACK — żagiel dociska amę',
     'capsize.causeAback': 'Przyczyna: długotrwały ABACK (ama zbyt długo po zawietrznej)',
     'capsize.causeOverload': 'Przyczyna: przechył minął punkt bez powrotu (ama w powietrzu)',
     'shuntPhase.none': 'brak', 'shuntPhase.ease': 'luzowanie', 'shuntPhase.transfer': 'przenoszenie',
@@ -182,6 +192,7 @@ function setLang(lang) {
   currentLang = lang;
   localStorage.setItem('proaLang', lang);
   applyStaticTranslations();
+  updateBrailZoneUI();
   // Canvas text (drawPolarView) is baked into pixels, not DOM — re-render
   // immediately so a language switch doesn't leave stale text on screen
   // until the next natural redraw. drawPolarView is a hoisted function
@@ -210,6 +221,7 @@ const amaBarWrap = document.getElementById('amaBar');
 const heelBarWrap = document.getElementById('heelBar');
 const heelNeedle = document.getElementById('heelNeedle');
 const shuntHint = document.getElementById('shuntHint');
+const brailWindTick = document.getElementById('brailWindTick');
 
 const sliders = {
   windDir: document.getElementById('windDir'),
@@ -302,6 +314,19 @@ function syncSlidersFromControls() {
   refreshOutputs();
 }
 
+// C-B (round 10c review, ROUND10d_helm_balance.md): the brailWind slider's
+// TRIM/SURVIVAL two-tone track, boundary tick, and tooltip are all read
+// from CONFIG.sail.brailTrimRange (aero.js brailRegimeBlend's own split
+// point) rather than hardcoded, so a boat-design change to it (or a
+// language switch, for the tooltip text) stays in sync. Re-run wherever
+// `dims` is (re)assigned or the language changes.
+function updateBrailZoneUI() {
+  const pct = Math.round(dims.sail.brailTrimRange * 100);
+  sliders.brailWind.style.setProperty('--trim-pct', `${pct}%`);
+  brailWindTick.style.left = `${pct}%`;
+  sliders.brailWind.title = t('tooltip.brailWindZones', pct);
+}
+
 function refreshOutputs() {
   outs.windDir.textContent = `${Math.round(controls.windDirFrom / DEG)}°`;
   outs.windSpeed.textContent = controls.windSpeed.toFixed(1);
@@ -379,6 +404,7 @@ rudderUpCheckbox.addEventListener('change', () => {
 });
 
 syncSlidersFromControls();
+updateBrailZoneUI();
 
 // ---------------------------------------------------------------------
 // Keyboard
@@ -986,8 +1012,15 @@ function updateHud(state, forces) {
 // longer a countdown — amaLoad>1 ("ama flying") is a WARNING condition,
 // not a timer toward an automatic capsize, so the banner just shows the
 // tag while it's true, with no "capsize in Xs" text (there's nothing
-// counting down anymore). The aback (phi<0) side is unchanged, still a
-// real timer with a real countdown.
+// counting down anymore). The aback (phi<0) side keeps its real timer
+// with a real countdown once it starts (abackTimer>0, gated on full ama
+// submersion — stability.js updateAback), but round 10d (H2) adds a
+// lighter WARNING below it, same on-the-fly-derived pattern as "AMA
+// FLYING": phi<0 while the sail's own roll moment is still actively
+// pressing it (forces.breakdown.roll.Msail<0) is genuine aback in the
+// nautical sense well before full submersion — see stability.js
+// updateAback's own abackWarning comment for the through-gybe diagnosis
+// this closes.
 function updateAlarms(state, forces) {
   banner.className = '';
   if (state.capsized) {
@@ -999,6 +1032,9 @@ function updateAlarms(state, forces) {
   } else if (state.phi >= 0 && forces.amaLoad > 1.0) {
     banner.className = 'overload';
     banner.textContent = t('alarm.amaFlying');
+  } else if (state.phi < 0 && forces.breakdown.roll.Msail < 0) {
+    banner.className = 'pressed';
+    banner.textContent = t('alarm.abackWarning');
   }
 
   if (state.capsized && !capsizeOverlay.classList.contains('show')) {
@@ -1662,6 +1698,7 @@ function applyBoatPatch(patch) {
     return false;
   }
   dims = validated;
+  updateBrailZoneUI();
   sim.setConfig(patch);
   sim.reset();
   boatErrorEl.style.color = '#7fe3a3';
@@ -1676,6 +1713,7 @@ document.getElementById('btnApplyBoat').addEventListener('click', () => {
 
 document.getElementById('btnResetBoatDefaults').addEventListener('click', () => {
   dims = createConfig();
+  updateBrailZoneUI();
   buildBoatPanel();
 });
 

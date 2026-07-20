@@ -150,7 +150,7 @@ export function integrate(state, controls, config, dt) {
 
   const finalState = { ...state, ...next, t: state.t + dt };
   const forcesAtNew = computeForces(finalState, controls, config);
-  const aback = updateAback(finalState, forcesAtNew.amaLoad, dt, config);
+  const aback = updateAback(finalState, forcesAtNew.amaLoad, forcesAtNew.breakdown.roll.Msail, dt, config);
 
   return {
     ...finalState,

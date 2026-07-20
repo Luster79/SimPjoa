@@ -1,6 +1,38 @@
 # PROMPT SUPPLEMENT: Physics core architecture (Step 1 — headless)
 
-*Last reviewed: 2026-07-18*
+*Last reviewed: 2026-07-20*
+
+**Round 10d note:** `ROUND10d_helm_balance.md` closed three defects the
+user's field ride exposed (spontaneous uncontrolled bear-away, TWA113
+onward) plus three carried items from the round 10c review. H1: no prior
+test bounded the ABSOLUTE helm balance at a fixed trim (only differential
+steering-direction tests existed) — a new rudder-free-release test at the
+polar-optimal beam reach found `hull.lead` (0.05*LWL) marginally over its
+own 60s-excursion bound; a fine sweep found the balance is a knife edge in
+this narrow band, and re-anchored at 0.06*LWL (see aero.js sailForces'
+lead note and config.js hull.lead's own comment). H2: stability.js
+updateAback's aback TIMER required full ama submersion (amaLoad>1) before
+counting any time at all, so a through-gybe crossing (wind crossing to the
+ama-leeward side via a bear-away, yard slammed to delta~0) that settles at
+a genuinely pressed but sub-1.0 equilibrium went completely undetected —
+added a separate abackWarning signal (phi<0 && the sail's own current
+roll moment, Msail, still pressing it), kept OUT of the capsize timer
+itself (folding it in broke several deep-course scenarios into false
+capsizes). H3: audited for a reported exact-zero parked-hull pin; no
+force-computation bug found (every hydro force is genuinely zero at
+u=v=0, and sail forces are nonzero at every TWS>0 configuration tried,
+including the fully symmetric dead-run case) — the furled-sail spar drag
+already supplies adequate windage for the new acceptance test, so nothing
+was added; the exact reported reading is flagged, not silently assumed
+fixed. C-A/C-B/C-C (carried from round 10c): the dead-run release test
+became a 120s sustained-rate metric instead of a 30s snapshot; the
+brailWind slider gained a CONFIG-driven TRIM/SURVIVAL two-tone track +
+tooltip; the camber machinery (aero.js camberCLDelta) now reads
+sail.camber/brailCamberGain as a delta beyond the v2 aero table's own
+built-in ~1:10 camber instead of double-counting it, and its fade window
+was extended 45deg->75deg to actually cover the deep-course alpha range
+the brail bonus targets. Full evidence in
+`ROUND10d_helm_balance_findings.md`.
 
 **Round 9 note:** `ROUND9_physics_fidelity_work_order.md` closed the
 "heavy displacement monohull, not a light apparent-wind multihull" gap
@@ -287,7 +319,15 @@ cross-check at startup as required by the main prompt. Fixed schema version: a
       // flip: once round 9's lead fix (0.15->0.05*LWL) removed a
       // structural lee-helm bias, the naive r x F derivation matches the
       // boat's real steering direction on its own — see aero.js's own
-      // comment at this line for the full history. ceBrailShift
+      // comment at this line for the full history. Round 10d (H1,
+      // ROUND10d_helm_balance.md) fine-tuned lead again, 0.05->0.06*LWL:
+      // the differential steering tests round 9 validated don't bound the
+      // ABSOLUTE helm balance at a fixed trim, and a new rudder-free-
+      // release test at the polar-optimal beam reach found 0.05*LWL's
+      // balance was weather-side but marginally over its own 60s-
+      // excursion bound; 0.06*LWL sits with real margin from the knife-
+      // edge sign flip found nearby (~0.068*LWL) — see config.js
+      // hull.lead's own comment for the swept numbers. ceBrailShift
       // (config.sail, ~0.3) is unchanged
       // from round 5: shrinks x_CE's along-yard swing proportionally to
       // brailWind (spilling the sail's rear moves the effective CE toward
@@ -417,7 +457,7 @@ cross-check at startup as required by the main prompt. Fixed schema version: a
       // that (grows linearly with phi) so the aback timer and the "AMA
       // FLYING" warning readout keep their "how far past the edge"
       // semantics.
-    updateAback(state, amaLoad, dt, config) -> { abackTimer, capsized }
+    updateAback(state, amaLoad, Msail, dt, config) -> { abackTimer, capsized, abackWarning }
       // Round 8 (ROUND8_physical_capsize.md, R8-1) retired the phi>=0
       // "overload timer" as a capsize trigger — a v0.1 proxy from before
       // roll dynamics existed, found (round 7 diagnosis) to fire at
@@ -429,13 +469,28 @@ cross-check at startup as required by the main prompt. Fixed schema version: a
       // return, not the instant it crosses the reversal). amaLoad>1 on
       // this side is now a WARNING only (ui/app.js's "AMA FLYING" tag,
       // derived on the fly — no stored timer).
-      // The aback/pressed path (phi<0) is UNCHANGED: state.phi<0 past
-      // amaLoad>1 -> abackTimer (config.stability.abackCapsizeTime,
-      // unchanged 6s semantics) — this is the "physical mechanism instead
-      // of a bare timer" the round-4 extension request asked for: a
-      // backwinded sail drives heelMoment (and hence phi) negative
+      // The aback/pressed path's TIMER (phi<0 && amaLoad>1, i.e. the ama
+      // fully submerged) is UNCHANGED: config.stability.abackCapsizeTime,
+      // same 6s semantics as before — this is the "physical mechanism
+      // instead of a bare timer" the round-4 extension request asked for:
+      // a backwinded sail drives heelMoment (and hence phi) negative
       // through the roll ODE, so reading phi's sign is strictly more
       // direct than the round-3 apparent-wind-angle proxy it replaces.
+      // Round 10d (H2, ROUND10d_helm_balance.md) added a SEPARATE
+      // abackWarning signal, gated on phi<0 && Msail<0 (the sail's own
+      // current roll-moment contribution, "the pressing moment on the
+      // ama") instead of full submersion: several reproduced through-gybe
+      // trajectories (wind crossing to the ama-leeward side via a
+      // bear-away, yard slammed to delta~0 against the mast) settle at a
+      // genuinely pressed, sustained SUB-1.0 amaLoad the old detector
+      // never flagged at all. Deliberately NOT folded into abackTimer —
+      // gating the timer itself on Msail<0 was tried first and broke
+      // several deep-course scenarios (ordinary downwind sailing has
+      // brief negative-phi/Msail moments that are not a sustained press)
+      // into false capsizes. ui/app.js surfaces abackWarning the same
+      // on-the-fly way as "AMA FLYING" (no stored state) as a third,
+      // lighter banner tier below the real "ABACK...capsize in Xs"
+      // countdown.
 
 ### shunt.js
     shuntStep(state, controls, config, dt) -> state patch

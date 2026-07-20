@@ -91,11 +91,56 @@ function blendApexCL(apexDeg, alphaAbsDeg, aeroTable) {
   return lerp(clLo, clHi, w);
 }
 
+// camberCLFactor (round 10d, C-C, ROUND10d_helm_balance.md): CL multiplier
+// for a given ABSOLUTE camber ratio, low-alpha value unchanged since round
+// 5 (1+1.75*camber, calibrated against the flat/theoretical v1/Polhamus
+// table, where camber=0 genuinely means a flat plate) — see camberCLDelta
+// below for the v2-table-relative wrapper callers actually use.
+//
+// CAMBER_FADE_END_DEG extended 45 -> 75 (was: hard zero above 45deg,
+// exactly where deep-course trims live — flagged as a known limitation at
+// C1's brailCamberGain, round 10c, and left out of scope there). Sampled
+// alphaSailor across the TRIM-regime deep-course scenarios this bonus
+// actually targets (D4/C's own TWA140-178 recipes): 32-85deg, i.e. mostly
+// PAST the old 45deg cutoff — the camber bonus was silently inactive for
+// most of its own intended use case. 75deg (not a flat extension to 90)
+// keeps a taper-to-zero near true flat-plate/stalled flow (alpha~90),
+// where camber stops being a meaningful attached-flow concept at all —
+// empirically chosen to cover the sampled range without claiming
+// camber still matters at the most extreme, most-separated angles.
+const CAMBER_FADE_END_DEG = 75;
 function camberCLFactor(alphaAbsDeg, camber) {
   if (alphaAbsDeg <= 30) return 1 + 1.75 * camber;
-  if (alphaAbsDeg >= 45) return 1.0;
-  const t = (alphaAbsDeg - 30) / 15;
+  if (alphaAbsDeg >= CAMBER_FADE_END_DEG) return 1.0;
+  const t = (alphaAbsDeg - 30) / (CAMBER_FADE_END_DEG - 30);
   return lerp(1 + 1.75 * camber, 1.0, t);
+}
+
+// camberCLDelta(alphaAbsDeg, camberDelta, builtinCamber) -> CL multiplier
+// relative to the aero TABLE's own baked-in camber, not a flat plate (C-C:
+// "the v2 aero table was digitized from ALREADY-CAMBERED rigid sails,
+// while the legacy camber machinery still multiplies on top" — the old
+// call site fed sail.camber/brailCamberGain straight into camberCLFactor,
+// which computes its multiplier RELATIVE TO A FLAT PLATE; on the v2 table
+// (already carrying the source sail's own ~1:10 camber, config.js
+// AERO_V2_BUILTIN_CAMBER) that double-counts the table's built-in camber
+// every time camberDelta is nonzero — i.e. every TRIM-regime brail pull,
+// which is exactly the deep-course case this round's other items are
+// tuning). Fix: treat camberDelta as ADDITIONAL camber beyond
+// builtinCamber, and take the RATIO of the two absolute camberCLFactor
+// evaluations, so the table's own baseline cancels out algebraically:
+//   ratio = camberCLFactor(alpha, builtin+delta) / camberCLFactor(alpha, builtin)
+// At camberDelta=0 this is an exact identity (ratio=1, no change) for ANY
+// builtinCamber — matching today's already-correct camberDelta=0 default
+// exactly. At builtinCamber=0 (v1, a genuinely flat theoretical table)
+// this reduces algebraically to camberCLFactor(alpha, delta)/1, i.e. the
+// OLD absolute formula, unchanged — v1's camber semantics (config.js:
+// "Only re-enable camber>0 if aeroTableVersion is switched back to v1")
+// are untouched by this change.
+function camberCLDelta(alphaAbsDeg, camberDelta, builtinCamber) {
+  const atBuiltin = camberCLFactor(alphaAbsDeg, builtinCamber);
+  const atBuiltinPlusDelta = camberCLFactor(alphaAbsDeg, builtinCamber + camberDelta);
+  return atBuiltinPlusDelta / atBuiltin;
 }
 
 function smoothstep01(t) {
@@ -160,13 +205,15 @@ export function sailCoefficients(alpha, controls, config) {
   // technique bags the remaining draft, not just spills area — peaks at
   // brailTrimRange (full TRIM pull), fades back to sail.camber's own
   // baseline by brailWind=1 (a fully spilled SURVIVAL sail is gathered,
-  // not bagged). Reuses camberCLFactor/camberCDf unchanged (see
-  // sail.brailCamberGain's config.js comment for that mechanism's own
-  // alphaAbsDeg>=45deg ceiling).
+  // not bagged). camberEff is now a DELTA beyond the active table's own
+  // built-in camber (round 10d, C-C — see camberCLDelta's own comment for
+  // the double-counting this fixes and why camberEff=0 is an unchanged
+  // no-op either way).
   const brailCamberGain = sail.brailCamberGain ?? 0;
   const camberEff = sail.camber + brailRegimeBlend(brailWind, brailTrimRange, 0, brailCamberGain, 0);
+  const builtinCamber = sail.aeroTableVersion === 'v2' ? (sail.aeroV2BuiltinCamber ?? 0.10) : 0;
 
-  const camberCLf = camberCLFactor(alphaAbsDeg, camberEff);
+  const camberCLf = camberCLDelta(alphaAbsDeg, camberEff, builtinCamber);
   const camberCDf = 1 + 1.0 * camberEff;
 
   let CL1 = CLtable * camberCLf;
