@@ -790,6 +790,45 @@ function buildDefaultConfig() {
       // longer reads it — see hull.lead above and ceSwingFraction below.
       tackXFraction: 0.06,                    // fraction of hull half-length — mast/tack position, active-bow side of CG (UI drawing only, round 7)
       ceBrailShift: 0.3,                      // tunable (P2-3), fraction of the half-chord the CE shifts toward the tack at brailWind=1 (spilling the sail's rear/upper area), request's own suggested ~0.25-0.35 band
+      // yceBrailShift (round 10c, C1, ROUND10c_carrot_two_regime.md):
+      // SEPARATE from ceBrailShift above — round 10b (D2) unified xCE/yCE
+      // onto the same shrinking half-chord, but the manual's downwind
+      // "carrot" technique needs the LATERAL arm (yCE) to shrink harder
+      // than the fore-aft one: gathering the sail's rear/upper area toward
+      // the yard's pivot pulls the pressure centroid inboard/up on both
+      // axes, but it's specifically the lateral (yCE) collapse that attacks
+      // the deep-course luffing/yaw moment (-yCE*Fx in aero.js's
+      // yawMoment) — the mechanism this round's bear-away/dead-run-release
+      // acceptance tests depend on. Set stronger than ceBrailShift (0.3);
+      // kept < 1 so halfChordEffY never reverses sign at brailWind=1.
+      yceBrailShift: 0.6,
+      // brailTrimRange (round 10c, C1): the windward brail's two real
+      // roles per the manual — TRIM (partial pull: deepens the belly,
+      // shifts CE toward the tack, sail keeps drawing) vs SURVIVAL (pull
+      // past this point: spills power, panic/furl territory) — were
+      // conflated by round 5's single linear CL/moment cut. Below this
+      // fraction of brailWind, aero.js's brailRegimeBlend() applies only
+      // the mild TRIM-regime cuts; above it, cuts ramp to the original
+      // strong SURVIVAL-regime values (preserving T6/panic and the stop/
+      // squall scenarios). 0.6 is this round's own suggested default —
+      // not independently measured, same status as ceBrailShift/
+      // ceSwingFraction.
+      brailTrimRange: 0.6,
+      // brailCamberGain (round 10c, C1): the manual's TRIM-regime
+      // technique deepens the sail's belly under partial windward-brail
+      // pull (gathering the leech doesn't just spill area, it also bags
+      // the remaining draft) — reuses the existing camber->CL machinery
+      // (camberCLFactor/camberCDf in aero.js) rather than a new curve.
+      // Peaks at brailTrimRange (full TRIM-regime pull) via
+      // brailRegimeBlend, fading back to 0 by brailWind=1 (a fully spilled
+      // SURVIVAL-regime sail is gathered, not bagged). NOTE: camberCLFactor
+      // itself zeroes any camber benefit above alphaAbsDeg=45deg (tuned
+      // for the v1/Polhamus table, aero.js) — deep-course trims often sit
+      // at or above that alpha (see ROUND10c probe table), so this term's
+      // measured effect is smaller than its nominal magnitude suggests;
+      // reused as specified rather than also reshaping camberCLFactor's
+      // own window, which is out of this round's scope.
+      brailCamberGain: 0.45,
       // ceSwingFraction: round 7, D-6. The yard's swing (delta) still
       // moves the CE fore-aft/athwartship (a real crab-claw's CE genuinely
       // shifts with trim — that's the whole mechanism by which trimming
@@ -945,6 +984,10 @@ function validateConfig(config) {
   // comment on its default above for the provenance audit this bound comes
   // from); values outside (0,1] were never validated by any committed test.
   inRange(config.sail.ceSwingFraction, 0, 1, 'sail.ceSwingFraction');
+  // brailTrimRange (round 10c, C1): the TRIM/SURVIVAL regime split point
+  // (aero.js brailRegimeBlend) — must stay strictly inside (0,1) since it's
+  // used as a division denominator on both sides of the split.
+  inRange(config.sail.brailTrimRange, 0.01, 0.99, 'sail.brailTrimRange');
   inRange(config.crew.posMin, -1, 0, 'crew.posMin');
   inRange(config.crew.posMax, 0, 2, 'crew.posMax');
   inRange(config.rudder.maxDeflectionDeg, 1, 60, 'rudder.maxDeflectionDeg');
@@ -1093,6 +1136,31 @@ function camberCLFactor(alphaAbsDeg, camber) {
   return lerp(1 + 1.75 * camber, 1.0, t);
 }
 
+function smoothstep01(t) {
+  const c = Math.min(Math.max(t, 0), 1);
+  return c * c * (3 - 2 * c);
+}
+
+// brailRegimeBlend (round 10c, C1, ROUND10c_carrot_two_regime.md): the
+// manual's windward brail has two real roles the old single linear cut
+// conflated — TRIM (partial pull, b in [0, trimRange]: deepens the belly,
+// sail keeps drawing) and SURVIVAL (b in (trimRange, 1]: spills power,
+// panic/furl territory). Each regime is a plain lerp from its own two
+// endpoint values, but the interpolation PARAMETER is smoothstep(t) rather
+// than raw t — smoothstep's derivative is exactly 0 at both t=0 and t=1,
+// so the two regimes' curves meet at b=trimRange with matching VALUE (both
+// evaluate valAtTrim there) AND matching slope (0 from both sides): a
+// single brailTrimRange knob is enough to get a smooth (no-kink) join
+// without a separate blend-width parameter. Used for the CL and heel-
+// moment multipliers below, and for the trim-regime camber bonus.
+function brailRegimeBlend(b, trimRange, valAtZero, valAtTrim, valAtOne) {
+  const bc = Math.min(Math.max(b, 0), 1);
+  if (trimRange <= 0) return lerp(valAtTrim, valAtOne, smoothstep01(bc));
+  if (trimRange >= 1) return lerp(valAtZero, valAtTrim, smoothstep01(bc));
+  if (bc <= trimRange) return lerp(valAtZero, valAtTrim, smoothstep01(bc / trimRange));
+  return lerp(valAtTrim, valAtOne, smoothstep01((bc - trimRange) / (1 - trimRange)));
+}
+
 // sailCoefficients(alpha, controls, config) -> { CL, CD }
 // alpha: signed angle of attack [rad], raw atan2 range (-pi, pi]. |alpha| up
 // to 90deg is the sail's front face working normally; beyond that the flow
@@ -1122,16 +1190,34 @@ function sailCoefficients(alpha, controls, config) {
   const luffFrac = Math.max(0, 1 - alphaAbsDeg / LUFF_WINDOW_DEG);
   const floggingCD = sail.floggingCDFactor * sail.CD0 * luffFrac;
 
-  const camberCLf = camberCLFactor(alphaAbsDeg, sail.camber);
-  const camberCDf = 1 + 1.0 * sail.camber;
+  const brailLee = controls.brailLee ?? 0;
+  const brailWind = controls.brailWind ?? 0;
+  const brailTrimRange = sail.brailTrimRange ?? 0.6;
+
+  // Trim-regime camber bonus (C1): the manual's partial windward-brail
+  // technique bags the remaining draft, not just spills area — peaks at
+  // brailTrimRange (full TRIM pull), fades back to sail.camber's own
+  // baseline by brailWind=1 (a fully spilled SURVIVAL sail is gathered,
+  // not bagged). Reuses camberCLFactor/camberCDf unchanged (see
+  // sail.brailCamberGain's config.js comment for that mechanism's own
+  // alphaAbsDeg>=45deg ceiling).
+  const brailCamberGain = sail.brailCamberGain ?? 0;
+  const camberEff = sail.camber + brailRegimeBlend(brailWind, brailTrimRange, 0, brailCamberGain, 0);
+
+  const camberCLf = camberCLFactor(alphaAbsDeg, camberEff);
+  const camberCDf = 1 + 1.0 * camberEff;
 
   let CL1 = CLtable * camberCLf;
   let CD1 = (CDbase + floggingCD) * camberCDf;
 
-  const brailLee = controls.brailLee ?? 0;
-  const brailWind = controls.brailWind ?? 0;
-
-  let CL2 = CL1 * (1 - 0.7 * brailLee) * (1 - 0.8 * brailWind);
+  // Windward-brail CL cut (C1): two-regime, see brailRegimeBlend() above.
+  // TRIM (b<=brailTrimRange): mild, x(1-0.15*b_norm) at the endpoint — the
+  // sail stays powered, consistent with the manual's downwind chapter.
+  // SURVIVAL (b>brailTrimRange): ramps to the original strong cut, x0.2 at
+  // b=1 — preserves T6/panic, the stop scenario, and the squall
+  // controller's semantics unchanged at full pull.
+  const brailWindCLFactor = brailRegimeBlend(brailWind, brailTrimRange, 1, 0.85, 0.2);
+  let CL2 = CL1 * (1 - 0.7 * brailLee) * brailWindCLFactor;
   let CD2 = CD1 * (1 - 0.3 * brailLee);
 
   // Both brails fully on: sail furled against the yard, forces -> spar drag only.
@@ -1200,7 +1286,14 @@ function sailForces(state, controls, config) {
   // genuinely contested — this does NOT touch Fx/Fy (drive/side force),
   // only unloads the heeling arm.
   const verticalLiftFraction = config.sail.verticalLiftFraction ?? 0;
-  const heelMoment = Fy * config.sail.CEheight * (1 - verticalLiftFraction) * (1 - 0.9 * brailWind);
+  // Windward-brail heel-moment cut (C1): two-regime, mirroring the CL cut
+  // above. TRIM: moderate, x(1-0.3*b_norm) at the endpoint — vertical
+  // redirection of the deep belly, sail still drawing. SURVIVAL: ramps to
+  // the original strong cut, x0.1 at b=1 (unchanged panic/survival
+  // authority).
+  const brailTrimRangeHeel = config.sail.brailTrimRange ?? 0.6;
+  const brailWindHeelFactor = brailRegimeBlend(brailWind, brailTrimRangeHeel, 1, 0.7, 0.1);
+  const heelMoment = Fy * config.sail.CEheight * (1 - verticalLiftFraction) * brailWindHeelFactor;
 
   // CE geometry — round 7, D-6 (ROUND7_DECISION.md): rebuilt around a
   // classical yacht-design "lead" (the CE-CLR longitudinal separation,
@@ -1240,20 +1333,30 @@ function sailForces(state, controls, config) {
   // argument about net magnitude, not a physical one, and round 5's own
   // spilling-line description (gathering the sail toward the yard pulls
   // the pressure centroid inboard/up) applies to both axes. Round 10b
-  // (D2) unifies them: the SAME effective half-chord (shrunk by
-  // ceBrailShift*brailWind) now sets both xCE's and yCE's excursion,
-  // projected onto cos(delta)/sin(delta) respectively — see
-  // ROUND10b_downwind_wall.md and ROUND10b_downwind_wall_findings.md for
-  // the before/after measurement this changed.
+  // (D2) unified them onto the SAME effective half-chord (shrunk by
+  // ceBrailShift*brailWind), projected onto cos(delta)/sin(delta)
+  // respectively — see ROUND10b_downwind_wall.md and
+  // ROUND10b_downwind_wall_findings.md for that before/after measurement.
+  //
+  // Round 10c (C1) splits xCE and yCE back onto their OWN half-chords:
+  // xCE keeps ceBrailShift (the fore-aft "CE shift toward the tack" bear-
+  // away lever, unchanged, full strength across brailWind) while yCE gets
+  // its own, stronger sail.yceBrailShift — the lateral arm is what
+  // directly attacks the deep-course luffing/yaw moment (-yCE*Fx below),
+  // which is what this round's carrot fix is actually chasing (see
+  // ROUND10c_carrot_two_regime.md C1 and sail.yceBrailShift's config.js
+  // comment).
   const chord = config.sail.CEheight / 2;
   const halfChord = chord / 2;
   const lead = config.hull.lead ?? 0.15 * config.hull.length;
   const clrXNeutral = clrXPosition(0, config);
   const ceSwingFraction = config.sail.ceSwingFraction ?? 0.5;
   const ceBrailShift = config.sail.ceBrailShift ?? 0.3;
+  const yceBrailShift = config.sail.yceBrailShift ?? 0.6;
   const halfChordEff = halfChord * ceSwingFraction * (1 - ceBrailShift * brailWind);
+  const halfChordEffY = halfChord * ceSwingFraction * (1 - yceBrailShift * brailWind);
   const xCE = clrXNeutral + lead - halfChordEff * Math.cos(delta);
-  const yCE = -state.end * halfChordEff * Math.sin(delta);
+  const yCE = -state.end * halfChordEffY * Math.sin(delta);
 
   // Heel-course coupling (pure geometry, FIX_REQUEST_round4_roll_dof.md
   // 1.4): heeling tips the mast, offsetting the CE laterally by
@@ -2236,17 +2339,22 @@ const HEADING_HOLD_TOLERANCE = 15 * DEG__b10;
 //   FIX_REQUEST_step1_review.md MEDIUM-2: a previous version returned it
 //   unconditionally, letting a transient spike from an unsettled, unstable
 //   trim masquerade as the polar's best speed for that heading).
-// simulateToSteady(config, twaDeg, tws, sheetDeg, crewPos, maxSeconds) ->
-// { speed, settled, deltaDeg }. sheetDeg is the SEARCH VARIABLE now (R5-1):
-// the sheet limit, not the actual yard angle — the settled actual yard
-// angle (state.delta) is reported separately as deltaDeg, since the two
-// only coincide when the sheet is taut (see bestForHeading's assertion-
-// facing use in harness/asserts.js).
-function simulateToSteady(config, twaDeg, tws, sheetDeg, crewPos, maxSeconds = 25) {
+// simulateToSteady(config, twaDeg, tws, sheetDeg, crewPos, brailWind,
+// maxSeconds) -> { speed, settled, deltaDeg }. sheetDeg is the SEARCH
+// VARIABLE now (R5-1): the sheet limit, not the actual yard angle — the
+// settled actual yard angle (state.delta) is reported separately as
+// deltaDeg, since the two only coincide when the sheet is taut (see
+// bestForHeading's assertion-facing use in harness/asserts.js). brailWind
+// (round 10c, C1): the windward brail ("carrot") is now also a search
+// variable, but only for deep TWAs (see BRAIL_SEARCH_DEEP below) — the
+// two-regime brailWind characteristic makes a partial carrot pull a real
+// candidate for the polar-optimal deep trim, not just a survival/panic
+// control.
+function simulateToSteady(config, twaDeg, tws, sheetDeg, crewPos, brailWind = 0, maxSeconds = 25) {
   const windDirFrom = HEADING0 + twaDeg * DEG__b10;
   const controls = {
     windDirFrom, windSpeed: tws, sheet: sheetDeg * DEG__b10, rudder: 0,
-    brailLee: 0, brailWind: 0, crewPos, crewPosX: 0, shuntRequest: false,
+    brailLee: 0, brailWind, crewPos, crewPosX: 0, shuntRequest: false,
   };
 
   let state = makeInitialState(Math.min(Math.abs(sheetDeg) * DEG__b10, Math.PI / 2));
@@ -2289,12 +2397,24 @@ function simulateToSteady(config, twaDeg, tws, sheetDeg, crewPos, maxSeconds = 2
 // sheet and crew position" description — not just a light-air trim detail.
 const CREW_POS_SEARCH = [0, 0.3, 0.6, 1.0];
 
+// BRAIL_SEARCH_DEEP (round 10c, C1): coarse grid, only added for TWA>=135
+// (see bestForHeading) — the manual's "carrot" is a downwind-only
+// technique, and searching it across the whole polar would multiply the
+// (already O(sheet*crewPos)) search cost for no benefit upwind/on a reach,
+// where a partial windward brail is never the fast trim. 0 and 0.6 bracket
+// the TRIM regime (config.sail.brailTrimRange's own default); 0.3 samples
+// its middle.
+const BRAIL_SEARCH_DEEP = [0, 0.3, 0.6];
+
 function bestForHeading(config, twaDeg, tws) {
-  let best = { speed: 0, sheet: 0, delta: 0, crewPos: 0 };
+  let best = { speed: 0, sheet: 0, delta: 0, crewPos: 0, brailWind: 0 };
+  const brailOptions = twaDeg >= 135 ? BRAIL_SEARCH_DEEP : [0];
   for (let sheet = 4; sheet <= 88; sheet += 4) {
     for (const crewPos of CREW_POS_SEARCH) {
-      const { speed, settled, deltaDeg } = simulateToSteady(config, twaDeg, tws, sheet, crewPos);
-      if (settled && speed > best.speed) best = { speed, sheet, delta: deltaDeg, crewPos };
+      for (const brailWind of brailOptions) {
+        const { speed, settled, deltaDeg } = simulateToSteady(config, twaDeg, tws, sheet, crewPos, brailWind);
+        if (settled && speed > best.speed) best = { speed, sheet, delta: deltaDeg, crewPos, brailWind };
+      }
     }
   }
   return best;
@@ -2311,6 +2431,7 @@ function computePolar(config, { twsList, twaFrom = 40, twaTo = 170, step = 10 })
         bestSheetAngle: best.sheet,
         deltaAngle: best.delta,
         bestCamberUse: config.sail.camber,
+        bestBrailWind: best.brailWind,
       });
     }
   }
@@ -2381,14 +2502,14 @@ const MS_TO_KN = 1.9438;
 // recording's codeVersion is meaningful (harness/replay.js warns on
 // mismatch) for a downloaded bundle without requiring a build step for
 // plain `python3 -m http.server` development.
-const CODE_VERSION = "21818a9";
+const CODE_VERSION = "dee918e";
 // BUILD_TIME: same pattern as CODE_VERSION above — tools/bundle.js
 // replaces this with the COMMIT's timestamp (not wall-clock build time),
 // so it stays stable across re-bundling the same commit and always
 // matches CODE_VERSION's hash. Shown in the bottom-right version footer
 // so a bug report/recording can be tied to an exact, dated build without
 // having to separately ask "which commit was this."
-const BUILD_TIME = "2026-07-20T06:53:10+02:00";
+const BUILD_TIME = "2026-07-20T06:59:55+02:00";
 
 // ---------------------------------------------------------------------
 // i18n — EN/PL. Static labels are marked with data-i18n="key" in
