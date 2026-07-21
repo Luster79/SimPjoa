@@ -78,6 +78,7 @@ const TRANSLATIONS = {
     'lbl.insetShow': 'Side-view inset', 'lbl.skin': 'Skin', 'opt.skinPjoa': 'Pjoa', 'opt.skinMicronesia': 'Micronesia',
     'tag.newBow': 'BOW', 'inset.label': 'side view (leeward)',
     'compass.hullAxis': 'hull', 'compass.cog': 'COG',
+    'balance.label': 'balance (bow-on)',
     'h.polarDiagram': 'Polar diagram',
     'hint.polar': "Runs the headless polar sweep against the current config (TWS 4/6/8/10 m/s) and plots it. The boat's live (TWA, speed) point is overlaid once you return to sailing.",
     'btn.runPolar': 'Run polar', 'btn.exportCsv': 'Export CSV', 'btn.backToSailing': 'Back to sailing',
@@ -139,6 +140,7 @@ const TRANSLATIONS = {
     'lbl.insetShow': 'Widok z boku', 'lbl.skin': 'Skórka', 'opt.skinPjoa': 'Pjoa', 'opt.skinMicronesia': 'Mikronezja',
     'tag.newBow': 'DZIÓB', 'inset.label': 'widok z boku (zawietrzna)',
     'compass.hullAxis': 'kadłub', 'compass.cog': 'KNG',
+    'balance.label': 'wyważenie (od dziobu)',
     'h.polarDiagram': 'Diagram polarny',
     'hint.polar': 'Uruchamia pomiar polary (bezekranowy silnik fizyki) dla bieżącej konfiguracji (TWS 4/6/8/10 m/s) i rysuje wykres. Po powrocie do żeglugi na wykresie pojawia się bieżący punkt (TWA, prędkość) łódki.',
     'btn.runPolar': 'Uruchom polarę', 'btn.exportCsv': 'Eksportuj CSV', 'btn.backToSailing': 'Powrót do żeglugi',
@@ -869,6 +871,94 @@ function drawShuntNarrative(state, cam, now) {
   drawShuntPhaseStrip(state);
   drawCompassRibbon(state);
   drawBowCallout(state, cam, now);
+}
+
+// R11-4 (round 11, ROUND11_proa_identity_graphics.md): balance cross-
+// section widget — a schematic transverse (bow-on) view: hull, ama,
+// crew, and the two moments actually fighting each other every frame
+// (breakdown.roll.Msail, the sail's own heeling contribution, vs
+// breakdown.roll.Mrestore, the ama's righting response — both already
+// computed every step by core/integrator.js, no new physics needed).
+// Local +x = toward the ama (a fixed physical direction, matches the
+// side inset's own convention); the whole group rotates by phi
+// (ctx.rotate(-phi): canvas y is down, so this is the rotation sense
+// that lifts +x/the ama as phi increases, matching state.js's own
+// "positive phi = the ama side rising" convention).
+const BAL_W = 210, BAL_H = 130, BAL_MARGIN = 10;
+function drawBalanceWidget(state, forces) {
+  const ox = BAL_MARGIN, oy = canvas.height - BAL_H - BAL_MARGIN;
+  const skin = getSkin();
+  ctx.save();
+  ctx.beginPath(); ctx.rect(ox, oy, BAL_W, BAL_H); ctx.clip();
+
+  // Warning tint synced to the SAME states the banner/heel-bar already
+  // use (heelBarWrap's own warn/danger toggle, updateAlarms) — read, not
+  // duplicated: amaLoadDisplay>0.75 for warn, >1.0 or a live abackTimer
+  // for danger.
+  const amaLoad = forces.amaLoadDisplay ?? 0;
+  const danger = amaLoad > 1.0 || state.abackTimer > 0;
+  const warn = !danger && amaLoad > 0.75;
+  ctx.fillStyle = 'rgba(6,18,31,0.82)'; ctx.fillRect(ox, oy, BAL_W, BAL_H);
+  if (danger) { ctx.fillStyle = 'rgba(216,79,79,0.18)'; ctx.fillRect(ox, oy, BAL_W, BAL_H); }
+  else if (warn) { ctx.fillStyle = 'rgba(216,165,42,0.15)'; ctx.fillRect(ox, oy, BAL_W, BAL_H); }
+
+  const cx = ox + BAL_W / 2, cy = oy + BAL_H * 0.66;
+  ctx.strokeStyle = 'rgba(120,180,220,0.5)'; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.moveTo(ox, cy); ctx.lineTo(ox + BAL_W, cy); ctx.stroke();
+
+  const halfBeamPx = 55, ceHeightPx = 60;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(-state.phi);
+
+  // Hull cross-section (a shallow trapezoid) + ama at local +x.
+  ctx.fillStyle = state.capsized ? skin.hullCapsized : skin.hull;
+  ctx.beginPath();
+  ctx.moveTo(-30, 0); ctx.lineTo(-18, -14); ctx.lineTo(18, -14); ctx.lineTo(30, 0); ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = skin.ama;
+  ctx.beginPath(); ctx.ellipse(halfBeamPx, 4, 14, 7, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#7a5a3a'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(18, -8); ctx.lineTo(halfBeamPx, 4); ctx.stroke();
+
+  // Mast / CE height marker.
+  ctx.strokeStyle = '#5a4a38'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(0, -14); ctx.lineTo(0, -ceHeightPx); ctx.stroke();
+
+  // Sail-force arrow at CE height: Msail>0 drives phi positive (ama
+  // rising), which is a push AWAY from the ama (-x) at the CE — the
+  // arrow direction is the opposite sign of Msail; magnitude log-
+  // softened, same soften() shape drawBoat() already uses for the main
+  // force-vector overlay, independently re-derived here (a display-only
+  // helper, not worth threading through as a shared export for one use).
+  const Msail = forces.breakdown?.roll?.Msail ?? 0;
+  const Mrestore = forces.breakdown?.roll?.Mrestore ?? 0;
+  const softenMoment = (n) => Math.sign(n) * Math.log10(1 + Math.abs(n)) * 5;
+  const sailArrowLen = -Math.sign(Msail) * softenMoment(Msail);
+  drawArrow(0, -ceHeightPx, sailArrowLen, -ceHeightPx, '#ffd23f', 2.5);
+
+  // Righting arrow at the ama: Mrestore uses the SAME sign convention as
+  // Msail (a positive contribution drives phi positive/+x, same as the
+  // roll ODE's own Mroll = Msail+Mrestore+... sum, core/integrator.js) —
+  // so, unlike the sail arrow above, no extra sign flip is needed here,
+  // it's drawn exactly as computed.
+  const restoreArrowLen = softenMoment(Mrestore);
+  drawArrow(halfBeamPx, 4, halfBeamPx + restoreArrowLen, 4, '#7fe3a3', 2.5);
+
+  // Crew figure at crewPos (lateral, toward the ama — matches this
+  // widget's own +x convention directly, no end factor: crewPos is
+  // already a physical-frame quantity, see core/state.js Conventions).
+  const crewX = clamp(controls.crewPos, dims.crew.posMin, dims.crew.posMax) * halfBeamPx * 0.9;
+  ctx.fillStyle = '#ffe08a'; ctx.strokeStyle = '#3a2f22'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(crewX, -6); ctx.lineTo(crewX, -22); ctx.stroke();
+  ctx.beginPath(); ctx.arc(crewX, -26, 4, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+
+  ctx.restore();
+
+  ctx.font = '10px system-ui, sans-serif';
+  ctx.fillStyle = '#9fb4c8';
+  ctx.fillText(t('balance.label'), ox + 6, oy + 12);
+  ctx.restore();
 }
 
 // Sail shape: an arc from the tack (near centerline) to the clew (swept to
@@ -1701,6 +1791,7 @@ function frame(now) {
     drawTrueWindArrow();
     drawSideViewInset(state, forces);
     drawShuntNarrative(state, camera, now);
+    drawBalanceWidget(state, forces);
     updateHud(state, forces);
     updateAlarms(state, forces);
 

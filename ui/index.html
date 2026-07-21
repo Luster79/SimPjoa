@@ -112,16 +112,19 @@
 <body>
 <div id="app">
   <div id="hud">
+    <!-- R11-4 (round 11, ROUND11_proa_identity_graphics.md): reordered to
+         proa priorities — ama load + heel first (the thing that capsizes
+         a proa), speed/VMG second, sail trim third, everything else last. -->
+    <span class="stat"><span data-i18n="hud.amaLoad">Ama load</span> <b id="hudAmaLoad">0</b>%</span>
+    <span class="stat"><span data-i18n="hud.heel">Heel</span> <b id="hudHeel">0</b>&deg;</span>
     <span class="stat"><span data-i18n="hud.speed">Speed</span> <b id="hudSpeed">0.0</b> <span data-i18n="unit.kn">kn</span></span>
+    <span class="stat">VMG&uarr; <b id="hudVmg">0.0</b> <span data-i18n="unit.kn">kn</span></span>
+    <span class="stat"><span data-i18n="hud.sheet">Sheet</span> <b id="hudSheet">0</b>&deg;</span>
+    <span class="stat"><span data-i18n="hud.yard">Yard</span> <b id="hudYard">0</b>&deg; <b id="hudLuffing" class="luffing-tag"></b></span>
     <span class="stat">TWA <b id="hudTwa">0</b>&deg;</span>
     <span class="stat">AWA <b id="hudAwa">0</b>&deg;</span>
     <span class="stat">AoA <b id="hudAlpha">0</b>&deg; <b id="hudStalled" class="stalled-tag"></b></span>
-    <span class="stat">VMG&uarr; <b id="hudVmg">0.0</b> <span data-i18n="unit.kn">kn</span></span>
     <span class="stat"><span data-i18n="hud.leeway">Leeway</span> <b id="hudLeeway">0</b>&deg;</span>
-    <span class="stat"><span data-i18n="hud.amaLoad">Ama load</span> <b id="hudAmaLoad">0</b>%</span>
-    <span class="stat"><span data-i18n="hud.heel">Heel</span> <b id="hudHeel">0</b>&deg;</span>
-    <span class="stat"><span data-i18n="hud.sheet">Sheet</span> <b id="hudSheet">0</b>&deg;</span>
-    <span class="stat"><span data-i18n="hud.yard">Yard</span> <b id="hudYard">0</b>&deg; <b id="hudLuffing" class="luffing-tag"></b></span>
     <span class="stat"><span data-i18n="hud.shunt">Shunt</span> <b id="hudShunt">none</b></span>
     <span class="stat">TWS <b id="hudTws">6.0</b> m/s</span>
     <span class="stat" id="recStat"><span class="rec-dot" id="recDot"></span><b id="recDuration">0:00</b> / <span id="recSize">0 KB</span></span>
