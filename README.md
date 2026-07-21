@@ -89,6 +89,8 @@ otherwise. Documentation (this file, code comments) stays English-only.
 | Toggle force-vector overlay | `F` |
 | Polar mode | `O` |
 | Wake trail (kilwater) | checkbox in the Display panel |
+| Side-view inset (round 11, R11-1) | checkbox in the Display panel |
+| Skin — Pjoa / Micronesia (round 11, R11-8) | dropdown in the Display panel |
 
 The yard's ACTUAL angle (`state.delta`) is real, dynamic state now (round
 5) — the sheet only ever limits how far it can swing; the HUD shows both
@@ -106,6 +108,49 @@ the live config (TWS 4/6/8/10 m/s) with a progress readout — it's the
 same expensive grid-search sweep `run_tests.js` runs, so it takes on
 the order of a minute or two. "Export CSV" downloads the result in the
 same column layout as `out/polar.csv`.
+
+### Proa identity graphics (round 11, `ROUND11_proa_identity_graphics.md`)
+
+UI-only additions (no `/core` or `/harness` changes; nothing added to
+`forcesBreakdown()`) making it visually unmistakable that this is a
+proa, not a generic dinghy with a float:
+
+- **Side-view inset** (top-right, `R11-1`) — a small, collapsible
+  profile view from leeward: crab-claw shape/rake, brail/furl state,
+  heel, the ama lifting clear or pressing in, crew position, a bobbing
+  waterline. Mirrors correctly across a shunt.
+- **Twin wake** (`R11-2`) — the existing hull wake trail gets a second,
+  differently-tinted thread sampled from the ama's own position, with a
+  literal gap in it for every stretch the ama flies clear of the water.
+- **Shunt narrative** (`R11-3`) — a 4-icon phase strip (ease / haul tack
+  / swap ends / sheet in) synced to `state.shunt.phase`; the tack line
+  during 'transfer' is an actual hauled line with a moving fairlead
+  point; a brief BOW/DZIOB tag pops at the newly active end the instant
+  'swap' completes; a hull-axis-vs-course-over-ground compass ribbon
+  (always visible) shows the hull axis holding still while COG sweeps
+  ~180deg through a clean shunt.
+- **Balance cross-section widget** (bottom-left, `R11-4`) — a schematic
+  bow-on view: hull, ama, crew, and the sail's heeling moment vs the
+  ama's righting response as two live arrows, tinted amber/red synced to
+  the existing heel-bar/aback warning thresholds. The main HUD bar is
+  reordered to proa priorities: ama load + heel first, speed/VMG second,
+  sail trim third.
+- **Apparent-wind safety sector** (`R11-5`) — an arc around the boat
+  whose highlighted segment glows amber then red as `core/sheet.js`'s
+  own `deltaAlign()` (imported, not re-derived) shrinks toward the real
+  physical threshold where the yard clamps to the mast — earlier than
+  the aback alarm itself, which only fires once the ama is already
+  pressed underwater.
+- **Telltales** (`R11-6`) — two ribbon telltales near the tack, driven
+  from `alphaSailor`/luffing/stalled: streaming, fluttering, or drooping.
+- **Steering oar** (`R11-7`) — the shaft rotates by the actual
+  deflection with a force-scaled swirl at the blade when deployed;
+  drawn stowed flush along the deck when shipped (`rudderUp`); the
+  active/idle role crossfades between the two physical tips over the
+  ~0.4s 'swap' sub-phase instead of jumping.
+- **Skins** (`R11-8`) — "Pjoa" (default) and "Micronesia" in the
+  Display panel; palette/fill-style only, every reading above stays
+  equally legible on both.
 
 ## Session recorder & replay (round 6)
 
