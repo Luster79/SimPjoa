@@ -1254,6 +1254,18 @@ let wakeX = [];
 let wakeY = [];
 let wakeLastSampleT = -Infinity;
 
+// R11-2 (round 11, ROUND11_proa_identity_graphics.md): a SECOND trail
+// sampled from the ama's own world position, same ring/growth discipline
+// as the hull trail above — same sample cadence (one wakeSample() call
+// samples both), same "no cap, reset clears it" lifetime. NaN is pushed
+// as an explicit gap marker for every sample taken while the ama is
+// clear of the water (amaLoad>=1, i.e. AT/PAST full liftoff — the same
+// threshold stability.js's own phi-liftoff saturation and the "AMA
+// FLYING" warning use), so a flying episode reads as a literal break in
+// the ama thread rather than an interpolated line jumping across it.
+let wakeAmaX = [];
+let wakeAmaY = [];
+
 // STALLED HUD cue (round 7, R7-3) — symmetric to LUFFING: the sail is
 // actively driving (not luffing) but at an angle of attack past its
 // useful range (alphaSailor > STALLED_ALPHA_DEG), sustained for more than
@@ -1267,29 +1279,66 @@ let stalledTimer = 0;
 function wakeReset() {
   wakeX = [];
   wakeY = [];
+  wakeAmaX = [];
+  wakeAmaY = [];
   wakeLastSampleT = -Infinity;
 }
 
-function wakeSample(state) {
+// amaWorldPos(state) -> {x,y} — the ama's own world-space position, same
+// physical-frame geometry drawBoat() already uses for the ama ellipse
+// (bolted to one physical side, physical local offset (0, ama.spacing),
+// rotated by the physical hull heading = state.heading + (end==1?0:PI) —
+// see core/state.js's Conventions comment / the shunt world-frame-
+// continuity check in harness/asserts.js for the same formula).
+function amaWorldPos(state) {
+  const physicalHeading = state.heading + (state.end === 1 ? 0 : Math.PI);
+  return {
+    x: state.x - dims.ama.spacing * Math.sin(physicalHeading),
+    y: state.y + dims.ama.spacing * Math.cos(physicalHeading),
+  };
+}
+
+function wakeSample(state, forces) {
   if (state.t - wakeLastSampleT < WAKE_SAMPLE_INTERVAL) return;
   wakeLastSampleT = state.t;
   wakeX.push(state.x);
   wakeY.push(state.y);
+  const flying = (forces?.amaLoadDisplay ?? 0) >= 1.0 && state.phi >= 0;
+  if (flying) {
+    wakeAmaX.push(NaN);
+    wakeAmaY.push(NaN);
+  } else {
+    const ama = amaWorldPos(state);
+    wakeAmaX.push(ama.x);
+    wakeAmaY.push(ama.y);
+  }
 }
 
-function drawWakeTrail(cam) {
-  if (!wakeTrailCheckbox.checked || wakeX.length < 2) return;
+// drawTrail — shared polyline drawer for both wake threads; a NaN entry
+// breaks the path (drawn as a gap, per R11-2's "flying episodes read as
+// gaps"), not a scripted skip — the JS Number NaN comparisons below all
+// evaluate false, cheaply falling through to "start a new subpath".
+function drawTrail(xs, ys, cam, color) {
+  if (xs.length < 2) return;
   ctx.save();
   ctx.lineWidth = Math.max(1, 1.4 * dpr);
   ctx.lineCap = 'round';
-  ctx.strokeStyle = 'rgba(170,225,215,0.35)';
+  ctx.strokeStyle = color;
   ctx.beginPath();
-  for (let i = 0; i < wakeX.length; i++) {
-    const p = worldToScreen(wakeX[i], wakeY[i], cam);
-    if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
+  let penDown = false;
+  for (let i = 0; i < xs.length; i++) {
+    if (Number.isNaN(xs[i])) { penDown = false; continue; }
+    const p = worldToScreen(xs[i], ys[i], cam);
+    if (!penDown) { ctx.moveTo(p.x, p.y); penDown = true; } else { ctx.lineTo(p.x, p.y); }
   }
   ctx.stroke();
   ctx.restore();
+}
+
+function drawWakeTrail(cam) {
+  if (!wakeTrailCheckbox.checked) return;
+  drawTrail(wakeX, wakeY, cam, 'rgba(170,225,215,0.35)');
+  drawTrail(wakeAmaX, wakeAmaY, cam, 'rgba(255,200,120,0.4)');
 }
 
 // ---------------------------------------------------------------------
@@ -1498,7 +1547,7 @@ function frame(now) {
     // Wake trail sampling (P4.4): pause suspends it (tied to `stepped`,
     // same condition the sim itself advances under) and capsize stops it;
     // shunts are NOT excluded — the zigzag through them is the point.
-    if (stepped && !state.capsized) wakeSample(state);
+    if (stepped && !state.capsized) wakeSample(state, forces);
 
     // STALLED cue timer (round 7, R7-3): accumulates only while actively
     // driving (not luffing, not capsized) at alphaSailor past the
