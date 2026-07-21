@@ -286,6 +286,12 @@ for (const key of Object.keys(sliders)) {
 const wakeTrailCheckbox = document.getElementById('wakeTrail');
 const insetShowCheckbox = document.getElementById('insetShow');
 const skinSelect = document.getElementById('skinSelect');
+// R11-8: skin choice is pure display state (not a CONFIG/physics field —
+// bolting it onto the boat-design preset mechanism, which round-trips
+// createConfig() patches, would be a category error), so it persists the
+// same simple way the language toggle already does: localStorage.
+skinSelect.value = localStorage.getItem('proaSkin') || 'pjoa';
+skinSelect.addEventListener('change', () => localStorage.setItem('proaSkin', skinSelect.value));
 const rudderUpCheckbox = document.getElementById('rudderUp');
 const btnRec = document.getElementById('btnRec');
 const btnMark = document.getElementById('btnMark');
@@ -555,8 +561,11 @@ function worldToScreen(wx, wy, cam) {
 }
 
 function drawWaterGrid(cam) {
+  const skin = getSkin();
   ctx.save();
-  ctx.strokeStyle = 'rgba(90,140,180,0.10)';
+  ctx.fillStyle = skin.water;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.strokeStyle = skin.waterGrid;
   ctx.lineWidth = 1;
   const step = 10; // meters
   const spanX = canvas.width / (scale * dpr) + step * 2;
@@ -614,6 +623,10 @@ const SKINS = {
   },
 };
 function getSkin() { return SKINS[skinSelect.value] ?? SKINS.pjoa; }
+function hexToRgb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+}
 
 // True wind arrow — fixed in the top-left corner, world-frame direction
 // only (not boat-relative), independent of camera pan.
@@ -1033,6 +1046,7 @@ function drawBoat(state, forces, cam) {
   const beam = dims.hull.beam;
   const spacing = dims.ama.spacing, amaLen = dims.ama.length;
   const capsized = state.capsized;
+  const skin = getSkin(); // R11-8: palette + fill styles only, geometry below is identical either way
 
   // Physical hull (crossbeams, ama, hull outline, crew): drawn in the
   // PHYSICAL frame, which differs from the active-bow frame above by
@@ -1050,6 +1064,16 @@ function drawBoat(state, forces, cam) {
   ctx.lineWidth = 0.05;
   [-halfL * 0.35, halfL * 0.35].forEach((bx) => {
     ctx.beginPath(); ctx.moveTo(bx, 0); ctx.lineTo(bx, spacing); ctx.stroke();
+    // R11-8 Micronesia skin: visible beam lashings — a few short cross-
+    // ticks wound around each crossbeam, absent on the Pjoa skin
+    // (skin.lashing is null there; geometry is otherwise identical).
+    if (skin.lashing) {
+      ctx.strokeStyle = skin.lashing; ctx.lineWidth = 0.03;
+      for (let s = 0.15; s < spacing; s += spacing / 4) {
+        ctx.beginPath(); ctx.moveTo(bx - 0.06, s); ctx.lineTo(bx + 0.06, s + 0.03); ctx.stroke();
+      }
+      ctx.strokeStyle = capsized ? '#5a4030' : '#7a5a3a'; ctx.lineWidth = 0.05;
+    }
   });
 
   // Ama — physical, fixed to the hull structure, always at physical +y.
@@ -1060,14 +1084,16 @@ function drawBoat(state, forces, cam) {
   const amaLoad = forces?.amaLoadDisplay ?? 0;
   const flying = state.phi >= 0;
   const loadFrac = clamp(amaLoad, 0, 1.5) / 1.5;
+  const amaRgb = hexToRgb(skin.ama);
   ctx.save();
   if (flying) {
     ctx.globalAlpha = capsized ? 0.5 : 1 - 0.6 * loadFrac; // thins out as it lifts clear
-    ctx.fillStyle = capsized ? '#4a3a2a' : '#c9a35a';
+    ctx.fillStyle = capsized ? skin.hullCapsized : skin.ama;
   } else {
     ctx.globalAlpha = capsized ? 0.5 : 1;
     // Darkens toward a wet/pressed tone as it's forced under.
-    ctx.fillStyle = capsized ? '#4a3a2a' : `rgb(${201 - 90 * loadFrac}, ${163 - 90 * loadFrac}, ${90 - 30 * loadFrac})`;
+    ctx.fillStyle = capsized ? skin.hullCapsized
+      : `rgb(${amaRgb.r - 90 * loadFrac}, ${amaRgb.g - 90 * loadFrac}, ${amaRgb.b - 30 * loadFrac})`;
   }
   if (!flying && !capsized && loadFrac > 0.15) {
     // Wake ring around a pressed ama.
@@ -1086,7 +1112,7 @@ function drawBoat(state, forces, cam) {
   // 2.2) — a proa's hull has no fixed bow/stern, both physical tips are
   // identical; direction is communicated only by the active-bow marker
   // and the active steering oar below, not by hull shape.
-  ctx.fillStyle = capsized ? '#3a3a3a' : '#d8c9a8';
+  ctx.fillStyle = capsized ? skin.hullCapsized : skin.hull;
   ctx.beginPath();
   ctx.moveTo(halfL, 0);
   ctx.quadraticCurveTo(halfL * 0.5, beam / 2, 0, beam / 2);
@@ -1239,12 +1265,12 @@ function drawBoat(state, forces, cam) {
     if (fade > 0.02) {
       ctx.save();
       ctx.globalAlpha = 0.35 + 0.65 * fade;
-      ctx.strokeStyle = '#e8e3d0';
+      ctx.strokeStyle = skin.sailStroke;
       ctx.lineWidth = 0.08;
       ctx.beginPath();
       if (sp.furled) {
         ctx.moveTo(sp.tackX, 0); ctx.lineTo(sp.clewX, sp.clewY);
-        ctx.lineWidth = 0.22; ctx.strokeStyle = '#8a8060';
+        ctx.lineWidth = 0.22; ctx.strokeStyle = skin.lashing ?? '#8a8060';
         ctx.stroke();
       } else if (flogging) {
         // P4.2 flogging visual: an unfilled, fluttering dashed outline —
@@ -1264,9 +1290,28 @@ function drawBoat(state, forces, cam) {
         ctx.moveTo(sp.tackX, 0);
         ctx.quadraticCurveTo(sp.ctrlX, sp.ctrlY, sp.clewX, sp.clewY);
         ctx.lineTo(sp.tackX, 0);
-        ctx.fillStyle = 'rgba(232,227,208,0.5)';
+        const sailPathRef = new Path2D();
+        sailPathRef.moveTo(sp.tackX, 0);
+        sailPathRef.quadraticCurveTo(sp.ctrlX, sp.ctrlY, sp.clewX, sp.clewY);
+        sailPathRef.lineTo(sp.tackX, 0);
+        ctx.fillStyle = skin.sail;
         ctx.fill();
         ctx.stroke();
+        // R11-8 Micronesia skin: simple pandanus-mat weave hatching,
+        // clipped to the sail's own path — Pjoa's plain sailcloth fill
+        // (skin.lashing null) skips this, geometry stays identical.
+        if (skin.lashing) {
+          ctx.save();
+          ctx.clip(sailPathRef);
+          ctx.strokeStyle = 'rgba(0,0,0,0.18)'; ctx.lineWidth = 0.025;
+          const minX = Math.min(sp.tackX, sp.clewX, sp.ctrlX) - 0.2;
+          const maxX = Math.max(sp.tackX, sp.clewX, sp.ctrlX) + 0.2;
+          for (let hx = minX; hx < maxX; hx += 0.22) {
+            ctx.beginPath(); ctx.moveTo(hx, -3); ctx.lineTo(hx + 1.2, 3); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(hx, 3); ctx.lineTo(hx + 1.2, -3); ctx.stroke();
+          }
+          ctx.restore();
+        }
       }
       // Yard spar
       ctx.strokeStyle = '#3a2f22'; ctx.lineWidth = 0.06;
