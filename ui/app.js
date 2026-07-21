@@ -2011,8 +2011,12 @@ btnRunPolar.addEventListener('click', async () => {
 
 btnExportPolar.addEventListener('click', () => {
   if (!lastPolarRows) return;
-  const header = 'twa,tws,bestSpeed,bestSheetAngle,deltaAngle,bestCamberUse';
-  const lines = [header, ...lastPolarRows.map((r) => `${r.twa},${r.tws},${r.bestSpeed.toFixed(4)},${r.bestSheetAngle},${r.deltaAngle.toFixed(2)},${r.bestCamberUse}`)];
+  // bestBrailWind column added round 10c (computePolar's own row shape) —
+  // this export string was never updated to match; caught by round 11's
+  // bundle-fidelity spot-check (ROUND11_proa_identity_graphics.md) against
+  // run_tests.js's out/polar.csv, which already carries it.
+  const header = 'twa,tws,bestSpeed,bestSheetAngle,deltaAngle,bestCamberUse,bestBrailWind';
+  const lines = [header, ...lastPolarRows.map((r) => `${r.twa},${r.tws},${r.bestSpeed.toFixed(4)},${r.bestSheetAngle},${r.deltaAngle.toFixed(2)},${r.bestCamberUse},${r.bestBrailWind}`)];
   const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
