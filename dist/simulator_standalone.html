@@ -2657,14 +2657,14 @@ const MS_TO_KN = 1.9438;
 // recording's codeVersion is meaningful (harness/replay.js warns on
 // mismatch) for a downloaded bundle without requiring a build step for
 // plain `python3 -m http.server` development.
-const CODE_VERSION = "4628148";
+const CODE_VERSION = "87ffa46";
 // BUILD_TIME: same pattern as CODE_VERSION above — tools/bundle.js
 // replaces this with the COMMIT's timestamp (not wall-clock build time),
 // so it stays stable across re-bundling the same commit and always
 // matches CODE_VERSION's hash. Shown in the bottom-right version footer
 // so a bug report/recording can be tied to an exact, dated build without
 // having to separately ask "which commit was this."
-const BUILD_TIME = "2026-07-21T18:13:44+02:00";
+const BUILD_TIME = "2026-07-21T18:32:47+02:00";
 
 // ---------------------------------------------------------------------
 // i18n — EN/PL. Static labels are marked with data-i18n="key" in
@@ -4364,10 +4364,44 @@ function drawTrail(xs, ys, cam, color) {
   ctx.restore();
 }
 
+// drawAmaWake — a real wake dissipates within a short distance of the
+// hull, not a persistent route line (unlike the hull trail above, which
+// deliberately keeps the whole session). Only the most recent
+// AMA_WAKE_MAX_SAMPLES samples are drawn; each short segment gets its
+// own width/color/alpha interpolated by how far back (in samples) it
+// sits — near the ama: thin, saturated blue, fairly opaque; fading away:
+// wider, paler (toward white-blue), and more transparent, so the trail
+// visibly spreads and dissolves rather than just stopping. (Approximates
+// "blurred" via the width/alpha/color ramp rather than a real per-
+// segment canvas blur filter — a literal `ctx.filter` blur would need
+// its own compositing pass per segment, dozens of times a frame, which
+// isn't worth it for what's already a soft, low-contrast trail at this
+// sample count.)
+const AMA_WAKE_MAX_SAMPLES = 36; // ~5.4s of trailing wake at WAKE_SAMPLE_INTERVAL=0.15s — "not too long a stretch"
+function drawAmaWake(cam) {
+  const n = wakeAmaX.length;
+  if (n < 2) return;
+  const start = Math.max(0, n - AMA_WAKE_MAX_SAMPLES);
+  ctx.save();
+  ctx.lineCap = 'round';
+  for (let i = start + 1; i < n; i++) {
+    if (Number.isNaN(wakeAmaX[i]) || Number.isNaN(wakeAmaX[i - 1])) continue; // flying gap
+    const age = (n - 1 - i) / Math.max(1, n - 1 - start); // 0 = newest (at the ama), 1 = oldest kept
+    const p0 = worldToScreen(wakeAmaX[i - 1], wakeAmaY[i - 1], cam);
+    const p1 = worldToScreen(wakeAmaX[i], wakeAmaY[i], cam);
+    const r = Math.round(90 + (210 - 90) * age), g = Math.round(170 + (235 - 170) * age), b = Math.round(230 + (255 - 230) * age);
+    const alpha = 0.55 * (1 - age);
+    ctx.strokeStyle = `rgba(${r},${g},${b},${alpha.toFixed(3)})`;
+    ctx.lineWidth = Math.max(1, (1.5 + 6 * age) * dpr);
+    ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.stroke();
+  }
+  ctx.restore();
+}
+
 function drawWakeTrail(cam) {
   if (!wakeTrailCheckbox.checked) return;
   drawTrail(wakeX, wakeY, cam, 'rgba(170,225,215,0.35)');
-  drawTrail(wakeAmaX, wakeAmaY, cam, 'rgba(255,200,120,0.4)');
+  drawAmaWake(cam);
 }
 
 // ---------------------------------------------------------------------

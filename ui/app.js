@@ -1745,10 +1745,44 @@ function drawTrail(xs, ys, cam, color) {
   ctx.restore();
 }
 
+// drawAmaWake — a real wake dissipates within a short distance of the
+// hull, not a persistent route line (unlike the hull trail above, which
+// deliberately keeps the whole session). Only the most recent
+// AMA_WAKE_MAX_SAMPLES samples are drawn; each short segment gets its
+// own width/color/alpha interpolated by how far back (in samples) it
+// sits — near the ama: thin, saturated blue, fairly opaque; fading away:
+// wider, paler (toward white-blue), and more transparent, so the trail
+// visibly spreads and dissolves rather than just stopping. (Approximates
+// "blurred" via the width/alpha/color ramp rather than a real per-
+// segment canvas blur filter — a literal `ctx.filter` blur would need
+// its own compositing pass per segment, dozens of times a frame, which
+// isn't worth it for what's already a soft, low-contrast trail at this
+// sample count.)
+const AMA_WAKE_MAX_SAMPLES = 36; // ~5.4s of trailing wake at WAKE_SAMPLE_INTERVAL=0.15s — "not too long a stretch"
+function drawAmaWake(cam) {
+  const n = wakeAmaX.length;
+  if (n < 2) return;
+  const start = Math.max(0, n - AMA_WAKE_MAX_SAMPLES);
+  ctx.save();
+  ctx.lineCap = 'round';
+  for (let i = start + 1; i < n; i++) {
+    if (Number.isNaN(wakeAmaX[i]) || Number.isNaN(wakeAmaX[i - 1])) continue; // flying gap
+    const age = (n - 1 - i) / Math.max(1, n - 1 - start); // 0 = newest (at the ama), 1 = oldest kept
+    const p0 = worldToScreen(wakeAmaX[i - 1], wakeAmaY[i - 1], cam);
+    const p1 = worldToScreen(wakeAmaX[i], wakeAmaY[i], cam);
+    const r = Math.round(90 + (210 - 90) * age), g = Math.round(170 + (235 - 170) * age), b = Math.round(230 + (255 - 230) * age);
+    const alpha = 0.55 * (1 - age);
+    ctx.strokeStyle = `rgba(${r},${g},${b},${alpha.toFixed(3)})`;
+    ctx.lineWidth = Math.max(1, (1.5 + 6 * age) * dpr);
+    ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.stroke();
+  }
+  ctx.restore();
+}
+
 function drawWakeTrail(cam) {
   if (!wakeTrailCheckbox.checked) return;
   drawTrail(wakeX, wakeY, cam, 'rgba(170,225,215,0.35)');
-  drawTrail(wakeAmaX, wakeAmaY, cam, 'rgba(255,200,120,0.4)');
+  drawAmaWake(cam);
 }
 
 // ---------------------------------------------------------------------
