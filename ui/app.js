@@ -24,7 +24,7 @@
 // wind arrow stay in the outer (active-bow) frame, matching the core.
 
 import { createSimulator } from '../core/simulator.js';
-import { createConfig } from '../core/config.js';
+import { createConfig, CONFIG_VERSION } from '../core/config.js';
 import { createDefaultControls } from '../core/state.js';
 import { deltaAlign } from '../core/sheet.js';
 import { computePolar, computePolarSteps } from '../harness/polar.js';
@@ -100,6 +100,9 @@ const TRANSLATIONS = {
     'polar.progress': (tws, twa) => `TWS ${tws} m/s, TWA ${twa}°...`,
     'polar.done': (n) => `Done — ${n} points.`,
     'polar.placeholder': 'Run the polar sweep to see the diagram.',
+    'polar.fromBoat': (name) => `Stored with boat "${name}" — not recomputed.`,
+    'polar.stale': 'Saved polar is for a different boat or build — run it again.',
+    'polar.attached': (name) => `Saved with boat "${name}", including its polar.`,
     'wind.trueWindLabel': (v) => `TWS ${v} m/s`,
     'polar.twsLegend': (v) => `TWS ${v} m/s`,
     'doc.title': 'Proa Simulator — Step 2',
@@ -160,6 +163,9 @@ const TRANSLATIONS = {
     'polar.progress': (tws, twa) => `TWS ${tws} m/s, TWA ${twa}°...`,
     'polar.done': (n) => `Gotowe — ${n} punktów.`,
     'polar.placeholder': 'Uruchom pomiar polary, aby zobaczyć wykres.',
+    'polar.fromBoat': (name) => `Zapisana przy konstrukcji „${name}" — bez przeliczania.`,
+    'polar.stale': 'Zapisana polara dotyczy innej konstrukcji lub wersji — przelicz ponownie.',
+    'polar.attached': (name) => `Zapisano konstrukcję „${name}" wraz z polarą.`,
     'wind.trueWindLabel': (v) => `Wiatr ${v} m/s`,
     'polar.twsLegend': (v) => `Wiatr ${v} m/s`,
     'doc.title': 'Symulator proa — Krok 2',
@@ -2209,6 +2215,7 @@ const btnClosePolar = document.getElementById('btnClosePolar');
 const polarProgress = document.getElementById('polarProgress');
 
 let lastPolarRows = null;
+let lastPolarKey = null;   // validity key the rows in lastPolarRows were computed under
 
 // setActivePanel('live'|'polar'|'boat') — the panel area shows exactly one
 // of livePanel/polarPanel/boatPanel at a time; switching to one forces the
@@ -2225,7 +2232,17 @@ function setActivePanel(mode) {
   polarPanel.classList.toggle('show', polarMode);
   boatPanel.classList.toggle('show', boatMode);
   livePanel.style.display = (polarMode || boatMode) ? 'none' : '';
-  if (polarMode) drawPolarView(lastPolarRows);
+  if (polarMode) {
+    // Applying a boat design between panel visits invalidates any polar
+    // still in hand, so re-check on the way in rather than trusting
+    // whatever happened to be drawn last.
+    if (lastPolarRows && lastPolarKey !== polarValidityKey()) {
+      lastPolarRows = null;
+      lastPolarKey = null;
+      polarProgress.textContent = t('polar.stale');
+    }
+    drawPolarView(lastPolarRows);
+  }
   if (boatMode) buildBoatPanel();
 }
 function togglePolar() { setActivePanel(polarMode ? 'live' : 'polar'); }
@@ -2233,6 +2250,53 @@ function toggleBoat() { setActivePanel(boatMode ? 'live' : 'boat'); }
 btnPolar.addEventListener('click', togglePolar);
 btnClosePolar.addEventListener('click', togglePolar);
 btnBoat.addEventListener('click', toggleBoat);
+
+// --- Polar caching -------------------------------------------------------
+// The sweep is a PURE function of the boat plus the grid: it builds its own
+// initial state, has no RNG, and is dt-converged (1/240 vs 1/480 agreed to
+// six decimals when measured). So recomputing it for an unchanged boat is
+// pure waste — 283s of it, and until now every page reload threw the result
+// away because it lived only in `lastPolarRows`.
+//
+// The validity key deliberately hashes only the PHYSICS fields. BOAT_FIELDS
+// already tags each field physics/graphics, and the graphics ones genuinely
+// cannot move a polar — `hull.beam`, for instance, does not appear anywhere
+// in core/ (verified: +5% beam reproduced the polar byte-for-byte). Keying
+// on the whole config would throw away a valid result every time someone
+// nudged the drawing.
+//
+// CODE_VERSION covers the physics code AND polar.js's own search/settle
+// constants, since both are bundled together. CAVEAT: in the served dev
+// build it is the literal 'dev' and never changes, so while editing core/
+// or polar.js locally the cache will happily serve a stale polar — hit Run
+// to force a recompute.
+const POLAR_SWEEP = { twsList: [4, 6, 8, 10], twaFrom: 40, twaTo: 170, step: 10 };
+
+function polarValidityKey() {
+  const physics = {};
+  for (const f of BOAT_FIELDS) {
+    if (f.kind === 'physics') physics[f.path] = getPath(dims, f.path);
+  }
+  return hashState({ physics, code: CODE_VERSION, cfg: CONFIG_VERSION, sweep: POLAR_SWEEP });
+}
+
+// adoptStoredPolar — take a polar that travelled with a saved boat, but only
+// if it still describes the boat we just applied. A stale one is reported,
+// not silently drawn: a polar for the wrong hull is worse than none, because
+// it looks authoritative.
+function adoptStoredPolar(polar, boatName) {
+  const key = polarValidityKey();
+  if (polar && polar.key === key && Array.isArray(polar.rows) && polar.rows.length) {
+    lastPolarRows = polar.rows;
+    lastPolarKey = key;
+    polarProgress.textContent = t('polar.fromBoat', boatName);
+  } else {
+    lastPolarRows = null;
+    lastPolarKey = null;
+    polarProgress.textContent = polar ? t('polar.stale') : t('polar.placeholder');
+  }
+  if (polarMode) drawPolarView(lastPolarRows);
+}
 
 // Sweep cancellation: a run is a long-lived async loop, so leaving the panel
 // (or starting a second run) has to be able to stop it. Without this the
@@ -2254,7 +2318,8 @@ btnRunPolar.addEventListener('click', async () => {
   // which sounds fine but is a 3-12.5s synchronous call each — 56 of them,
   // so the tab froze in multi-second blocks despite the yield between them.
   const FRAME_BUDGET_MS = 12;
-  const steps = computePolarSteps(dims, { twsList: [4, 6, 8, 10], twaFrom: 40, twaTo: 170, step: 10 });
+  const runKey = polarValidityKey();
+  const steps = computePolarSteps(dims, POLAR_SWEEP);
   let sliceStart = performance.now();
   for (const row of steps) {
     if (polarRunToken !== myToken) return; // superseded or cancelled
@@ -2272,6 +2337,7 @@ btnRunPolar.addEventListener('click', async () => {
 
   polarProgress.textContent = t('polar.done', rows.length);
   lastPolarRows = rows;
+  lastPolarKey = runKey;
   btnRunPolar.disabled = false;
   btnExportPolar.disabled = false;
   drawPolarView(rows);
@@ -2476,8 +2542,20 @@ const boatPresetSelect = document.getElementById('boatPresetSelect');
 const boatImportFile = document.getElementById('boatImportFile');
 const BOAT_PRESETS_KEY = 'simpjoaBoatPresets';
 
+// A saved boat is { config, polar? }. Presets written before the polar was
+// attached are a BARE patch object, so every read normalises — a polar is a
+// property OF a boat (it is derived from nothing else), which is why it
+// lives in here rather than in a cache keyed separately from the design.
+function normalisePreset(entry) {
+  if (!entry || typeof entry !== 'object') return { config: {} };
+  return ('config' in entry) ? { config: entry.config, polar: entry.polar } : { config: entry };
+}
 function loadBoatPresets() {
-  try { return JSON.parse(localStorage.getItem(BOAT_PRESETS_KEY) || '{}'); } catch { return {}; }
+  let raw;
+  try { raw = JSON.parse(localStorage.getItem(BOAT_PRESETS_KEY) || '{}'); } catch { return {}; }
+  const out = {};
+  for (const [name, entry] of Object.entries(raw)) out[name] = normalisePreset(entry);
+  return out;
 }
 function saveBoatPresets(presets) { localStorage.setItem(BOAT_PRESETS_KEY, JSON.stringify(presets)); }
 
@@ -2578,12 +2656,16 @@ document.getElementById('btnSaveBoatPreset').addEventListener('click', () => {
   boatErrorEl.style.color = '#ff8a8a';
   if (!name) { boatErrorEl.textContent = t('boat.needName'); return; }
   const presets = loadBoatPresets();
-  presets[name] = collectBoatPatch();
+  // Carry the polar along IF it was computed for this exact boat+build; a
+  // mismatched one is dropped rather than saved as a lie.
+  const key = polarValidityKey();
+  const polar = (lastPolarRows && lastPolarKey === key) ? { key, rows: lastPolarRows } : undefined;
+  presets[name] = { config: collectBoatPatch(), ...(polar ? { polar } : {}) };
   saveBoatPresets(presets);
   refreshBoatPresetSelect();
   boatPresetSelect.value = name;
   boatErrorEl.style.color = '#7fe3a3';
-  boatErrorEl.textContent = t('boat.saved', name);
+  boatErrorEl.textContent = polar ? t('polar.attached', name) : t('boat.saved', name);
 });
 
 document.getElementById('btnDeleteBoatPreset').addEventListener('click', () => {
@@ -2604,17 +2686,24 @@ boatPresetSelect.addEventListener('change', () => {
   const name = boatPresetSelect.value;
   if (!name) return;
   const presets = loadBoatPresets();
-  const patch = presets[name];
-  if (!patch) return;
+  const entry = presets[name];
+  if (!entry) return;
   boatPresetNameInput.value = name;
   boatErrorEl.style.color = '#ff8a8a';
-  if (applyBoatPatch(patch)) buildBoatFieldRows();
+  if (applyBoatPatch(entry.config)) {
+    buildBoatFieldRows();
+    adoptStoredPolar(entry.polar, name);
+  }
 });
 
 document.getElementById('btnExportBoat').addEventListener('click', () => {
   const name = boatPresetNameInput.value.trim() || 'boat';
   const patch = collectBoatPatch();
-  const blob = new Blob([JSON.stringify({ name, config: patch }, null, 2)], { type: 'application/json' });
+  // Ship the polar with the design when it belongs to it, so a boat handed
+  // to someone else arrives with its performance already measured.
+  const key = polarValidityKey();
+  const polar = (lastPolarRows && lastPolarKey === key) ? { key, rows: lastPolarRows } : undefined;
+  const blob = new Blob([JSON.stringify({ name, config: patch, ...(polar ? { polar } : {}) }, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = `${name}.json`;
@@ -2635,6 +2724,7 @@ boatImportFile.addEventListener('change', async () => {
       buildBoatPanel();
       const name = data.name || file.name.replace(/\.json$/i, '');
       boatPresetNameInput.value = name;
+      adoptStoredPolar(data.polar, name);
       boatErrorEl.style.color = '#7fe3a3';
       boatErrorEl.textContent = t('boat.imported', name);
     }
