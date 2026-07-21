@@ -150,7 +150,13 @@ const CREW_POS_SEARCH = [0, 0.3, 0.6, 1.0];
 // its middle.
 const BRAIL_SEARCH_DEEP = [0, 0.3, 0.6];
 
-function bestForHeading(config, twaDeg, tws) {
+// bestForHeading as a GENERATOR, yielding once per individual trial. A whole
+// heading is far too coarse a unit of work to hand a UI: measured 3-12.5s of
+// solid main-thread time per heading, so an interactive caller that only got
+// to breathe between headings still froze the tab in multi-second blocks (56
+// of them for the full sweep). One trial is ~10-100ms, which a caller can
+// batch to whatever frame budget it actually has. Node callers just drain it.
+function* bestForHeadingSteps(config, twaDeg, tws) {
   let best = { speed: 0, sheet: 0, delta: 0, crewPos: 0, brailWind: 0 };
   const brailOptions = twaDeg >= 135 ? BRAIL_SEARCH_DEEP : [0];
   for (let sheet = 4; sheet <= 88; sheet += 4) {
@@ -158,26 +164,45 @@ function bestForHeading(config, twaDeg, tws) {
       for (const brailWind of brailOptions) {
         const { speed, settled, deltaDeg } = simulateToSteady(config, twaDeg, tws, sheet, crewPos, brailWind);
         if (settled && speed > best.speed) best = { speed, sheet, delta: deltaDeg, crewPos, brailWind };
+        yield;
       }
     }
   }
   return best;
 }
 
-export function computePolar(config, { twsList, twaFrom = 40, twaTo = 170, step = 10 }) {
-  const rows = [];
+function polarRow(config, twa, tws, best) {
+  return {
+    twa, tws,
+    bestSpeed: best.speed,
+    bestSheetAngle: best.sheet,
+    deltaAngle: best.delta,
+    bestCamberUse: config.sail.camber,
+    bestBrailWind: best.brailWind,
+  };
+}
+
+// computePolarSteps — the same sweep as computePolar, but yielding between
+// trials so an interactive caller can stay responsive, and emitting a row
+// object each time a heading completes. Rows arrive in the same order
+// computePolar returns them.
+export function* computePolarSteps(config, { twsList, twaFrom = 40, twaTo = 170, step = 10 }) {
   for (const tws of twsList) {
     for (let twa = twaFrom; twa <= twaTo; twa += step) {
-      const best = bestForHeading(config, twa, tws);
-      rows.push({
-        twa, tws,
-        bestSpeed: best.speed,
-        bestSheetAngle: best.sheet,
-        deltaAngle: best.delta,
-        bestCamberUse: config.sail.camber,
-        bestBrailWind: best.brailWind,
-      });
+      const steps = bestForHeadingSteps(config, twa, tws);
+      let r = steps.next();
+      while (!r.done) { yield null; r = steps.next(); }
+      yield polarRow(config, twa, tws, r.value);
     }
+  }
+}
+
+// computePolar — unchanged blocking API for Node (tests, CSV export): drains
+// the generator above, so there is exactly one implementation of the search.
+export function computePolar(config, opts) {
+  const rows = [];
+  for (const row of computePolarSteps(config, opts)) {
+    if (row) rows.push(row);
   }
   return rows;
 }

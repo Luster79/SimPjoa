@@ -27,7 +27,7 @@ import { createSimulator } from '../core/simulator.js';
 import { createConfig } from '../core/config.js';
 import { createDefaultControls } from '../core/state.js';
 import { deltaAlign } from '../core/sheet.js';
-import { computePolar } from '../harness/polar.js';
+import { computePolar, computePolarSteps } from '../harness/polar.js';
 import { hashState } from '../harness/checksum.js';
 
 const DEG = Math.PI / 180;
@@ -2215,6 +2215,9 @@ let lastPolarRows = null;
 // other two off, rather than each mode independently toggling itself (which
 // would let two panels show at once if opened back to back).
 function setActivePanel(mode) {
+  // Leaving the polar panel abandons any sweep in flight — see
+  // cancelPolarRun. Re-entering starts fresh rather than resuming.
+  if (polarMode && mode !== 'polar') cancelPolarRun();
   polarMode = mode === 'polar';
   boatMode = mode === 'boat';
   btnPolar.classList.toggle('active', polarMode);
@@ -2231,23 +2234,42 @@ btnPolar.addEventListener('click', togglePolar);
 btnClosePolar.addEventListener('click', togglePolar);
 btnBoat.addEventListener('click', toggleBoat);
 
+// Sweep cancellation: a run is a long-lived async loop, so leaving the panel
+// (or starting a second run) has to be able to stop it. Without this the
+// sweep kept grinding after the user switched back to sailing — the boat was
+// live again but the main thread was still being eaten for minutes, which
+// reads as the whole browser hanging.
+let polarRunToken = 0;
+function cancelPolarRun() { polarRunToken += 1; }
+
 btnRunPolar.addEventListener('click', async () => {
+  const myToken = ++polarRunToken;
   btnRunPolar.disabled = true;
   btnExportPolar.disabled = true;
-  const twsList = [4, 6, 8, 10];
   const rows = [];
   polarProgress.textContent = t('polar.running');
-  // Run heading-by-heading so the tab can repaint between chunks instead of
-  // blocking the main thread for the whole (slow) sweep in one go.
-  for (const tws of twsList) {
-    for (let twa = 40; twa <= 170; twa += 10) {
-      const part = computePolar(dims, { twsList: [tws], twaFrom: twa, twaTo: twa, step: 10 });
-      rows.push(...part);
-      polarProgress.textContent = t('polar.progress', tws, twa);
+
+  // Drive the sweep one TRIAL at a time and hand the thread back whenever
+  // this frame's budget is spent. The previous version chunked by HEADING,
+  // which sounds fine but is a 3-12.5s synchronous call each — 56 of them,
+  // so the tab froze in multi-second blocks despite the yield between them.
+  const FRAME_BUDGET_MS = 12;
+  const steps = computePolarSteps(dims, { twsList: [4, 6, 8, 10], twaFrom: 40, twaTo: 170, step: 10 });
+  let sliceStart = performance.now();
+  for (const row of steps) {
+    if (polarRunToken !== myToken) return; // superseded or cancelled
+    if (row) {
+      rows.push(row);
+      polarProgress.textContent = t('polar.progress', row.tws, row.twa);
+    }
+    if (performance.now() - sliceStart >= FRAME_BUDGET_MS) {
       // eslint-disable-next-line no-await-in-loop
-      await new Promise((r) => setTimeout(r, 0));
+      await new Promise((r) => requestAnimationFrame(() => r()));
+      if (polarRunToken !== myToken) return;
+      sliceStart = performance.now();
     }
   }
+
   polarProgress.textContent = t('polar.done', rows.length);
   lastPolarRows = rows;
   btnRunPolar.disabled = false;
