@@ -1,7 +1,8 @@
 # Diagnostic: deep-course behaviour (TWA 140-180)
 
-Date: 2026-07-20
-Scope: investigation only — **no code was changed**.
+Date: 2026-07-20. Last reviewed: 2026-07-21.
+Scope: investigation only — **no physics code was changed**. One fix was attempted
+against Result 2 and reverted; see the correction note there.
 
 ## Reported symptoms
 
@@ -60,21 +61,33 @@ Lateral crew position has no measurable effect on the achievable course:
 
 `crewPos = 1.0` capsizes at **every** TWA >= 140.
 
-**Cause.** `crewRollMoment()` (`core/stability.js:114-116`) is constant-sign in phi by
-design. For phi < 0 the only opposing term is the ama's buoyancy ceiling in
-`rollRestoreMoment()` (`core/stability.js:81`). With shipped config:
+**Cause — and this is correct physics, not a defect.** With shipped config:
 
-- crew moment at `crewPos=1`: `90 * 9.81 * 1 * 2.5` = **2207 N.m**
-- ama buoyancy ceiling:      `80 * 9.81 * 2.5`     = **1962 N.m**
+- crew moment at `crewPos=1`: `90 * 9.81 * 1 * 2.5 * cos(phi)` = **2207 N.m** x cos(phi)
+- ama buoyancy ceiling:      `80 * 9.81 * 2.5 * cos(phi)`      = **1962 N.m** x cos(phi)
 
-Above `crewPos = ama.maxBuoyancy / crew.mass = 0.889` **no roll equilibrium exists** —
-the ama is driven under without bound. On a reach the sail's heeling moment opposes
-this and it stays hidden; on a deep course the heeling moment vanishes and the boat
-capsizes to windward with nothing to stop it. This is what happens when ballast is
-used to try to help bear away.
+`crewPos = 1.0` puts the crew at the full `ama.spacing`, i.e. directly over the ama.
+On a rigid platform the ama then carries their entire weight — 90 kg on a float with
+80 kgf of reserve buoyancy. It sinks. Both moments carry the same `cos(phi)`, so the
+factor cancels and the inequality holds at **every** heel angle: no equilibrium exists
+at any phi, and the capsize is the physically right answer. Above
+`crewPos = ama.maxBuoyancy / crew.mass = 0.889` the setting is simply unusable on this
+boat, the same way it would be on the real one.
 
-Note `harness/polar.js:135` `CREW_POS_SEARCH` still includes `1.0`, which therefore
-always fails on deep courses and is silently never selected.
+> **Correction (2026-07-21).** An earlier revision of this document listed this as the
+> top defect to fix, reading the 2207 > 1962 inequality as evidence of a missing bound.
+> It is the opposite: the inequality is *why* the boat must go over. A fix was drafted
+> (saturating `rollRestoreMoment`'s phi<0 branch at Mmax instead of letting it ramp
+> down) and **reverted** — dropping the ramp removes the `cos(phi)` lever shortening
+> from the restoring side only, manufacturing a spurious equilibrium at about -27 deg
+> that the physics does not support. Note the full suite still passed 76/79 with that
+> change in place, so the assertions do not currently cover the deep-submerged regime;
+> the revert rests on the force balance above, not on a failing test.
+
+Two secondary observations stand: `harness/polar.js:135` `CREW_POS_SEARCH` includes
+`1.0`, which therefore always fails on deep courses and is silently never selected; and
+the UI offers the full 0-1 range with no indication that the top ~11% of it is
+self-destructive.
 
 Fore-aft ballast (`crewPosX`) is equally inert downwind: it shifts CLR only
 (`core/hydro.js:86-91`), which multiplies `Fy`, and `Fy` goes to zero on a dead run.
@@ -111,20 +124,27 @@ Consistent with the open item already noted at
 
 ## Recommended order of work (not yet actioned)
 
-1. Bound the crew roll moment so it cannot exceed the ama's buoyancy ceiling — removes
-   the unconditional windward capsize. Highest value; it is what the reported ballast
-   symptom actually is.
-2. Contain the numerical divergence so runaway roll flags capsize instead of producing
-   NaN.
-3. Optionally balance the constant `amaDrag` yaw moment on deep courses, so a dead run
+1. Contain the numerical divergence (Result 4) so runaway roll flags capsize instead of
+   producing NaN. This is the one item here that is unambiguously a defect: `u` reaching
+   1e91 is arithmetic failure, not a physical outcome.
+2. Optionally balance the constant `amaDrag` yaw moment on deep courses, so a dead run
    does not require permanent helm.
+3. Optionally surface the crew-position ceiling (`ama.maxBuoyancy / crew.mass`, 0.889 on
+   the shipped config) in the UI, and drop `1.0` from `CREW_POS_SEARCH` — the physics is
+   right, but neither the control nor the optimizer says so.
 
-Symptoms 1 and 3 as reported need no physics change: 1 is a shipped rudder, 3 is
-correct sailing behaviour.
+**None of the three reported symptoms needs a physics change.** Symptom 1 is a shipped
+rudder, symptom 3 is correct sailing behaviour, and the ballast capsize found while
+investigating symptom 1 is correct physics too (see Result 2's correction note).
 
 ## Documentation impact
 
-None applied. `ARCHITECTURE_physics_core_EN.md:810-813` already lists deep-course
-steering as a known limitation and remains accurate. If item 1 or 2 above is
-implemented, that section and the stability description will need updating, and item 1
-warrants an ADR (it changes a deliberate, documented modelling choice).
+No ADR was written and none is owed: the physics is unchanged, so there is no decision
+to record. `ARCHITECTURE_physics_core_EN.md:810-813` already lists deep-course steering
+as a known limitation and remains accurate.
+
+The only doc edits are inside this file — Result 2's cause and correction note, the
+recommendation list, and the header date — all of which trace to the reverted fix.
+Implementing item 1 above (the NaN guard) would touch the stability/integration
+description and would warrant an ADR, since it changes a deliberate, documented
+modelling choice.
