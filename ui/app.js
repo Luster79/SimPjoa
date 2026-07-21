@@ -705,7 +705,11 @@ function drawSideViewInset(state, forces) {
   // CURRENT active bow (state.end flips the sign, matching the main
   // view's own active-bow convention), +y DOWN screen-wise, rotated by
   // phi so "the whole assembly rotates by phi" (R11-1's own wording).
-  const originX = ox + INSET_W / 2, originY = waterY - 6;
+  // The local origin sits ORIGIN_ABOVE_WATER px above the waterline, so in
+  // local coords the water surface is at y = +ORIGIN_ABOVE_WATER — named
+  // rather than repeated, since the droplet cue below has to land on it.
+  const ORIGIN_ABOVE_WATER = 6;
+  const originX = ox + INSET_W / 2, originY = waterY - ORIGIN_ABOVE_WATER;
   const fwd = state.end === 1 ? 1 : -1;
   ctx.translate(originX, originY);
   ctx.rotate(-state.phi); // screen y is down, so -phi banks the same way phi heels the boat
@@ -716,39 +720,37 @@ function drawSideViewInset(state, forces) {
   // dimensions, same spirit as the rest of this stylized side view.
   const halfLpx = 62;
 
-  // Hull silhouette: a shallow lens sitting ON the local x axis (deck).
-  ctx.fillStyle = state.capsized ? skin.hullCapsized : skin.hull;
-  ctx.beginPath();
-  ctx.moveTo(fwd * halfLpx, 0);
-  ctx.quadraticCurveTo(0, -10, -fwd * halfLpx, 0);
-  ctx.quadraticCurveTo(0, 6, fwd * halfLpx, 0);
-  ctx.closePath();
-  ctx.fill();
-
-  // Ama: on the far side from this leeward viewpoint — always drawn
-  // "behind" the hull (smaller, offset up-screen), never mirrored by
-  // `end` (the ama is bolted to one physical side and does not relocate
-  // at a shunt — same invariant core/state.js documents). phi>=0 (flying)
-  // lifts it clear of the waterline with a small gap + droplet cue; phi<0
-  // (pressed) dips it under with a spray cue.
+  // Ama: on the far side from this leeward viewpoint, so it is drawn FIRST
+  // and the hull then occludes its lower half — a depth cue that reads
+  // correctly instead of the float appearing to float in front of the
+  // canoe. Never mirrored by `end` (the ama is bolted to one physical side
+  // and does not relocate at a shunt — same invariant core/state.js
+  // documents). At rest it tucks down behind the hull; phi>=0 (flying)
+  // lifts it clear with a droplet cue; phi<0 (pressed) dips it with spray.
+  // Kept BELOW the sail's own footprint on purpose: skin.sail is
+  // semi-transparent, so anything drawn under the cloth shows through it.
   const amaLoad = clamp(forces?.amaLoadDisplay ?? 0, 0, 1.5) / 1.5;
-  const amaBaseY = -22;
-  const amaLiftPx = state.phi >= 0 ? 6 + 10 * amaLoad : -4 * amaLoad;
+  const amaBaseY = -9;
+  const amaLiftPx = state.phi >= 0 ? 4 + 8 * amaLoad : -4 * amaLoad;
   ctx.save();
-  ctx.globalAlpha = 0.85;
+  ctx.globalAlpha = 0.7;
   ctx.fillStyle = skin.ama;
   ctx.beginPath();
-  ctx.ellipse(0, amaBaseY - amaLiftPx, 26, 6, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, amaBaseY - amaLiftPx, 21, 5, 0, 0, Math.PI * 2);
   ctx.fill();
   if (state.phi >= 0 && amaLoad > 0.1) {
-    // Flying: droplets falling away below the lifted ama, back toward
-    // the waterline.
+    // Flying: droplets falling away below the lifted ama, back down to the
+    // waterline. The span is the DISTANCE from the ama down to the water
+    // (local +ORIGIN_ABOVE_WATER), so it must be positive; it was previously
+    // computed as `amaY - 4`, which is negative here and sent the droplets
+    // climbing up off the top of the panel instead of falling.
     ctx.fillStyle = 'rgba(150,210,255,0.7)';
-    const fallSpan = amaBaseY - amaLiftPx - 4; // distance down to ~the waterline, local coords
+    const amaY = amaBaseY - amaLiftPx;
+    const fallSpan = ORIGIN_ABOVE_WATER - amaY;
     for (let i = 0; i < 3; i++) {
       const dropT = (performance.now() / 260 + i * 0.33) % 1;
       ctx.beginPath();
-      ctx.arc(-14 + i * 14, (amaBaseY - amaLiftPx) + dropT * fallSpan, 1.4, 0, Math.PI * 2);
+      ctx.arc(-14 + i * 14, amaY + dropT * fallSpan, 1.4, 0, Math.PI * 2);
       ctx.fill();
     }
   } else if (state.phi < 0 && amaLoad > 0.1) {
@@ -763,84 +765,102 @@ function drawSideViewInset(state, forces) {
   }
   ctx.restore();
 
-  // Crab-claw sail (reshaped against reference photos of the actual
-  // Pjoa — see "kleszcze kraba"/crab-pincers feedback: the defining cue
-  // is TWO BARE SPAR TIPS poking out past the cloth, like open pincers,
-  // not just a curved wing). Both spars sweep to the same side, aft of a
-  // short mast stub: the yard runs steeply up to a high tip, the boom
-  // runs shallowly out to a low, far tip — the wide claw opening that
-  // gives the rig its name. The CLOTH stops short of each spar's actual
-  // end (fabricFrac below), leaving a short bare stick — the pincer
-  // tips — visible beyond the sail's own corners, with a small tassel at
-  // each one (visible rope tails in every reference photo). Brail state
-  // gathers the visible cloth toward the mast — same 1-0.6*maxBrail
-  // shrink sailPath() uses for the top view — ending in a small lashed
-  // bundle at full furl. `deltaAbs` (the actual yard swing) modestly
-  // widens the aft sweep: a tightly-trimmed sail sits closer over the
-  // deck, an eased one opens out further aft (a side view can't show the
-  // top-view's port/starboard swing, only how far open the claw is).
-  const mastTopY = -28;
-  const mastX = fwd * halfLpx * 0.25;
-  const mastTopX = mastX - fwd * 6; // slight aft rake, matching the photo
-  ctx.strokeStyle = skin.lashing ?? '#5a4a38'; ctx.lineWidth = 1.4;
-  ctx.beginPath(); ctx.moveTo(mastX, 0); ctx.lineTo(mastTopX, mastTopY); ctx.stroke();
+  // Hull silhouette, drawn OVER the ama: a double-ended canoe, both ends
+  // IDENTICAL and swept up into short stem posts, since a proa has no bow
+  // or stern (the same invariant core/state.js documents and the main
+  // view's active-bow marker exists to communicate). Symmetric about x, so
+  // a shunt cannot change the profile — only which end the sail and crew
+  // sit toward.
+  ctx.fillStyle = state.capsized ? skin.hullCapsized : skin.hull;
+  const stemRise = 7, hullDepth = 11;
+  ctx.beginPath();
+  ctx.moveTo(-halfLpx, -stemRise);
+  ctx.quadraticCurveTo(-halfLpx * 0.55, -2, 0, -1.5);
+  ctx.quadraticCurveTo(halfLpx * 0.55, -2, halfLpx, -stemRise);
+  ctx.lineTo(halfLpx - 3, -stemRise + 2);
+  ctx.quadraticCurveTo(halfLpx * 0.5, hullDepth, 0, hullDepth);
+  ctx.quadraticCurveTo(-halfLpx * 0.5, hullDepth, -halfLpx + 3, -stemRise + 2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = skin.lashing ?? '#5a4a38';
+  ctx.lineWidth = 1.6;
+  ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-halfLpx, -stemRise); ctx.lineTo(-halfLpx - 2, -stemRise - 5); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(halfLpx, -stemRise); ctx.lineTo(halfLpx + 2, -stemRise - 5); ctx.stroke();
 
+  // Crab-claw sail, geometry per the ethnographic description of the
+  // Oceanic lateen (Wikipedia / HandWiki "crab claw sail"): the spars are
+  // CURVED, so the two edges running along them are CONVEX, while the free
+  // LEECH spanning the two spar tips is deeply CONCAVE. That scooped
+  // trailing edge between two outward-bowed spars is what actually makes
+  // the claw/pincer silhouette — earlier revisions had it inverted
+  // (concave luff, convex leech) and compensated with bare spar tips
+  // poking past the cloth; both the inversion and the bare-tip trick are
+  // gone, the shape now carries itself. The two spars are near equal
+  // length (an isosceles triangle), radiating from a low tack, with a
+  // short mast meeting the yard around its midpoint rather than at the
+  // tack. Brail state shrinks the whole rig toward the mast, ending in a
+  // small lashed bundle at full furl; `deltaAbs` (the actual yard swing)
+  // opens the claw wider as the sheet is eased (a side view can't show
+  // the top view's port/starboard swing, only how far open the claw is).
   const maxBrail = Math.max(controls.brailLee, controls.brailWind);
   const furled = controls.brailLee > 0.97 && controls.brailWind > 0.97;
   const deltaAbs = Math.abs(state.delta ?? 0);
   const openFrac = clamp(deltaAbs / (80 * DEG), 0, 1);
-  const reach = (1 - 0.6 * maxBrail) * 74; // overall rig size, projected — fitted to the inset's own headroom
-  const tackX = mastTopX, tackY = mastTopY;
-  // Full spar tips (the actual wood, tassel included) — the yard steep
-  // and relatively short, the boom shallow and much longer, per the
-  // reference photos' own proportions.
-  const yardTipX = tackX - fwd * reach * (0.55 + 0.15 * openFrac);
-  const yardTipY = tackY - reach * 0.88;
-  const boomTipX = tackX - fwd * reach * (0.95 + 0.20 * openFrac);
-  const boomTipY = -6;
-  // Cloth corners pulled in from the true tips — this gap is the bare
-  // pincer point.
-  const fabricFrac = 0.86;
-  const peakX = tackX + (yardTipX - tackX) * fabricFrac, peakY = tackY + (yardTipY - tackY) * fabricFrac;
-  const clewX = tackX + (boomTipX - tackX) * fabricFrac, clewY = tackY + (boomTipY - tackY) * fabricFrac;
+  const reach = (1 - 0.55 * maxBrail) * 84; // overall rig size, fitted to the inset's headroom
+  const tackX = fwd * halfLpx * 0.46, tackY = -9;
+  const yardDeg = 66 + 5 * openFrac;  // steep upper spar
+  const boomDeg = 20 + 9 * openFrac;  // shallower lower spar, opens with the sheet
+  const yardLen = reach, boomLen = reach * 0.92;
+  const yardTipX = tackX - fwd * yardLen * Math.cos(yardDeg * DEG);
+  const yardTipY = tackY - yardLen * Math.sin(yardDeg * DEG);
+  const boomTipX = tackX - fwd * boomLen * Math.cos(boomDeg * DEG);
+  const boomTipY = tackY - boomLen * Math.sin(boomDeg * DEG);
+  // Each spar bows OUTWARD: offset the curve's control point along the
+  // edge normal, away from the sail's own interior (the triangle centroid).
+  const cgX = (tackX + yardTipX + boomTipX) / 3, cgY = (tackY + yardTipY + boomTipY) / 3;
+  const bowOut = (ax, ay, bx, by, amt) => {
+    const mx = (ax + bx) / 2, my = (ay + by) / 2;
+    let nx = -(by - ay), ny = bx - ax;
+    const len = Math.hypot(nx, ny) || 1; nx /= len; ny /= len;
+    if ((mx + nx - cgX) ** 2 + (my + ny - cgY) ** 2 < (mx - cgX) ** 2 + (my - cgY) ** 2) { nx = -nx; ny = -ny; }
+    return [mx + nx * amt, my + ny * amt];
+  };
+  const [yardCtrlX, yardCtrlY] = bowOut(tackX, tackY, yardTipX, yardTipY, reach * 0.085);
+  const [boomCtrlX, boomCtrlY] = bowOut(tackX, tackY, boomTipX, boomTipY, reach * 0.075);
+  // Concave leech: control point hauled back in toward the tack.
+  const leechMidX = (yardTipX + boomTipX) / 2, leechMidY = (yardTipY + boomTipY) / 2;
+  const leechCtrlX = leechMidX + (tackX - leechMidX) * 0.40;
+  const leechCtrlY = leechMidY + (tackY - leechMidY) * 0.40;
+  // Short mast, meeting the yard at ~45% of its length.
+  const mastX = fwd * halfLpx * 0.10;
+  const mastHeadX = tackX + (yardTipX - tackX) * 0.45;
+  const mastHeadY = tackY + (yardTipY - tackY) * 0.45;
+  ctx.strokeStyle = skin.lashing ?? '#5a4a38'; ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.moveTo(mastX, 0); ctx.lineTo(mastHeadX, mastHeadY); ctx.stroke();
+
   if (furled) {
     ctx.strokeStyle = skin.lashing ?? '#8a8060'; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.moveTo(tackX, tackY + (0 - tackY) * 0.15); ctx.lineTo(tackX, tackY + (0 - tackY) * 0.75); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(mastHeadX, mastHeadY * 0.35); ctx.lineTo(mastHeadX, mastHeadY * 0.95); ctx.stroke();
   } else {
-    // Spars: full length, tack to the TRUE tip (so the cloth-inset gap
-    // below reads as bare stick, not empty space).
-    ctx.strokeStyle = skin.lashing ?? '#5a4a38'; ctx.lineWidth = 1.3;
-    ctx.beginPath(); ctx.moveTo(tackX, tackY); ctx.lineTo(yardTipX, yardTipY); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(tackX, tackY); ctx.lineTo(boomTipX, boomTipY); ctx.stroke();
-    // Cloth: a curved quadrilateral between the (inset) fabric corners.
-    // Per feedback ("wklęsły od góry" — concave from the top, "kleszcze
-    // kraba" — crab pincers): the LUFF (tack->peak, the long edge facing
-    // the viewer) is genuinely CONCAVE, scooping in toward the mast
-    // before flaring back out to the yard tip — this hooked leading edge
-    // is the actual defining feature of a real crab-claw/Oceanic-lateen
-    // sail (unlike a Western lateen's straight or convex luff), clearly
-    // visible in every reference photo. The leech (peak->clew) keeps its
-    // outward camber bulge — the sail's belly, catching the wind.
-    const luffCtrlX = (tackX + peakX) / 2 + fwd * reach * 0.42, luffCtrlY = (tackY + peakY) / 2 + reach * 0.05;
-    const leechCtrlX = (peakX + clewX) / 2 - fwd * reach * 0.22, leechCtrlY = (peakY + clewY) / 2 + reach * 0.08;
+    // Cloth: convex along both spars, concave along the leech, reaching
+    // all the way to the tips.
     ctx.beginPath();
     ctx.moveTo(tackX, tackY);
-    ctx.quadraticCurveTo(luffCtrlX, luffCtrlY, peakX, peakY);
-    ctx.quadraticCurveTo(leechCtrlX, leechCtrlY, clewX, clewY);
-    ctx.lineTo(tackX, tackY);
+    ctx.quadraticCurveTo(yardCtrlX, yardCtrlY, yardTipX, yardTipY);
+    ctx.quadraticCurveTo(leechCtrlX, leechCtrlY, boomTipX, boomTipY);
+    ctx.quadraticCurveTo(boomCtrlX, boomCtrlY, tackX, tackY);
     ctx.closePath();
     ctx.fillStyle = skin.sail;
     ctx.fill();
     ctx.strokeStyle = skin.sailStroke; ctx.lineWidth = 1;
     ctx.stroke();
-    // Tassels at the two pincer tips — a couple of short loose lines,
-    // matching the dangling cords visible at both spar ends in every
-    // reference photo.
-    ctx.strokeStyle = skin.sailStroke; ctx.lineWidth = 0.8;
-    for (const [tx, ty] of [[yardTipX, yardTipY], [boomTipX, boomTipY]]) {
-      ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(tx - fwd * 3, ty + 6); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(tx + fwd * 2, ty + 7); ctx.stroke();
-    }
+    // The spars themselves, laid along the two convex edges.
+    ctx.strokeStyle = skin.lashing ?? '#5a4a38'; ctx.lineWidth = 1.8; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(tackX, tackY); ctx.quadraticCurveTo(yardCtrlX, yardCtrlY, yardTipX, yardTipY); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(tackX, tackY); ctx.quadraticCurveTo(boomCtrlX, boomCtrlY, boomTipX, boomTipY); ctx.stroke();
   }
 
   // Crew figures at (crewPos, crewPosX): fore-aft position along the deck
@@ -996,22 +1016,87 @@ function drawBalanceWidget(state, forces) {
 
   const halfBeamPx = 55, ceHeightPx = 60;
   ctx.save();
-  ctx.translate(cx, cy);
+  // The assembly is strongly asymmetric (hull at 0, platform and ama out to
+  // +halfBeamPx), so nudge it left to keep the drawn boat centred in the
+  // panel rather than crowding the right edge.
+  ctx.translate(cx - halfBeamPx * 0.42, cy);
   ctx.rotate(-state.phi);
 
-  // Hull cross-section (a shallow trapezoid) + ama at local +x.
+  // Transverse proportions are DERIVED from the config rather than eyeballed:
+  // halfBeamPx stands for ama.spacing, so one px-per-metre scale sets
+  // everything else and the picture follows the boat-design panel instead of
+  // drifting from it. This matters because a Pjoa's vaka is genuinely
+  // extreme — 5.5 m long on a 0.45 m beam, and only ~1/5.5 of the outrigger
+  // gap — so a hull drawn anywhere near as wide as the platform misreads the
+  // boat completely (reference: Pjoa Puch, Kowalski/Ostrowski 2018).
+  const pxPerM = halfBeamPx / (dims.ama.spacing || 2.5);
+  const hullHalfW = Math.max(4, ((dims.hull.beam || 0.45) * pxPerM) / 2);
+  const deckY = -13, keelY = 7;
+
+  // The platform: a flat, straight slatted deck spanning hull to ama and
+  // overhanging both — on the real boat it is the widest thing in the
+  // transverse view by far, and it is what the crew actually stands on.
+  const platX0 = -hullHalfW - 12, platX1 = halfBeamPx + 11;
+  ctx.fillStyle = state.capsized ? skin.hullCapsized : skin.hull;
+  ctx.fillRect(platX0, deckY - 2, platX1 - platX0, 4);
+  ctx.strokeStyle = skin.lashing ?? 'rgba(90,74,56,0.55)';
+  ctx.lineWidth = 0.8;
+  for (let sx = platX0 + 4; sx < platX1; sx += 5) {
+    ctx.beginPath(); ctx.moveTo(sx, deckY - 2); ctx.lineTo(sx, deckY + 2); ctx.stroke();
+  }
+  // Curved beam under the platform, carrying the load out to the ama.
+  ctx.strokeStyle = skin.lashing ?? '#7a5a3a'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(hullHalfW, deckY + 1);
+  ctx.quadraticCurveTo(halfBeamPx * 0.6, deckY + 9, halfBeamPx, -3);
+  ctx.stroke();
+
+  // Main hull: narrow and deep, a slender V — the defining Pjoa proportion.
   ctx.fillStyle = state.capsized ? skin.hullCapsized : skin.hull;
   ctx.beginPath();
-  ctx.moveTo(-30, 0); ctx.lineTo(-18, -14); ctx.lineTo(18, -14); ctx.lineTo(30, 0); ctx.closePath();
+  ctx.moveTo(-hullHalfW, deckY);
+  ctx.quadraticCurveTo(-hullHalfW * 1.15, keelY * 0.35, 0, keelY);
+  ctx.quadraticCurveTo(hullHalfW * 1.15, keelY * 0.35, hullHalfW, deckY);
+  ctx.closePath();
   ctx.fill();
-  ctx.fillStyle = skin.ama;
-  ctx.beginPath(); ctx.ellipse(halfBeamPx, 4, 14, 7, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = '#7a5a3a'; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.moveTo(18, -8); ctx.lineTo(halfBeamPx, 4); ctx.stroke();
 
-  // Mast / CE height marker.
-  ctx.strokeStyle = '#5a4a38'; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.moveTo(0, -14); ctx.lineTo(0, -ceHeightPx); ctx.stroke();
+  // Ama: FLOATS, it does not swim. core/hydro.js's amaDrag sets
+  // restingImmersion = 0.3, so roughly a third of its section sits below the
+  // waterline (local y = 0) at rest; heel then lifts or buries it bodily via
+  // the phi rotation this whole group is drawn under.
+  const amaTopY = -8, amaBotY = 4; // 4/12 of the depth immersed ~= 0.3
+  ctx.fillStyle = skin.ama;
+  ctx.beginPath();
+  ctx.moveTo(halfBeamPx - 6, amaTopY);
+  ctx.quadraticCurveTo(halfBeamPx - 7, amaBotY * 0.4, halfBeamPx, amaBotY);
+  ctx.quadraticCurveTo(halfBeamPx + 7, amaBotY * 0.4, halfBeamPx + 6, amaTopY);
+  ctx.quadraticCurveTo(halfBeamPx, amaTopY - 2, halfBeamPx - 6, amaTopY);
+  ctx.closePath();
+  ctx.fill();
+
+  // Mast (CE height marker), raked toward the ama as on a shunting proa,
+  // with the crab claw seen nearly edge-on: a narrow foreshortened sliver
+  // leaning to leeward. Bow-on is the one view where the rig reads as a
+  // thin blade rather than a claw, so it is drawn as such deliberately.
+  const mastHeadX = 5, mastHeadY = -ceHeightPx;
+  ctx.strokeStyle = skin.lashing ?? '#5a4a38'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(-1, deckY); ctx.lineTo(mastHeadX, mastHeadY); ctx.stroke();
+  const yardTipBX = -16, yardTipBY = mastHeadY + 7;
+  ctx.beginPath();
+  ctx.moveTo(-2, deckY + 1);
+  ctx.quadraticCurveTo(-13, -36, yardTipBX, yardTipBY);
+  ctx.quadraticCurveTo(-3, -37, -2, -14);
+  ctx.closePath();
+  ctx.fillStyle = skin.sail;
+  ctx.fill();
+  ctx.strokeStyle = skin.sailStroke; ctx.lineWidth = 0.8;
+  ctx.stroke();
+  // The yard itself along the sail's leading edge, so the rig reads as
+  // spar-and-cloth rather than a bare leaf shape.
+  ctx.strokeStyle = skin.lashing ?? '#5a4a38'; ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.moveTo(-2, deckY + 1); ctx.quadraticCurveTo(-16, -38, yardTipBX, yardTipBY);
+  ctx.stroke();
 
   // Sail-force arrow at CE height: Msail>0 drives phi positive (ama
   // rising), which is a push AWAY from the ama (-x) at the CE — the
@@ -1031,15 +1116,15 @@ function drawBalanceWidget(state, forces) {
   // so, unlike the sail arrow above, no extra sign flip is needed here,
   // it's drawn exactly as computed.
   const restoreArrowLen = softenMoment(Mrestore);
-  drawArrow(halfBeamPx, 4, halfBeamPx + restoreArrowLen, 4, '#7fe3a3', 2.5);
+  drawArrow(halfBeamPx, -2, halfBeamPx + restoreArrowLen, -2, '#7fe3a3', 2.5);
 
   // Crew figure at crewPos (lateral, toward the ama — matches this
   // widget's own +x convention directly, no end factor: crewPos is
   // already a physical-frame quantity, see core/state.js Conventions).
   const crewX = clamp(controls.crewPos, dims.crew.posMin, dims.crew.posMax) * halfBeamPx * 0.9;
   ctx.fillStyle = '#ffe08a'; ctx.strokeStyle = '#3a2f22'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(crewX, -6); ctx.lineTo(crewX, -22); ctx.stroke();
-  ctx.beginPath(); ctx.arc(crewX, -26, 4, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(crewX, deckY - 2); ctx.lineTo(crewX, deckY - 17); ctx.stroke();
+  ctx.beginPath(); ctx.arc(crewX, deckY - 21, 4, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
 
   ctx.restore();
 
@@ -1749,20 +1834,26 @@ function drawTrail(xs, ys, cam, color) {
 // whatever's making it, not a persistent route line. Only the most
 // recent maxSamples samples are drawn; each short segment gets its own
 // width/color/alpha interpolated by how far back (in samples) it sits —
-// near the source: thin-ish, saturated `base` color, fairly opaque;
-// fading away: wider, and its color drifts toward the water's own skin
-// color (getSkin().water, so it blends seamlessly into the background
-// instead of just fading to a fixed pale tone) while its alpha drops
-// toward 0. (Approximates "blurred" via the width/alpha/color ramp
-// rather than a real per-segment canvas blur filter — a literal
-// `ctx.filter` blur would need its own compositing pass per segment,
-// dozens of times a frame, which isn't worth it for what's already a
-// soft, low-contrast trail at this sample count.)
-function drawFadingWake(xs, ys, cam, maxSamples, base, widthStart, widthEnd, alphaStart) {
+// near the source: already as wide as the actual hull/ama beam (in
+// world meters, scaled the same way every other on-screen length is —
+// `scale*dpr` — so it visually continues the real waterline instead of
+// tapering from a point; per feedback, "every point of the hull that
+// touches the water generates wake", not just its center track), and its
+// `base` color at close to full strength; fading away: wider still, and
+// its color drifts toward the water's own skin color (getSkin().water,
+// so it blends seamlessly into the background instead of just fading to
+// a fixed pale tone) while its alpha drops toward 0. (Approximates
+// "blurred" via the width/alpha/color ramp rather than a real per-
+// segment canvas blur filter — a literal `ctx.filter` blur would need
+// its own compositing pass per segment, dozens of times a frame, which
+// isn't worth it for what's already a soft, low-contrast trail at this
+// sample count.)
+function drawFadingWake(xs, ys, cam, maxSamples, base, beamStartM, beamEndM, alphaStart) {
   const n = xs.length;
   if (n < 2) return;
   const bg = hexToRgb(getSkin().water);
   const start = Math.max(0, n - maxSamples);
+  const px = scale * dpr;
   ctx.save();
   ctx.lineCap = 'round';
   for (let i = start + 1; i < n; i++) {
@@ -1773,7 +1864,7 @@ function drawFadingWake(xs, ys, cam, maxSamples, base, widthStart, widthEnd, alp
     const r = Math.round(base.r + (bg.r - base.r) * age), g = Math.round(base.g + (bg.g - base.g) * age), b = Math.round(base.b + (bg.b - base.b) * age);
     const alpha = alphaStart * (1 - age);
     ctx.strokeStyle = `rgba(${r},${g},${b},${alpha.toFixed(3)})`;
-    ctx.lineWidth = Math.max(1, (widthStart + (widthEnd - widthStart) * age) * dpr);
+    ctx.lineWidth = Math.max(1, (beamStartM + (beamEndM - beamStartM) * age) * px);
     ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.stroke();
   }
   ctx.restore();
@@ -1790,12 +1881,14 @@ function drawWakeTrail(cam) {
   // full course sailed stays traceable even long after the "real" wake
   // near the hull has faded out.
   drawTrail(wakeX, wakeY, cam, 'rgba(90,170,230,0.35)');
-  // Dissipating wake effect, both threads: widens and fades toward the
-  // water's own background color over the last ~5.4s, per feedback
-  // ("bardziej zbliżony do koloru tła i szerszy" — closer to the
-  // background color, and wider).
-  drawFadingWake(wakeX, wakeY, cam, WAKE_FADE_MAX_SAMPLES, HULL_WAKE_BASE, 2, 10, 0.45);
-  drawFadingWake(wakeAmaX, wakeAmaY, cam, WAKE_FADE_MAX_SAMPLES, AMA_WAKE_BASE, 1.5, 10, 0.55);
+  // Dissipating wake effect, both threads: starts as wide as the actual
+  // waterline (hull.beam / the ama's own ~1.2*hull.beam cross-section,
+  // matching the ellipse radius drawBoat() already uses for it) and
+  // widens further while fading toward the water's own background color
+  // over the last ~5.4s, per feedback.
+  const hullBeamM = dims.hull.beam, amaBeamM = dims.hull.beam * 1.2;
+  drawFadingWake(wakeX, wakeY, cam, WAKE_FADE_MAX_SAMPLES, HULL_WAKE_BASE, hullBeamM, hullBeamM * 6, 0.45);
+  drawFadingWake(wakeAmaX, wakeAmaY, cam, WAKE_FADE_MAX_SAMPLES, AMA_WAKE_BASE, amaBeamM, amaBeamM * 6, 0.55);
 }
 
 // ---------------------------------------------------------------------
