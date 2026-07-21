@@ -132,9 +132,10 @@ proa, not a generic dinghy with a float:
 - **Balance cross-section widget** (bottom-left, `R11-4`) — a schematic
   bow-on view: hull, ama, crew, and the sail's heeling moment vs the
   ama's righting response as two live arrows, tinted amber/red synced to
-  the existing heel-bar/aback warning thresholds. The main HUD bar is
-  reordered to proa priorities: ama load + heel first, speed/VMG second,
-  sail trim third.
+  the existing heel-bar/aback warning thresholds. (`R11-4` also
+  reordered the main HUD bar to proa priorities; reverted per later
+  feedback back to its original order — speed/TWA/AWA/AoA/VMG/leeway
+  first, ama load/heel and the rest after.)
 - **Apparent-wind safety sector** (`R11-5`) — an arc around the boat
   whose highlighted segment glows amber then red as `core/sheet.js`'s
   own `deltaAlign()` (imported, not re-derived) shrinks toward the real
