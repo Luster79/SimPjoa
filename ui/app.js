@@ -547,7 +547,7 @@ resize();
 }
 
 let scale = 24; // px per meter, adjustable via wheel zoom
-const ZOOM_MIN = 6, ZOOM_MAX = 80;
+const ZOOM_MIN = 0.6, ZOOM_MAX = 80; // ZOOM_MIN lowered 10x (was 6) per user request — max zoom-out
 stage.addEventListener('wheel', (e) => {
   e.preventDefault();
   // e.deltaY's units/magnitude vary by device and OS — a single mouse
