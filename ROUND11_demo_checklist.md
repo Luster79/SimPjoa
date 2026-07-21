@@ -18,6 +18,14 @@ or `dist/simulator_standalone.html` directly — both carry the same
 3. Trigger a shunt (`Space`, held, below the speed lockout) and let it
    complete. Confirm the inset's sail/mast/crew picture is still correct
    relative to the NEW active bow afterward (not frozen to the old side).
+4. Check the rig actually reads as a Pjoa: near-equal spars bowed OUTWARD
+   from a low tack, the free leech between their tips scooped IN, cloth
+   running to the tips with a short bare yard tip standing above the peak,
+   and a hull that is double-ended with both stems swept up. (Reference:
+   PJOA FOLK plans, Kowalski/Ostrowski.)
+5. Drive the boat hard enough to raise the "AMA FLYING" banner. Confirm
+   the inset drops below the banner instead of being painted over by it,
+   and that the droplets under the lifted ama fall DOWN toward the water.
 
 ## R11-2 — twin wake
 
@@ -47,12 +55,19 @@ or `dist/simulator_standalone.html` directly — both carry the same
 
 ## R11-4 — balance widget + HUD reorder
 
-1. Confirm the HUD bar (top) reads, left to right: Ama load, Heel,
-   Speed, VMG, Sheet, Yard, then TWA/AWA/AoA/Leeway/Shunt/TWS.
+1. Confirm the HUD bar (top) reads, left to right: Speed, TWA, AWA, AoA,
+   VMG, Leeway, Ama load, Heel, Sheet, Yard, Shunt, TWS. (The round-11
+   reorder that put Ama load/Heel first was later reverted to this,
+   the original, order — this step was left describing the reverted
+   layout.)
 2. Sheet in hard on a reach to build a gust-like load. Watch the
    balance widget (bottom-left): the sail-force arrow should grow, and
    moving crew toward the ama (`L` or the crew pad) should visibly grow
-   the righting arrow and ease the heel.
+   the righting arrow and ease the heel. The cross-section itself should
+   read as a proa seen bow-on — a narrow hard-chine vaka (its width is
+   derived from `hull.beam` against `ama.spacing`, so it is genuinely
+   about a fifth of the outrigger gap), a wide flat slatted platform, and
+   a shallow ama floating on the surface on X-braced trestles.
 3. Load it past `amaLoadDisplay`'s 0.75/1.0 thresholds and confirm the
    widget's background tints amber then red in sync with the existing
    heel bar and aback banner.
