@@ -691,7 +691,10 @@ function drawSideViewInset(state, forces) {
   // "enough" per the spec, not a real wave model).
   ctx.fillStyle = 'rgba(6,18,31,0.82)';
   ctx.fillRect(ox, oy, INSET_W, INSET_H);
-  const waterY = oy + INSET_H * 0.62 + Math.sin(performance.now() / 700) * 2;
+  // Waterline lowered (0.62 -> 0.76) to make headroom for the taller
+  // yard/mast combo above — the sail dominates the frame the same way it
+  // does in every reference photo, hull low in the picture.
+  const waterY = oy + INSET_H * 0.76 + Math.sin(performance.now() / 700) * 2;
   ctx.strokeStyle = 'rgba(120,180,220,0.5)';
   ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.moveTo(ox, waterY); ctx.lineTo(ox + INSET_W, waterY); ctx.stroke();
@@ -760,23 +763,23 @@ function drawSideViewInset(state, forces) {
   }
   ctx.restore();
 
-  // Crab-claw sail (reshaped against a reference photo of the actual
-  // Pjoa: both spars sweep to the SAME side, aft of a short mast stub —
-  // not a symmetric kite straddling the mast). Tack sits near the TOP of
-  // a short mast rising from the deck; the yard runs from there steeply
-  // up AND aft to a high peak (the tallest point of the whole rig); the
-  // boom runs from the same tack down and much further aft, staying low,
-  // just clear of the deck — the wide, shallow-angled "claw" opening
-  // that gives the rig its name. Both edges get a gentle outward bulge
-  // (camber) rather than straight spars, matching the photo's curved
-  // cloth. Brail state gathers the visible sail toward the mast — same
-  // 1-0.6*maxBrail shrink sailPath() uses for the top view — ending in a
-  // small lashed bundle at full furl. `deltaAbs` (the actual yard swing)
-  // modestly widens the aft sweep: a tightly-trimmed sail sits closer
-  // over the deck, an eased one opens out further aft, same direction
-  // either way (a side view can't show the top-view's port/starboard
-  // swing, only how far open the claw is).
-  const mastTopY = -34;
+  // Crab-claw sail (reshaped against reference photos of the actual
+  // Pjoa — see "kleszcze kraba"/crab-pincers feedback: the defining cue
+  // is TWO BARE SPAR TIPS poking out past the cloth, like open pincers,
+  // not just a curved wing). Both spars sweep to the same side, aft of a
+  // short mast stub: the yard runs steeply up to a high tip, the boom
+  // runs shallowly out to a low, far tip — the wide claw opening that
+  // gives the rig its name. The CLOTH stops short of each spar's actual
+  // end (fabricFrac below), leaving a short bare stick — the pincer
+  // tips — visible beyond the sail's own corners, with a small tassel at
+  // each one (visible rope tails in every reference photo). Brail state
+  // gathers the visible cloth toward the mast — same 1-0.6*maxBrail
+  // shrink sailPath() uses for the top view — ending in a small lashed
+  // bundle at full furl. `deltaAbs` (the actual yard swing) modestly
+  // widens the aft sweep: a tightly-trimmed sail sits closer over the
+  // deck, an eased one opens out further aft (a side view can't show the
+  // top-view's port/starboard swing, only how far open the claw is).
+  const mastTopY = -28;
   const mastX = fwd * halfLpx * 0.25;
   const mastTopX = mastX - fwd * 6; // slight aft rake, matching the photo
   ctx.strokeStyle = skin.lashing ?? '#5a4a38'; ctx.lineWidth = 1.4;
@@ -786,20 +789,33 @@ function drawSideViewInset(state, forces) {
   const furled = controls.brailLee > 0.97 && controls.brailWind > 0.97;
   const deltaAbs = Math.abs(state.delta ?? 0);
   const openFrac = clamp(deltaAbs / (80 * DEG), 0, 1);
-  const reach = (1 - 0.6 * maxBrail) * 108; // overall rig size, projected
+  const reach = (1 - 0.6 * maxBrail) * 74; // overall rig size, projected — fitted to the inset's own headroom
   const tackX = mastTopX, tackY = mastTopY;
-  const peakX = tackX - fwd * reach * (0.30 + 0.15 * openFrac);
-  const peakY = tackY - reach * 0.85;
-  const clewX = tackX - fwd * reach * (0.80 + 0.20 * openFrac);
-  const clewY = -6;
+  // Full spar tips (the actual wood, tassel included) — the yard steep
+  // and relatively short, the boom shallow and much longer, per the
+  // reference photos' own proportions.
+  const yardTipX = tackX - fwd * reach * (0.34 + 0.14 * openFrac);
+  const yardTipY = tackY - reach * 0.95;
+  const boomTipX = tackX - fwd * reach * (0.95 + 0.20 * openFrac);
+  const boomTipY = -6;
+  // Cloth corners pulled in from the true tips — this gap is the bare
+  // pincer point.
+  const fabricFrac = 0.86;
+  const peakX = tackX + (yardTipX - tackX) * fabricFrac, peakY = tackY + (yardTipY - tackY) * fabricFrac;
+  const clewX = tackX + (boomTipX - tackX) * fabricFrac, clewY = tackY + (boomTipY - tackY) * fabricFrac;
   if (furled) {
     ctx.strokeStyle = skin.lashing ?? '#8a8060'; ctx.lineWidth = 3;
     ctx.beginPath(); ctx.moveTo(tackX, tackY + (0 - tackY) * 0.15); ctx.lineTo(tackX, tackY + (0 - tackY) * 0.75); ctx.stroke();
   } else {
-    // Luff (tack->peak): near-straight, a light outward bow.
+    // Spars: full length, tack to the TRUE tip (so the cloth-inset gap
+    // below reads as bare stick, not empty space).
+    ctx.strokeStyle = skin.lashing ?? '#5a4a38'; ctx.lineWidth = 1.3;
+    ctx.beginPath(); ctx.moveTo(tackX, tackY); ctx.lineTo(yardTipX, yardTipY); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(tackX, tackY); ctx.lineTo(boomTipX, boomTipY); ctx.stroke();
+    // Cloth: a curved quadrilateral between the (inset) fabric corners —
+    // luff near-straight with a light bow, leech the main outward bulge
+    // (the sail's camber, the most visible curve in every reference photo).
     const luffCtrlX = (tackX + peakX) / 2 - fwd * reach * 0.06, luffCtrlY = (tackY + peakY) / 2;
-    // Leech (peak->clew): the trailing edge, bulges outward (aft/down)
-    // the most — this is the sail's main camber, most visible in the photo.
     const leechCtrlX = (peakX + clewX) / 2 - fwd * reach * 0.22, leechCtrlY = (peakY + clewY) / 2 + reach * 0.08;
     ctx.beginPath();
     ctx.moveTo(tackX, tackY);
@@ -811,10 +827,14 @@ function drawSideViewInset(state, forces) {
     ctx.fill();
     ctx.strokeStyle = skin.sailStroke; ctx.lineWidth = 1;
     ctx.stroke();
-    // Boom: a visible spar along the foot (tack->clew), like the photo's
-    // straight lower pole carrying the sail's weight.
-    ctx.strokeStyle = skin.lashing ?? '#5a4a38'; ctx.lineWidth = 1.1;
-    ctx.beginPath(); ctx.moveTo(tackX, tackY); ctx.lineTo(clewX, clewY); ctx.stroke();
+    // Tassels at the two pincer tips — a couple of short loose lines,
+    // matching the dangling cords visible at both spar ends in every
+    // reference photo.
+    ctx.strokeStyle = skin.sailStroke; ctx.lineWidth = 0.8;
+    for (const [tx, ty] of [[yardTipX, yardTipY], [boomTipX, boomTipY]]) {
+      ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(tx - fwd * 3, ty + 6); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(tx + fwd * 2, ty + 7); ctx.stroke();
+    }
   }
 
   // Crew figures at (crewPos, crewPosX): fore-aft position along the deck
