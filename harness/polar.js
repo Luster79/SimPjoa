@@ -132,6 +132,13 @@ function simulateToSteady(config, twaDeg, tws, sheetDeg, crewPos, brailWind = 0,
 // achievable polar speed genuinely depends on crew position across most of
 // its range, matching the prompt's "sailing controlled almost entirely by
 // sheet and crew position" description — not just a light-air trim detail.
+// Keep 1.0. It looks like dead weight at 6 m/s — it wins at no TWA there,
+// and from about TWA150 down it cannot be held at all (crewPos*crew.mass
+// exceeds ama.maxBuoyancy, 90 kg vs 80 kgf, so the ama is pressed under).
+// But the polar also runs at 10 m/s, and there full hiking is exactly what
+// the boat needs: dropping 1.0 cost 6-9% of reaching speed across TWA
+// 60-110 at that wind (e.g. TWA90 12.05 -> 10.86 m/s). Any future trim of
+// this grid has to be measured across the whole twsList, not one wind.
 const CREW_POS_SEARCH = [0, 0.3, 0.6, 1.0];
 
 // BRAIL_SEARCH_DEEP (round 10c, C1): coarse grid, only added for TWA>=135

@@ -681,7 +681,17 @@ const INSET_W = 220, INSET_H = 140, INSET_MARGIN = 10;
 function drawSideViewInset(state, forces) {
   if (!insetShowCheckbox.checked) return;
   const skin = getSkin();
-  const ox = canvas.width - INSET_W - INSET_MARGIN, oy = INSET_MARGIN;
+  // The alarm banner is a full-width DOM bar overlaying the canvas, so it
+  // always wins the stacking order and used to paint straight over this
+  // panel — exactly when the boat is in trouble and the side view is worth
+  // most. Rather than shrink the alarm (it is deliberately loud), drop the
+  // inset below it. offsetHeight is 0 while the banner is hidden, so this
+  // costs nothing in the normal case, and reading it keeps the two in step
+  // if the banner's padding or font ever changes. The *dpr converts the
+  // banner's CSS pixels into the raw canvas pixels this panel is laid out
+  // in (see resize(): canvas.width is already scaled by dpr).
+  const ox = canvas.width - INSET_W - INSET_MARGIN;
+  const oy = INSET_MARGIN + banner.offsetHeight * dpr;
   ctx.save();
   ctx.beginPath();
   ctx.rect(ox, oy, INSET_W, INSET_H);
