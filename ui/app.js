@@ -794,8 +794,8 @@ function drawSideViewInset(state, forces) {
   // Full spar tips (the actual wood, tassel included) — the yard steep
   // and relatively short, the boom shallow and much longer, per the
   // reference photos' own proportions.
-  const yardTipX = tackX - fwd * reach * (0.34 + 0.14 * openFrac);
-  const yardTipY = tackY - reach * 0.95;
+  const yardTipX = tackX - fwd * reach * (0.55 + 0.15 * openFrac);
+  const yardTipY = tackY - reach * 0.88;
   const boomTipX = tackX - fwd * reach * (0.95 + 0.20 * openFrac);
   const boomTipY = -6;
   // Cloth corners pulled in from the true tips — this gap is the bare
@@ -812,10 +812,16 @@ function drawSideViewInset(state, forces) {
     ctx.strokeStyle = skin.lashing ?? '#5a4a38'; ctx.lineWidth = 1.3;
     ctx.beginPath(); ctx.moveTo(tackX, tackY); ctx.lineTo(yardTipX, yardTipY); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(tackX, tackY); ctx.lineTo(boomTipX, boomTipY); ctx.stroke();
-    // Cloth: a curved quadrilateral between the (inset) fabric corners —
-    // luff near-straight with a light bow, leech the main outward bulge
-    // (the sail's camber, the most visible curve in every reference photo).
-    const luffCtrlX = (tackX + peakX) / 2 - fwd * reach * 0.06, luffCtrlY = (tackY + peakY) / 2;
+    // Cloth: a curved quadrilateral between the (inset) fabric corners.
+    // Per feedback ("wklęsły od góry" — concave from the top, "kleszcze
+    // kraba" — crab pincers): the LUFF (tack->peak, the long edge facing
+    // the viewer) is genuinely CONCAVE, scooping in toward the mast
+    // before flaring back out to the yard tip — this hooked leading edge
+    // is the actual defining feature of a real crab-claw/Oceanic-lateen
+    // sail (unlike a Western lateen's straight or convex luff), clearly
+    // visible in every reference photo. The leech (peak->clew) keeps its
+    // outward camber bulge — the sail's belly, catching the wind.
+    const luffCtrlX = (tackX + peakX) / 2 + fwd * reach * 0.42, luffCtrlY = (tackY + peakY) / 2 + reach * 0.05;
     const leechCtrlX = (peakX + clewX) / 2 - fwd * reach * 0.22, leechCtrlY = (peakY + clewY) / 2 + reach * 0.08;
     ctx.beginPath();
     ctx.moveTo(tackX, tackY);
