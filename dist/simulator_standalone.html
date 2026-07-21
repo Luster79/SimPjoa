@@ -2657,14 +2657,14 @@ const MS_TO_KN = 1.9438;
 // recording's codeVersion is meaningful (harness/replay.js warns on
 // mismatch) for a downloaded bundle without requiring a build step for
 // plain `python3 -m http.server` development.
-const CODE_VERSION = "74476cb";
+const CODE_VERSION = "ab4eb27";
 // BUILD_TIME: same pattern as CODE_VERSION above — tools/bundle.js
 // replaces this with the COMMIT's timestamp (not wall-clock build time),
 // so it stays stable across re-bundling the same commit and always
 // matches CODE_VERSION's hash. Shown in the bottom-right version footer
 // so a bug report/recording can be tied to an exact, dated build without
 // having to separately ask "which commit was this."
-const BUILD_TIME = "2026-07-21T18:52:29+02:00";
+const BUILD_TIME = "2026-07-21T19:35:52+02:00";
 
 // ---------------------------------------------------------------------
 // i18n — EN/PL. Static labels are marked with data-i18n="key" in
@@ -3349,13 +3349,15 @@ function drawSideViewInset(state, forces) {
   // Kept BELOW the sail's own footprint on purpose: skin.sail is
   // semi-transparent, so anything drawn under the cloth shows through it.
   const amaLoad = clamp__b12(forces?.amaLoadDisplay ?? 0, 0, 1.5) / 1.5;
-  const amaBaseY = -9;
+  const amaBaseY = -17;
   const amaLiftPx = state.phi >= 0 ? 4 + 8 * amaLoad : -4 * amaLoad;
   ctx.save();
-  ctx.globalAlpha = 0.7;
+  // Kept deliberately faint: it is the FAR-side float seen past the rig, so it
+  // should read as depth behind the sail, never as a hard band across it.
+  ctx.globalAlpha = 0.45;
   ctx.fillStyle = skin.ama;
   ctx.beginPath();
-  ctx.ellipse(0, amaBaseY - amaLiftPx, 21, 5, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, amaBaseY - amaLiftPx, 19, 4.5, 0, 0, Math.PI * 2);
   ctx.fill();
   if (state.phi >= 0 && amaLoad > 0.1) {
     // Flying: droplets falling away below the lifted ama, back down to the
@@ -3426,7 +3428,7 @@ function drawSideViewInset(state, forces) {
   const furled = controls.brailLee > 0.97 && controls.brailWind > 0.97;
   const deltaAbs = Math.abs(state.delta ?? 0);
   const openFrac = clamp__b12(deltaAbs / (80 * DEG__b12), 0, 1);
-  const reach = (1 - 0.55 * maxBrail) * 84; // overall rig size, fitted to the inset's headroom
+  const reach = (1 - 0.55 * maxBrail) * 86; // overall rig size, fitted to the inset's headroom
   const tackX = fwd * halfLpx * 0.46, tackY = -9;
   const yardDeg = 66 + 5 * openFrac;  // steep upper spar
   const boomDeg = 20 + 9 * openFrac;  // shallower lower spar, opens with the sheet
@@ -3445,12 +3447,12 @@ function drawSideViewInset(state, forces) {
     if ((mx + nx - cgX) ** 2 + (my + ny - cgY) ** 2 < (mx - cgX) ** 2 + (my - cgY) ** 2) { nx = -nx; ny = -ny; }
     return [mx + nx * amt, my + ny * amt];
   };
-  const [yardCtrlX, yardCtrlY] = bowOut(tackX, tackY, yardTipX, yardTipY, reach * 0.085);
-  const [boomCtrlX, boomCtrlY] = bowOut(tackX, tackY, boomTipX, boomTipY, reach * 0.075);
+  const [yardCtrlX, yardCtrlY] = bowOut(tackX, tackY, yardTipX, yardTipY, reach * 0.04);
+  const [boomCtrlX, boomCtrlY] = bowOut(tackX, tackY, boomTipX, boomTipY, reach * 0.035);
   // Concave leech: control point hauled back in toward the tack.
   const leechMidX = (yardTipX + boomTipX) / 2, leechMidY = (yardTipY + boomTipY) / 2;
-  const leechCtrlX = leechMidX + (tackX - leechMidX) * 0.40;
-  const leechCtrlY = leechMidY + (tackY - leechMidY) * 0.40;
+  const leechCtrlX = leechMidX + (tackX - leechMidX) * 0.18;
+  const leechCtrlY = leechMidY + (tackY - leechMidY) * 0.18;
   // Short mast, meeting the yard at ~45% of its length.
   const mastX = fwd * halfLpx * 0.10;
   const mastHeadX = tackX + (yardTipX - tackX) * 0.45;
@@ -3478,6 +3480,15 @@ function drawSideViewInset(state, forces) {
     ctx.strokeStyle = skin.lashing ?? '#5a4a38'; ctx.lineWidth = 1.8; ctx.lineCap = 'round';
     ctx.beginPath();
     ctx.moveTo(tackX, tackY); ctx.quadraticCurveTo(yardCtrlX, yardCtrlY, yardTipX, yardTipY); ctx.stroke();
+    // The yard runs on a little past the head of the cloth — a short bare
+    // spar tip stands clearly above the peak in the FOLK render. Continued
+    // along the curve's end tangent so it reads as one spar, not a kink.
+    const yTanX = yardTipX - yardCtrlX, yTanY = yardTipY - yardCtrlY;
+    const yTanLen = Math.hypot(yTanX, yTanY) || 1;
+    ctx.beginPath();
+    ctx.moveTo(yardTipX, yardTipY);
+    ctx.lineTo(yardTipX + (yTanX / yTanLen) * reach * 0.07, yardTipY + (yTanY / yTanLen) * reach * 0.07);
+    ctx.stroke();
     ctx.beginPath();
     ctx.moveTo(tackX, tackY); ctx.quadraticCurveTo(boomCtrlX, boomCtrlY, boomTipX, boomTipY); ctx.stroke();
   }
@@ -3650,7 +3661,7 @@ function drawBalanceWidget(state, forces) {
   // boat completely (reference: Pjoa Puch, Kowalski/Ostrowski 2018).
   const pxPerM = halfBeamPx / (dims.ama.spacing || 2.5);
   const hullHalfW = Math.max(4, ((dims.hull.beam || 0.45) * pxPerM) / 2);
-  const deckY = -13, keelY = 7;
+  const deckY = -16, keelY = 7;
 
   // The platform: a flat, straight slatted deck spanning hull to ama and
   // overhanging both — on the real boat it is the widest thing in the
@@ -3663,19 +3674,28 @@ function drawBalanceWidget(state, forces) {
   for (let sx = platX0 + 4; sx < platX1; sx += 5) {
     ctx.beginPath(); ctx.moveTo(sx, deckY - 2); ctx.lineTo(sx, deckY + 2); ctx.stroke();
   }
-  // Curved beam under the platform, carrying the load out to the ama.
-  ctx.strokeStyle = skin.lashing ?? '#7a5a3a'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+  // The ama hangs off the platform on short X-braced wooden trestles — the
+  // most distinctive piece of structure in the FOLK render, and quite unlike
+  // the single swept beam a Pacific va'a uses. Drawn as one crossed pair
+  // (there are two, spaced fore-and-aft, but at this size they would overlap
+  // into mush).
+  ctx.strokeStyle = skin.lashing ?? '#7a5a3a'; ctx.lineWidth = 1.6; ctx.lineCap = 'round';
+  const trHalf = 6, trTop = deckY + 2, trBot = -6; // trBot tracks amaTopY below
   ctx.beginPath();
-  ctx.moveTo(hullHalfW, deckY + 1);
-  ctx.quadraticCurveTo(halfBeamPx * 0.6, deckY + 9, halfBeamPx, -3);
+  ctx.moveTo(halfBeamPx - trHalf, trTop); ctx.lineTo(halfBeamPx + trHalf, trBot);
+  ctx.moveTo(halfBeamPx + trHalf, trTop); ctx.lineTo(halfBeamPx - trHalf, trBot);
   ctx.stroke();
 
-  // Main hull: narrow and deep, a slender V — the defining Pjoa proportion.
+  // Main hull: a narrow HARD-CHINE section — flared straight topsides meeting
+  // a narrow flat bottom. That is what the plan sheet's sections show, and it
+  // follows from the build: stitch-and-glue plywood panels, not a carved
+  // round bilge (PJOA_FOLK plany, "Widoki i przekroje").
   ctx.fillStyle = state.capsized ? skin.hullCapsized : skin.hull;
   ctx.beginPath();
   ctx.moveTo(-hullHalfW, deckY);
-  ctx.quadraticCurveTo(-hullHalfW * 1.15, keelY * 0.35, 0, keelY);
-  ctx.quadraticCurveTo(hullHalfW * 1.15, keelY * 0.35, hullHalfW, deckY);
+  ctx.lineTo(-hullHalfW * 0.42, keelY);
+  ctx.lineTo(hullHalfW * 0.42, keelY);
+  ctx.lineTo(hullHalfW, deckY);
   ctx.closePath();
   ctx.fill();
 
@@ -3683,13 +3703,15 @@ function drawBalanceWidget(state, forces) {
   // restingImmersion = 0.3, so roughly a third of its section sits below the
   // waterline (local y = 0) at rest; heel then lifts or buries it bodily via
   // the phi rotation this whole group is drawn under.
-  const amaTopY = -8, amaBotY = 4; // 4/12 of the depth immersed ~= 0.3
+  // The ama is a SHALLOW crescent float, not a deep pointed hull — wide and
+  // flat in section, riding on the surface rather than knifing into it.
+  const amaTopY = -6, amaBotY = 3; // ~3/9 of the depth wet, matching restingImmersion
   ctx.fillStyle = skin.ama;
   ctx.beginPath();
-  ctx.moveTo(halfBeamPx - 6, amaTopY);
-  ctx.quadraticCurveTo(halfBeamPx - 7, amaBotY * 0.4, halfBeamPx, amaBotY);
-  ctx.quadraticCurveTo(halfBeamPx + 7, amaBotY * 0.4, halfBeamPx + 6, amaTopY);
-  ctx.quadraticCurveTo(halfBeamPx, amaTopY - 2, halfBeamPx - 6, amaTopY);
+  ctx.moveTo(halfBeamPx - 9, amaTopY);
+  ctx.lineTo(halfBeamPx - 5, amaBotY);
+  ctx.lineTo(halfBeamPx + 5, amaBotY);
+  ctx.lineTo(halfBeamPx + 9, amaTopY);
   ctx.closePath();
   ctx.fill();
 
@@ -4506,8 +4528,8 @@ function drawWakeTrail(cam) {
   // widens further while fading toward the water's own background color
   // over the last ~5.4s, per feedback.
   const hullBeamM = dims.hull.beam, amaBeamM = dims.hull.beam * 1.2;
-  drawFadingWake(wakeX, wakeY, cam, WAKE_FADE_MAX_SAMPLES, HULL_WAKE_BASE, hullBeamM, hullBeamM * 6, 0.45);
-  drawFadingWake(wakeAmaX, wakeAmaY, cam, WAKE_FADE_MAX_SAMPLES, AMA_WAKE_BASE, amaBeamM, amaBeamM * 6, 0.55);
+  drawFadingWake(wakeX, wakeY, cam, WAKE_FADE_MAX_SAMPLES, HULL_WAKE_BASE, hullBeamM, hullBeamM * 6, 0.30);
+  drawFadingWake(wakeAmaX, wakeAmaY, cam, WAKE_FADE_MAX_SAMPLES, AMA_WAKE_BASE, amaBeamM, amaBeamM * 6, 0.36);
 }
 
 // ---------------------------------------------------------------------
