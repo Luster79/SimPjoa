@@ -75,6 +75,8 @@ const TRANSLATIONS = {
     'h.shunt': 'Shunt', 'btn.shunt': 'SHUNT (space)',
     'h.amaLoad': 'Ama load', 'hud.heel': 'Heel', 'hint.heelBar': 'Heel (centered = upright)', 'h.reset': 'Reset',
     'h.display': 'Display', 'lbl.wakeTrail': 'Wake trail (kilwater)', 'hud.luffing': 'LUFFING', 'hud.stalled': 'STALLED',
+    'lbl.insetShow': 'Side-view inset', 'lbl.skin': 'Skin', 'opt.skinPjoa': 'Pjoa', 'opt.skinMicronesia': 'Micronesia',
+    'tag.newBow': 'BOW', 'inset.label': 'side view (leeward)',
     'h.polarDiagram': 'Polar diagram',
     'hint.polar': "Runs the headless polar sweep against the current config (TWS 4/6/8/10 m/s) and plots it. The boat's live (TWA, speed) point is overlaid once you return to sailing.",
     'btn.runPolar': 'Run polar', 'btn.exportCsv': 'Export CSV', 'btn.backToSailing': 'Back to sailing',
@@ -133,6 +135,8 @@ const TRANSLATIONS = {
     'h.shunt': 'Zwrot', 'btn.shunt': 'ZWROT (spacja)',
     'h.amaLoad': 'Obciążenie amy', 'hud.heel': 'Przechył', 'hint.heelBar': 'Przechył (środek = pion)', 'h.reset': 'Reset',
     'h.display': 'Widok', 'lbl.wakeTrail': 'Kilwater', 'hud.luffing': 'ŁOPOCZE', 'hud.stalled': 'PRZECIĄGNIĘTY',
+    'lbl.insetShow': 'Widok z boku', 'lbl.skin': 'Skórka', 'opt.skinPjoa': 'Pjoa', 'opt.skinMicronesia': 'Mikronezja',
+    'tag.newBow': 'DZIÓB', 'inset.label': 'widok z boku (zawietrzna)',
     'h.polarDiagram': 'Diagram polarny',
     'hint.polar': 'Uruchamia pomiar polary (bezekranowy silnik fizyki) dla bieżącej konfiguracji (TWS 4/6/8/10 m/s) i rysuje wykres. Po powrocie do żeglugi na wykresie pojawia się bieżący punkt (TWA, prędkość) łódki.',
     'btn.runPolar': 'Uruchom polarę', 'btn.exportCsv': 'Eksportuj CSV', 'btn.backToSailing': 'Powrót do żeglugi',
@@ -275,6 +279,8 @@ for (const key of Object.keys(sliders)) {
   stepButtons[key] = { minus, plus };
 }
 const wakeTrailCheckbox = document.getElementById('wakeTrail');
+const insetShowCheckbox = document.getElementById('insetShow');
+const skinSelect = document.getElementById('skinSelect');
 const rudderUpCheckbox = document.getElementById('rudderUp');
 const btnRec = document.getElementById('btnRec');
 const btnMark = document.getElementById('btnMark');
@@ -580,6 +586,30 @@ function drawArrow(x0, y0, x1, y1, color, width = 2) {
   ctx.fill();
 }
 
+// ---------------------------------------------------------------------
+// R11-8: two skins — palette + fill styles only, geometry identical.
+// Read once per draw via getSkin() (skinSelect.value is the source of
+// truth, matching the wakeTrailCheckbox.checked pattern elsewhere — no
+// separate mirrored state variable to keep in sync).
+// ---------------------------------------------------------------------
+const SKINS = {
+  pjoa: {
+    water: '#06121f', waterGrid: 'rgba(90,140,180,0.10)',
+    hull: '#d8c9a8', hullCapsized: '#3a3a3a',
+    sail: 'rgba(232,227,208,0.5)', sailStroke: '#e8e3d0',
+    ama: '#c9a35a',
+    lashing: null,
+  },
+  micronesia: {
+    water: '#041a1c', waterGrid: 'rgba(90,180,160,0.10)',
+    hull: '#5a4126', hullCapsized: '#2a2018',
+    sail: 'rgba(196,168,110,0.55)', sailStroke: '#c4a86e',
+    ama: '#4a3620',
+    lashing: '#8a6a3a',
+  },
+};
+function getSkin() { return SKINS[skinSelect.value] ?? SKINS.pjoa; }
+
 // True wind arrow — fixed in the top-left corner, world-frame direction
 // only (not boat-relative), independent of camera pan.
 function drawTrueWindArrow() {
@@ -592,6 +622,161 @@ function drawTrueWindArrow() {
   ctx.beginPath(); ctx.arc(cx, cy, len + 14, 0, Math.PI * 2); ctx.strokeStyle = 'rgba(159,180,200,0.25)'; ctx.stroke();
   drawArrow(cx - dx / 2, cy - dy / 2, cx + dx / 2, cy + dy / 2, '#c9d9e6', 2.5);
   ctx.fillText(t('wind.trueWindLabel', controls.windSpeed.toFixed(1)), cx - 30, cy + len + 26);
+  ctx.restore();
+}
+
+// R11-1 (round 11, ROUND11_proa_identity_graphics.md): live side-view
+// inset — a small, collapsible profile view drawn as seen from LEEWARD
+// (viewer stands to windward, so the ama sits on the FAR side of the
+// hull — always drawn slightly above/behind it, a fixed 2D schematic
+// convention, not a true 3D projection). Fixed screen position (top-
+// right), own local origin/scale, clipped to its own rect so nothing
+// leaks onto the main view. Horizontal axis = hull length (fore-aft);
+// `state.end` flips which physical direction reads as "forward" in this
+// snapshot, same as the main view's active-bow marker, so the picture
+// mirrors correctly across a shunt instead of silently staying frozen
+// to one physical side.
+const INSET_W = 220, INSET_H = 140, INSET_MARGIN = 10;
+function drawSideViewInset(state, forces) {
+  if (!insetShowCheckbox.checked) return;
+  const skin = getSkin();
+  const ox = canvas.width - INSET_W - INSET_MARGIN, oy = INSET_MARGIN;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(ox, oy, INSET_W, INSET_H);
+  ctx.clip();
+
+  // Panel background + waterline (a gentle, time-based bob — 2-3px is
+  // "enough" per the spec, not a real wave model).
+  ctx.fillStyle = 'rgba(6,18,31,0.82)';
+  ctx.fillRect(ox, oy, INSET_W, INSET_H);
+  const waterY = oy + INSET_H * 0.62 + Math.sin(performance.now() / 700) * 2;
+  ctx.strokeStyle = 'rgba(120,180,220,0.5)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(ox, waterY); ctx.lineTo(ox + INSET_W, waterY); ctx.stroke();
+  ctx.fillStyle = 'rgba(6,30,45,0.6)';
+  ctx.fillRect(ox, waterY, INSET_W, oy + INSET_H - waterY);
+
+  // Local frame: origin at the hull's on-deck pivot, +x toward the
+  // CURRENT active bow (state.end flips the sign, matching the main
+  // view's own active-bow convention), +y DOWN screen-wise, rotated by
+  // phi so "the whole assembly rotates by phi" (R11-1's own wording).
+  const originX = ox + INSET_W / 2, originY = waterY - 6;
+  const fwd = state.end === 1 ? 1 : -1;
+  ctx.translate(originX, originY);
+  ctx.rotate(-state.phi); // screen y is down, so -phi banks the same way phi heels the boat
+
+  // Fixed schematic pixel budget (not a literal to-scale projection —
+  // this is a small identity cue, not a measuring tool): sized to fill
+  // the ~220x140 inset legibly regardless of the boat's own real
+  // dimensions, same spirit as the rest of this stylized side view.
+  const halfLpx = 62;
+
+  // Hull silhouette: a shallow lens sitting ON the local x axis (deck).
+  ctx.fillStyle = state.capsized ? skin.hullCapsized : skin.hull;
+  ctx.beginPath();
+  ctx.moveTo(fwd * halfLpx, 0);
+  ctx.quadraticCurveTo(0, -10, -fwd * halfLpx, 0);
+  ctx.quadraticCurveTo(0, 6, fwd * halfLpx, 0);
+  ctx.closePath();
+  ctx.fill();
+
+  // Ama: on the far side from this leeward viewpoint — always drawn
+  // "behind" the hull (smaller, offset up-screen), never mirrored by
+  // `end` (the ama is bolted to one physical side and does not relocate
+  // at a shunt — same invariant core/state.js documents). phi>=0 (flying)
+  // lifts it clear of the waterline with a small gap + droplet cue; phi<0
+  // (pressed) dips it under with a spray cue.
+  const amaLoad = clamp(forces?.amaLoadDisplay ?? 0, 0, 1.5) / 1.5;
+  const amaBaseY = -22;
+  const amaLiftPx = state.phi >= 0 ? 6 + 10 * amaLoad : -4 * amaLoad;
+  ctx.save();
+  ctx.globalAlpha = 0.85;
+  ctx.fillStyle = skin.ama;
+  ctx.beginPath();
+  ctx.ellipse(0, amaBaseY - amaLiftPx, 26, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  if (state.phi >= 0 && amaLoad > 0.1) {
+    // Flying: droplets falling away below the lifted ama, back toward
+    // the waterline.
+    ctx.fillStyle = 'rgba(150,210,255,0.7)';
+    const fallSpan = amaBaseY - amaLiftPx - 4; // distance down to ~the waterline, local coords
+    for (let i = 0; i < 3; i++) {
+      const dropT = (performance.now() / 260 + i * 0.33) % 1;
+      ctx.beginPath();
+      ctx.arc(-14 + i * 14, (amaBaseY - amaLiftPx) + dropT * fallSpan, 1.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else if (state.phi < 0 && amaLoad > 0.1) {
+    // Pressed: a spray cue at the waterline below the ama.
+    ctx.strokeStyle = 'rgba(220,240,255,0.75)'; ctx.lineWidth = 1.2;
+    for (let i = -1; i <= 1; i++) {
+      ctx.beginPath();
+      ctx.moveTo(i * 12, amaBaseY - amaLiftPx + 6);
+      ctx.lineTo(i * 12 + i * 4, amaBaseY - amaLiftPx - 8);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+
+  // Crab-claw sail: mast base near midships, yard running up-and-forward
+  // to the peak, boom/clew swept aft by the ACTUAL delta (projected: the
+  // top-view sweep becomes a lean here). Brail state gathers the visible
+  // sail toward the mast — same 1-0.6*maxBrail shrink sailPath() uses for
+  // the top view — ending in a small lashed bundle at full furl.
+  const mastX = fwd * halfLpx * 0.15, mastTopY = -58;
+  ctx.strokeStyle = skin.lashing ?? '#5a4a38'; ctx.lineWidth = 1.4;
+  ctx.beginPath(); ctx.moveTo(mastX, 0); ctx.lineTo(mastX, mastTopY); ctx.stroke();
+
+  const maxBrail = Math.max(controls.brailLee, controls.brailWind);
+  const furled = controls.brailLee > 0.97 && controls.brailWind > 0.97;
+  const deltaAbs = Math.abs(state.delta ?? 0);
+  const reach = (1 - 0.6 * maxBrail) * 72; // yard length, projected
+  const peakX = mastX + fwd * reach * Math.cos(deltaAbs * 0.5);
+  const peakY = mastTopY + reach * 0.15 * Math.sin(deltaAbs * 0.5) - reach * 0.5;
+  const clewX = mastX - fwd * reach * (0.3 + 0.5 * (1 - Math.cos(deltaAbs)));
+  const clewY = -4;
+  if (furled) {
+    ctx.strokeStyle = skin.lashing ?? '#8a8060'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(mastX, mastTopY * 0.3); ctx.lineTo(mastX, mastTopY * 0.85); ctx.stroke();
+  } else {
+    ctx.beginPath();
+    ctx.moveTo(mastX, mastTopY);
+    ctx.lineTo(peakX, peakY);
+    ctx.lineTo(clewX, clewY);
+    ctx.closePath();
+    ctx.fillStyle = skin.sail;
+    ctx.fill();
+    ctx.strokeStyle = skin.sailStroke; ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  // Crew figures at (crewPos, crewPosX): fore-aft position along the deck
+  // from crewPosX (flipped by `fwd`, matching the mast above); crewPos
+  // (lateral, toward the ama) has no depth axis in a profile view, so it
+  // reads as a vertical lean toward/away from the ama side instead —
+  // toward the ama (crewPos>0, normally windward-side ballast) draws the
+  // figure standing tall on the rail; away from it (crewPos<0) draws them
+  // crouched low, leaning OUT with the heel, same posture a real crew
+  // takes to counterbalance.
+  // Offset the deck-position ZERO point away from the mast cluster
+  // (crewPosX=0 would otherwise land right on top of the mast line,
+  // where it's easy to lose against the sail/ama) — a purely cosmetic
+  // shift, same halfLpx*0.7 excursion range either side of it.
+  const crewDeckX = fwd * (halfLpx * 0.4 + clamp(controls.crewPosX, dims.crew.posXMin, dims.crew.posXMax) * halfLpx * 0.5);
+  const crewLean = clamp(controls.crewPos, dims.crew.posMin, dims.crew.posMax);
+  const crewHeadY = -18 - 10 * Math.max(0, crewLean);
+  ctx.strokeStyle = '#ffe08a'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(crewDeckX, -2); ctx.lineTo(crewDeckX, crewHeadY); ctx.stroke();
+  ctx.fillStyle = '#ffe08a'; ctx.strokeStyle = '#3a2f22'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(crewDeckX, crewHeadY - 4, 4, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+
+  ctx.restore(); // undo translate/rotate/clip
+
+  ctx.save();
+  ctx.font = '10px system-ui, sans-serif';
+  ctx.fillStyle = '#9fb4c8';
+  ctx.fillText(t('inset.label'), ox + 6, oy + 12);
   ctx.restore();
 }
 
@@ -1355,6 +1540,7 @@ function frame(now) {
     drawWakeTrail(camera);
     drawBoat(state, forces, camera);
     drawTrueWindArrow();
+    drawSideViewInset(state, forces);
     updateHud(state, forces);
     updateAlarms(state, forces);
 

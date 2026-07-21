@@ -102,7 +102,7 @@
   .tag.tagPhysics { background: #1f3f2a; color: #7fe3a3; border: 1px solid #2c5c3c; }
   .tag.tagGraphics { background: #3a2f1f; color: #e3b87f; border: 1px solid #5c4a2c; }
   #boatError { color: #ff8a8a; min-height: 1em; white-space: pre-line; }
-  #boatPresetSelect { flex: 1 1 auto; background: #0e1927; color: #dbe7f2; border: 1px solid #2b4460; border-radius: 4px; padding: 4px; font: inherit; }
+  #boatPresetSelect, #skinSelect { flex: 1 1 auto; background: #0e1927; color: #dbe7f2; border: 1px solid #2b4460; border-radius: 4px; padding: 4px; font: inherit; }
   #legend { position: absolute; right: 8px; bottom: 8px; background: rgba(10,18,28,0.75); border: 1px solid #23364a; border-radius: 4px; padding: 6px 8px; font-size: 11px; line-height: 1.7; }
   #legend .sw { display: inline-block; width: 14px; height: 3px; margin-right: 5px; vertical-align: middle; }
   #versionInfo { color: #6f8399; font-size: 11px; font-variant-numeric: tabular-nums; }
@@ -200,6 +200,13 @@
 
       <h2 data-i18n="h.display">Display</h2>
       <div class="checkboxRow"><input type="checkbox" id="wakeTrail"><label for="wakeTrail" data-i18n="lbl.wakeTrail">Wake trail (kilwater)</label></div>
+      <div class="checkboxRow"><input type="checkbox" id="insetShow" checked><label for="insetShow" data-i18n="lbl.insetShow">Side-view inset</label></div>
+      <div class="row"><label for="skinSelect" data-i18n="lbl.skin">Skin</label>
+        <select id="skinSelect">
+          <option value="pjoa" data-i18n="opt.skinPjoa">Pjoa</option>
+          <option value="micronesia" data-i18n="opt.skinMicronesia">Micronesia</option>
+        </select>
+      </div>
 
       <h2 data-i18n="h.reset">Reset</h2>
       <div class="buttons"><button id="btnReset"><span data-i18n="btn.reset">Reset (R)</span></button></div>
