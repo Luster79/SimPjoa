@@ -2660,14 +2660,14 @@ const MS_TO_KN = 1.9438;
 // recording's codeVersion is meaningful (harness/replay.js warns on
 // mismatch) for a downloaded bundle without requiring a build step for
 // plain `python3 -m http.server` development.
-const CODE_VERSION = "faa59fa";
+const CODE_VERSION = "c9b27a0";
 // BUILD_TIME: same pattern as CODE_VERSION above — tools/bundle.js
 // replaces this with the COMMIT's timestamp (not wall-clock build time),
 // so it stays stable across re-bundling the same commit and always
 // matches CODE_VERSION's hash. Shown in the bottom-right version footer
 // so a bug report/recording can be tied to an exact, dated build without
 // having to separately ask "which commit was this."
-const BUILD_TIME = "2026-07-21T13:32:39+02:00";
+const BUILD_TIME = "2026-07-21T13:40:52+02:00";
 
 // ---------------------------------------------------------------------
 // i18n — EN/PL. Static labels are marked with data-i18n="key" in
@@ -3382,36 +3382,61 @@ function drawSideViewInset(state, forces) {
   }
   ctx.restore();
 
-  // Crab-claw sail: mast base near midships, yard running up-and-forward
-  // to the peak, boom/clew swept aft by the ACTUAL delta (projected: the
-  // top-view sweep becomes a lean here). Brail state gathers the visible
-  // sail toward the mast — same 1-0.6*maxBrail shrink sailPath() uses for
-  // the top view — ending in a small lashed bundle at full furl.
-  const mastX = fwd * halfLpx * 0.15, mastTopY = -58;
+  // Crab-claw sail (reshaped against a reference photo of the actual
+  // Pjoa: both spars sweep to the SAME side, aft of a short mast stub —
+  // not a symmetric kite straddling the mast). Tack sits near the TOP of
+  // a short mast rising from the deck; the yard runs from there steeply
+  // up AND aft to a high peak (the tallest point of the whole rig); the
+  // boom runs from the same tack down and much further aft, staying low,
+  // just clear of the deck — the wide, shallow-angled "claw" opening
+  // that gives the rig its name. Both edges get a gentle outward bulge
+  // (camber) rather than straight spars, matching the photo's curved
+  // cloth. Brail state gathers the visible sail toward the mast — same
+  // 1-0.6*maxBrail shrink sailPath() uses for the top view — ending in a
+  // small lashed bundle at full furl. `deltaAbs` (the actual yard swing)
+  // modestly widens the aft sweep: a tightly-trimmed sail sits closer
+  // over the deck, an eased one opens out further aft, same direction
+  // either way (a side view can't show the top-view's port/starboard
+  // swing, only how far open the claw is).
+  const mastTopY = -34;
+  const mastX = fwd * halfLpx * 0.25;
+  const mastTopX = mastX - fwd * 6; // slight aft rake, matching the photo
   ctx.strokeStyle = skin.lashing ?? '#5a4a38'; ctx.lineWidth = 1.4;
-  ctx.beginPath(); ctx.moveTo(mastX, 0); ctx.lineTo(mastX, mastTopY); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(mastX, 0); ctx.lineTo(mastTopX, mastTopY); ctx.stroke();
 
   const maxBrail = Math.max(controls.brailLee, controls.brailWind);
   const furled = controls.brailLee > 0.97 && controls.brailWind > 0.97;
   const deltaAbs = Math.abs(state.delta ?? 0);
-  const reach = (1 - 0.6 * maxBrail) * 72; // yard length, projected
-  const peakX = mastX + fwd * reach * Math.cos(deltaAbs * 0.5);
-  const peakY = mastTopY + reach * 0.15 * Math.sin(deltaAbs * 0.5) - reach * 0.5;
-  const clewX = mastX - fwd * reach * (0.3 + 0.5 * (1 - Math.cos(deltaAbs)));
-  const clewY = -4;
+  const openFrac = clamp__b12(deltaAbs / (80 * DEG__b12), 0, 1);
+  const reach = (1 - 0.6 * maxBrail) * 108; // overall rig size, projected
+  const tackX = mastTopX, tackY = mastTopY;
+  const peakX = tackX - fwd * reach * (0.30 + 0.15 * openFrac);
+  const peakY = tackY - reach * 0.85;
+  const clewX = tackX - fwd * reach * (0.80 + 0.20 * openFrac);
+  const clewY = -6;
   if (furled) {
     ctx.strokeStyle = skin.lashing ?? '#8a8060'; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.moveTo(mastX, mastTopY * 0.3); ctx.lineTo(mastX, mastTopY * 0.85); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(tackX, tackY + (0 - tackY) * 0.15); ctx.lineTo(tackX, tackY + (0 - tackY) * 0.75); ctx.stroke();
   } else {
+    // Luff (tack->peak): near-straight, a light outward bow.
+    const luffCtrlX = (tackX + peakX) / 2 - fwd * reach * 0.06, luffCtrlY = (tackY + peakY) / 2;
+    // Leech (peak->clew): the trailing edge, bulges outward (aft/down)
+    // the most — this is the sail's main camber, most visible in the photo.
+    const leechCtrlX = (peakX + clewX) / 2 - fwd * reach * 0.22, leechCtrlY = (peakY + clewY) / 2 + reach * 0.08;
     ctx.beginPath();
-    ctx.moveTo(mastX, mastTopY);
-    ctx.lineTo(peakX, peakY);
-    ctx.lineTo(clewX, clewY);
+    ctx.moveTo(tackX, tackY);
+    ctx.quadraticCurveTo(luffCtrlX, luffCtrlY, peakX, peakY);
+    ctx.quadraticCurveTo(leechCtrlX, leechCtrlY, clewX, clewY);
+    ctx.lineTo(tackX, tackY);
     ctx.closePath();
     ctx.fillStyle = skin.sail;
     ctx.fill();
     ctx.strokeStyle = skin.sailStroke; ctx.lineWidth = 1;
     ctx.stroke();
+    // Boom: a visible spar along the foot (tack->clew), like the photo's
+    // straight lower pole carrying the sail's weight.
+    ctx.strokeStyle = skin.lashing ?? '#5a4a38'; ctx.lineWidth = 1.1;
+    ctx.beginPath(); ctx.moveTo(tackX, tackY); ctx.lineTo(clewX, clewY); ctx.stroke();
   }
 
   // Crew figures at (crewPos, crewPosX): fore-aft position along the deck
