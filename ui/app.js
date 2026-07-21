@@ -26,6 +26,7 @@
 import { createSimulator } from '../core/simulator.js';
 import { createConfig } from '../core/config.js';
 import { createDefaultControls } from '../core/state.js';
+import { deltaAlign } from '../core/sheet.js';
 import { computePolar } from '../harness/polar.js';
 import { hashState } from '../harness/checksum.js';
 
@@ -1095,26 +1096,66 @@ function drawBoat(state, forces, cam) {
   ctx.closePath();
   ctx.fill();
 
-  // Steering oars at both physical tips (2.2 bonus): the ACTIVE one (at
-  // the physical stern, opposite the active bow — physical x = -halfL*end,
-  // matching the rudder force vector below) drawn in use; the IDLE one (at
-  // the physical bow, +halfL*end) raised/greyed. Both swap ends at a shunt
-  // together with the active-bow marker, with no hull rotation.
-  const activeOarX = -halfL * state.end, idleOarX = halfL * state.end;
-  const drawOar = (x, active) => {
+  // Steering oars at both physical tips (2.2 bonus, upgraded R11-7 round
+  // 11 ROUND11_proa_identity_graphics.md). Fixed physical positions
+  // (tipA=-halfL, tipB=+halfL) — which one is currently "active" (the
+  // steering end, opposite the active bow) depends on state.end, matching
+  // the rudder force vector below. During the 'swap' sub-phase state.end
+  // itself is still the OLD value throughout (core/shunt.js only flips it
+  // the instant progress reaches 1) — activeFracTipA/B crossfade smoothly
+  // across that same ~0.4s window by predicting the post-swap role
+  // directly, rather than animating a value that only ever jumps.
+  const tipA = -halfL, tipB = halfL;
+  const activeIsA = state.end === 1;
+  let activeFracA;
+  if (state.shunt.phase === 'swap') {
+    const p = state.shunt.progress;
+    activeFracA = activeIsA ? 1 - p : p;
+  } else {
+    activeFracA = activeIsA ? 1 : 0;
+  }
+  const activeFracB = 1 - activeFracA;
+
+  const drawOar = (x, activeFrac) => {
+    const isActiveRole = activeFrac >= 0.5;
+    const dir = x < 0 ? -1 : 1;
     ctx.save();
-    ctx.globalAlpha = active ? 1 : 0.35;
-    ctx.strokeStyle = active ? '#3a2f22' : '#7a7368';
-    ctx.lineWidth = 0.05;
-    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x + (x < 0 ? -0.5 : 0.5), 0); ctx.stroke();
-    ctx.fillStyle = active ? '#5a4a38' : '#9a9488';
-    ctx.beginPath();
-    ctx.ellipse(x + (x < 0 ? -0.6 : 0.6), 0, 0.22, 0.09, 0, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.globalAlpha = 0.35 + 0.65 * activeFrac;
+    if (isActiveRole && !controls.rudderUp) {
+      // Deployed: blade in the water, shaft rotated by the ACTUAL
+      // deflection (core/rudder.js's own mapping, maxDeflectionDeg*rudder,
+      // read from CONFIG, not re-derived), plus a small force-scaled
+      // swirl at the blade.
+      const deflRad = clamp(controls.rudder, -1, 1) * (dims.rudder.maxDeflectionDeg * DEG);
+      ctx.translate(x, 0);
+      ctx.rotate(dir * deflRad);
+      ctx.strokeStyle = '#3a2f22'; ctx.lineWidth = 0.05;
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(dir * 0.5, 0); ctx.stroke();
+      ctx.fillStyle = '#5a4a38';
+      ctx.beginPath(); ctx.ellipse(dir * 0.6, 0, 0.22, 0.09, 0, 0, Math.PI * 2); ctx.fill();
+      const rudderFy = Math.abs(forces?.breakdown?.rudder?.Fy ?? 0);
+      if (rudderFy > 5) {
+        const swirl = clamp(Math.log10(1 + rudderFy) * 0.12, 0.05, 0.4);
+        ctx.strokeStyle = 'rgba(150,210,255,0.6)'; ctx.lineWidth = 0.03;
+        const spin = performance.now() / 220;
+        ctx.beginPath();
+        ctx.arc(dir * 0.6, 0, swirl, spin, spin + Math.PI * 1.4);
+        ctx.stroke();
+      }
+    } else {
+      // Shipped/idle: stowed flush along the deck, out of the water —
+      // rudderUp on the active end reads exactly the same as the
+      // permanently-idle end, matching "produces no force while shipped"
+      // (core/rudder.js).
+      ctx.strokeStyle = '#7a7368'; ctx.lineWidth = 0.05;
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x + dir * 0.42, dir === -1 ? 0.08 : -0.08); ctx.stroke();
+      ctx.fillStyle = '#9a9488';
+      ctx.beginPath(); ctx.ellipse(x + dir * 0.5, dir === -1 ? 0.1 : -0.1, 0.18, 0.07, 0, 0, Math.PI * 2); ctx.fill();
+    }
     ctx.restore();
   };
-  drawOar(idleOarX, false);
-  drawOar(activeOarX, true);
+  drawOar(tipA, activeFracA);
+  drawOar(tipB, activeFracB);
 
   // Crew dot: lateral (crewPos, toward the ama, full spacing per
   // FIX_REQUEST_round3_worldframe.md R3-2) and fore-aft (crewPosX, per
@@ -1234,6 +1275,33 @@ function drawBoat(state, forces, cam) {
     }
   }
 
+  // R11-6 (round 11, ROUND11_proa_identity_graphics.md): two animated
+  // ribbon telltales near the tack, one per face, driven directly from
+  // the same alphaSailor/luffing/stalled readouts the HUD tags already
+  // use (forces.alphaSailor, forces.luffing, the module-level
+  // stalledTimer) — streaming (attached flow) at normal AoA, fluttering
+  // while luffing, drooping/reversed once genuinely stalled. Small
+  // time-based noise so they read as alive, not a static state icon.
+  if (forces && state.shunt.phase !== 'transfer') {
+    const luffing = forces.luffing;
+    const stalled = stalledTimer > STALLED_HOLD_SECONDS;
+    const baseX = 0.35 * yardLen;
+    const noise = Math.sin(performance.now() / 140) * 0.15 + Math.sin(performance.now() / 310 + 1.7) * 0.08;
+    for (const side of [1, -1]) {
+      const tx = baseX, ty = side * 0.18;
+      let ang; // telltale direction, radians, 0 = streaming straight aft (-x, local frame)
+      let color;
+      if (luffing) { ang = Math.PI + noise * 1.4 + side * 0.3; color = 'rgba(255,210,90,0.85)'; }
+      else if (stalled) { ang = Math.PI * 0.5 * -state.end + noise * 0.5; color = 'rgba(255,120,90,0.85)'; }
+      else { ang = Math.PI + noise * 0.35; color = 'rgba(200,225,255,0.75)'; }
+      const len = 0.55;
+      ctx.save();
+      ctx.strokeStyle = color; ctx.lineWidth = 0.03; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(tx + Math.cos(ang) * len, ty + Math.sin(ang) * len); ctx.stroke();
+      ctx.restore();
+    }
+  }
+
   // Apparent wind arrow at the boat, boat-frame local vector (already
   // rotates for free with this transform since aw is boat-frame). Origin
   // placed near the ama side (spacing*0.6*end, not always +y — R3-1) purely
@@ -1243,6 +1311,38 @@ function drawBoat(state, forces, cam) {
     const ax = forces.aw.vx * s, ay = forces.aw.vy * s;
     ctx.save(); ctx.lineWidth = 0.05;
     drawVectorLocal(0, spacing * 0.6 * state.end, ax, ay, '#7fd0ff');
+    ctx.restore();
+  }
+
+  // R11-5 (round 11, ROUND11_proa_identity_graphics.md): apparent-wind
+  // safety sector (anti-aback). deltaAlign(state, controls) — imported
+  // straight from core/sheet.js, not duplicated — is the boat's own real
+  // "how far from the wind crossing to leeward" number: deltaAlign<=0 is
+  // exactly the physical instant the yard clamps to the mast (sheet.js
+  // regime c), the through-gybe corner H2 (ROUND10d_helm_balance.md)
+  // diagnosed. That's a strictly EARLIER signal than stability.js's own
+  // aback timer, which only starts once the ama is actually pressed
+  // underwater (a later consequence, see updateAback) — so this glows
+  // before that alarm can fire, by construction, not by a tuned lead
+  // time. WARN_MARGIN is a UI-only rendering choice (how wide the amber
+  // ramp is), not a re-derivation of any core threshold.
+  if (forces && forces.aw && forces.aw.speed > 0.05) {
+    const align = deltaAlign(state, controls);
+    const WARN_MARGIN = 20 * DEG;
+    let sectorColor = 'rgba(127,199,255,0.35)';
+    if (align <= 0) {
+      sectorColor = 'rgba(216,60,60,0.95)';
+    } else if (align < WARN_MARGIN) {
+      const frac = 1 - align / WARN_MARGIN;
+      sectorColor = `rgba(216,${Math.round(165 - 105 * frac)},${Math.round(42 - 22 * frac)},${(0.5 + 0.4 * frac).toFixed(2)})`;
+    }
+    const R = 3.2;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(159,180,200,0.15)'; ctx.lineWidth = 0.05;
+    ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.stroke();
+    const awAngle = forces.aw.angleToBoat;
+    ctx.strokeStyle = sectorColor; ctx.lineWidth = 0.14;
+    ctx.beginPath(); ctx.arc(0, 0, R, awAngle - 0.15, awAngle + 0.15); ctx.stroke();
     ctx.restore();
   }
 
