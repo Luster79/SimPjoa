@@ -2653,14 +2653,14 @@ const MS_TO_KN = 1.9438;
 // recording's codeVersion is meaningful (harness/replay.js warns on
 // mismatch) for a downloaded bundle without requiring a build step for
 // plain `python3 -m http.server` development.
-const CODE_VERSION = "3bd59b0";
+const CODE_VERSION = "581d8e0";
 // BUILD_TIME: same pattern as CODE_VERSION above — tools/bundle.js
 // replaces this with the COMMIT's timestamp (not wall-clock build time),
 // so it stays stable across re-bundling the same commit and always
 // matches CODE_VERSION's hash. Shown in the bottom-right version footer
 // so a bug report/recording can be tied to an exact, dated build without
 // having to separately ask "which commit was this."
-const BUILD_TIME = "2026-07-21T07:52:24+02:00";
+const BUILD_TIME = "2026-07-21T08:09:43+02:00";
 
 // ---------------------------------------------------------------------
 // i18n — EN/PL. Static labels are marked with data-i18n="key" in
@@ -3162,9 +3162,25 @@ resize();
 }
 
 let scale = 24; // px per meter, adjustable via wheel zoom
+const ZOOM_MIN = 6, ZOOM_MAX = 80;
 stage.addEventListener('wheel', (e) => {
   e.preventDefault();
-  scale = clamp__b12(scale * (e.deltaY < 0 ? 1.08 : 0.93), 6, 80);
+  // e.deltaY's units/magnitude vary by device and OS — a single mouse
+  // "notch" can arrive as one large event or as a rapid burst of many
+  // small ones, and deltaMode distinguishes pixels/lines/pages. The old
+  // code applied a FIXED ~8% multiplier per EVENT regardless of size, so
+  // a burst of many small events (or one big coalesced one) compounded
+  // into a huge jump — a single scroll gesture rocketed straight to the
+  // min/max clamp__b12, reading as "only two zoom levels" and feeling far too
+  // fast. Normalize to a pixel-equivalent delta, clamp__b12 its PER-EVENT
+  // magnitude so nothing can take more than a modest bite, and scale the
+  // zoom factor by that magnitude so many small burst events accumulate
+  // smoothly instead of each taking the old flat-rate jump.
+  let delta = e.deltaY;
+  if (e.deltaMode === 1) delta *= 16; // line mode: ~16px/line
+  else if (e.deltaMode === 2) delta *= window.innerHeight; // page mode
+  delta = clamp__b12(delta, -100, 100);
+  scale = clamp__b12(scale * Math.pow(1.0015, -delta), ZOOM_MIN, ZOOM_MAX);
 }, { passive: false });
 
 // ---------------------------------------------------------------------

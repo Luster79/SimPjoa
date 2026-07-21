@@ -547,9 +547,25 @@ resize();
 }
 
 let scale = 24; // px per meter, adjustable via wheel zoom
+const ZOOM_MIN = 6, ZOOM_MAX = 80;
 stage.addEventListener('wheel', (e) => {
   e.preventDefault();
-  scale = clamp(scale * (e.deltaY < 0 ? 1.08 : 0.93), 6, 80);
+  // e.deltaY's units/magnitude vary by device and OS — a single mouse
+  // "notch" can arrive as one large event or as a rapid burst of many
+  // small ones, and deltaMode distinguishes pixels/lines/pages. The old
+  // code applied a FIXED ~8% multiplier per EVENT regardless of size, so
+  // a burst of many small events (or one big coalesced one) compounded
+  // into a huge jump — a single scroll gesture rocketed straight to the
+  // min/max clamp, reading as "only two zoom levels" and feeling far too
+  // fast. Normalize to a pixel-equivalent delta, clamp its PER-EVENT
+  // magnitude so nothing can take more than a modest bite, and scale the
+  // zoom factor by that magnitude so many small burst events accumulate
+  // smoothly instead of each taking the old flat-rate jump.
+  let delta = e.deltaY;
+  if (e.deltaMode === 1) delta *= 16; // line mode: ~16px/line
+  else if (e.deltaMode === 2) delta *= window.innerHeight; // page mode
+  delta = clamp(delta, -100, 100);
+  scale = clamp(scale * Math.pow(1.0015, -delta), ZOOM_MIN, ZOOM_MAX);
 }, { passive: false });
 
 // ---------------------------------------------------------------------
