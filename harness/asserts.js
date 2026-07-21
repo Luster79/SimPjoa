@@ -1326,7 +1326,8 @@ export function runAsserts(config) {
     // D4-3: the strapped-amidships mode must NOT be the fastest deep mode —
     // at TWA150, the polar-optimal eased trim (sheet=68deg) beats a
     // strapped trim (sheet=8deg, matching the user's own discovered
-    // recipe in recordings/kurspelny.json) on speed.
+    // recipe, originally recorded in kurspelny.json — that fixture was
+    // retired with the D4-4 assertions; the recipe itself is inlined here).
     function settleSpeed(sheetDegSettle, seconds = 40) {
       const twa150WindDirFrom = HEADING0 + 150 * DEG;
       let s = freshState(sheetDegSettle * DEG);
@@ -1343,59 +1344,6 @@ export function runAsserts(config) {
     check('D4-3: at TWA150, the eased-optimal trim beats the strapped-amidships trim on speed',
       !eased150.capsized && !strapped150.capsized && eased150.speed > strapped150.speed,
       `eased(sheet68)=${eased150.speed.toFixed(3)} strapped(sheet8)=${strapped150.speed.toFixed(3)} m/s`);
-  }
-
-  // --- D4-4 (Round 10b): recordings/kurspelny.json as a replay fixture.
-  // Same R7-4b pattern (replay under the recording's OWN configSnapshot,
-  // so this stays a stable regression check independent of later physics
-  // retuning) plus a NEW eased+carrot recipe run from the recording's own
-  // starting state/wind under TODAY's live config, checked against the
-  // recording's own measured max TWA (137.3264762387109deg). ---
-  {
-    const recPath = path.join(__dirname, '..', 'recordings', 'kurspelny.json');
-    let recording = null, recErr = null;
-    try { recording = JSON.parse(readFileSync(recPath, 'utf8')); } catch (e) { recErr = e; }
-
-    if (recording) {
-      const recConfig = createConfig(recording.configSnapshot);
-      let repState = { ...recording.initialState, shunt: { ...recording.initialState.shunt } };
-      let lastShuntRequest = Boolean(recording.initialLastShuntRequest);
-      let maxTwaDeg = -Infinity;
-      for (const frame of recording.frames) {
-        const edge = Boolean(frame.controls.shuntRequest) && !lastShuntRequest;
-        lastShuntRequest = Boolean(frame.controls.shuntRequest);
-        const stepControls = { ...frame.controls, shuntRequest: edge };
-        const nSub = Math.max(1, Math.round(frame.dt / recConfig.dt));
-        const subDt = frame.dt / nSub;
-        for (let k = 0; k < nSub; k++) repState = integrate(repState, stepControls, recConfig, subDt);
-        const twaDeg = Math.abs(normalizeAngle(frame.controls.windDirFrom - repState.heading)) / DEG;
-        maxTwaDeg = Math.max(maxTwaDeg, twaDeg);
-      }
-      check('D4-4a: kurspelny.json replay — the recorded strapped equilibrium remains reachable (no regression)',
-        !repState.capsized && Math.abs(maxTwaDeg - 137.3264762387109) < 1,
-        `maxTwaDeg=${maxTwaDeg.toFixed(2)} (recorded 137.33)`);
-
-      // New recipe, live config: same fixed wind/initial state as the
-      // recording, sheet eased to 35deg (found by sweep to out-perform the
-      // recording's own 6-8deg strap) plus carrot 0.5, pure trim (rudder=0,
-      // matching the recording's own control style).
-      const windDirFrom = recording.frames[0].controls.windDirFrom;
-      let newState = { ...recording.initialState, shunt: { ...recording.initialState.shunt } };
-      const newSheetDeg = 35;
-      let newMaxTwa = -Infinity;
-      for (let i = 0; i < Math.round(60 / config.dt); i++) {
-        const controls = { windDirFrom, windSpeed: 6, sheet: newSheetDeg * DEG, rudder: 0,
-          brailLee: 0, brailWind: 0.5, crewPos: -0.105, crewPosX: -0.7545, shuntRequest: false };
-        newState = integrate(newState, controls, config, config.dt);
-        const twaDeg = Math.abs(normalizeAngle(windDirFrom - newState.heading)) / DEG;
-        newMaxTwa = Math.max(newMaxTwa, twaDeg);
-      }
-      check('D4-4b: a new eased(35deg)+carrot(0.5) recipe reaches deeper TWA than the recording\'s 137.3 max',
-        !newState.capsized && newMaxTwa > 137.3264762387109,
-        `newMaxTwa=${newMaxTwa.toFixed(2)} (recorded 137.33)`);
-    } else {
-      check('D4-4: kurspelny.json replay fixture loads', false, `could not load ${recPath}: ${recErr?.message}`);
-    }
   }
 
   // --- C (Round 10c, ROUND10c_carrot_two_regime.md, C2): two-regime
@@ -1477,8 +1425,9 @@ export function runAsserts(config) {
     // C-A (round 10c carried item, promoted round 10d, ROUND10d_helm_
     // balance.md): dead-run release. Trimmed to TWA178 with the carrot,
     // releasing the rudder entirely — quantifies the user's "set to 180,
-    // luffs on release" complaint (recordings/kurspelny2.json's own
-    // recorded technique). Upgraded from a 30s min-TWA snapshot (minTwa
+    // luffs on release" complaint (originally recorded in kurspelny2.json,
+    // a fixture retired with the C-kurspelny2 assertion). Upgraded from a
+    // 30s min-TWA snapshot (minTwa
     // >= 160) to a RATE metric over a longer 120s window: the 30s window
     // green-lit a slow divergence — a trim that's still comfortably above
     // 160 at t=30s but keeps drifting toward the wind for the full 2
@@ -1513,59 +1462,6 @@ export function runAsserts(config) {
     check('C-A: dead-run release — TWA178+carrot, releasing the rudder drifts toward the wind < 20deg/min sustained over 120s',
       !state.capsized && driftRateDegPerMin < 20,
       `twaStart=${twaStart.toFixed(1)} twaEnd=${twaEnd.toFixed(1)} rate=${driftRateDegPerMin.toFixed(2)}deg/min capsized=${state.capsized}`);
-  }
-
-  // --- C-kurspelny2 (Round 10c): recordings/kurspelny2.json as a replay
-  // fixture. The user's own recorded downwind carrot technique (mean
-  // brailWind 0.93, TWA staying in 146.6-154.8deg throughout) replayed
-  // under TODAY's live config must sail faster than the recording's OWN
-  // measured deep-leg speed (2.5883462493946987 m/s, no capsize, over
-  // all 12349 frames — TWA never left the deep-course band, so this IS
-  // the whole leg), with no capsize.
-  //
-  // Ground-truth baseline provenance: createConfig(recording.configSnapshot)
-  // does NOT reconstruct the pre-C1 model, because deepMerge overlays the
-  // recorded snapshot onto TODAY's buildDefaultConfig() — any field C1
-  // introduced (brailTrimRange/brailCamberGain/yceBrailShift) that the
-  // pre-C1 snapshot never mentions just falls through to today's default,
-  // silently running the recorded config through the NEW two-regime
-  // formula too (same pitfall D4-4a's own frozen-configSnapshot replay
-  // would hit if this round had changed any of ITS old field values —
-  // it didn't, only added new ones, which is exactly what makes this
-  // silent pass-through possible here). So — matching D4-4a's own
-  // pattern of citing the recording's actual measured number rather than
-  // re-deriving it live — the baseline below is the recording's control
-  // sequence replayed under the genuine pre-C1 code+config (a `git
-  // worktree` checkout of dee918e, this round's own start point, verified
-  // directly before writing this assertion; codeVersion dee918e matches
-  // the recording's own metadata, so this is an exact, not cross-version-
-  // approximate, replay).
-  {
-    const recPath = path.join(__dirname, '..', 'recordings', 'kurspelny2.json');
-    let recording = null, recErr = null;
-    try { recording = JSON.parse(readFileSync(recPath, 'utf8')); } catch (e) { recErr = e; }
-
-    if (recording) {
-      const PRE_C1_MEAN_SPEED = 2.5883462493946987;
-      let state = { ...recording.initialState, shunt: { ...recording.initialState.shunt } };
-      let lastShuntRequest = Boolean(recording.initialLastShuntRequest);
-      let sumSpeed = 0, n = 0;
-      for (const frame of recording.frames) {
-        const edge = Boolean(frame.controls.shuntRequest) && !lastShuntRequest;
-        lastShuntRequest = Boolean(frame.controls.shuntRequest);
-        const stepControls = { ...frame.controls, shuntRequest: edge };
-        const nSub = Math.max(1, Math.round(frame.dt / config.dt));
-        const subDt = frame.dt / nSub;
-        for (let k = 0; k < nSub; k++) state = integrate(state, stepControls, config, subDt);
-        sumSpeed += Math.hypot(state.u, state.v); n++;
-      }
-      const meanSpeed = sumSpeed / n;
-      check('C-kurspelny2: the fixed model sails the recording\'s OWN recorded control sequence faster on the deep leg, no capsize',
-        !state.capsized && meanSpeed > PRE_C1_MEAN_SPEED,
-        `meanSpeed: pre-C1=${PRE_C1_MEAN_SPEED.toFixed(3)} -> live-config=${meanSpeed.toFixed(3)} m/s (delta=${(meanSpeed - PRE_C1_MEAN_SPEED).toFixed(3)})`);
-    } else {
-      check('C-kurspelny2: kurspelny2.json replay fixture loads', false, `could not load ${recPath}: ${recErr?.message}`);
-    }
   }
 
   // --- R6-1 determinism self-test (ROUND6_flight_recorder.md): the
