@@ -278,6 +278,27 @@ export function runAsserts(config) {
   check('aback scenario: no NaN/Inf', finiteSeries(aback));
   check('aback scenario ends with capsize', aback[aback.length - 1].capsized === true);
 
+  // Divergence guard (core/integrator.js isPhysicallyPlausible). A sustained
+  // hard-over rudder used to run the fixed-dt RK4 away exponentially — u
+  // measured climbing 3 -> 37 m/s and then to 1e91 inside one 0.25s window.
+  // The capsize test did fire on the way past, so the gap was never a missing
+  // trigger: the freeze simply preserved garbage instead of a boat. Assert
+  // BOTH halves of the fix — the run ends capsized (the trajectory really was
+  // going over) and the frozen state is still physical (what gets recorded
+  // and replayed has to be a boat).
+  {
+    let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 3, v: 0, r: 0, phi: 0, p: 0, delta: 80 * DEG, end: 1,
+      amaLoad: 0, abackTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
+    const controls = { windDirFrom: HEADING0 + 100 * DEG, windSpeed: 6, sheet: 80 * DEG, rudder: -1,
+      rudderUp: false, brailLee: 0, brailWind: 0, crewPos: 0.3, crewPosX: 0, shuntRequest: false };
+    for (let i = 0; i < Math.round(20 / config.dt); i++) state = integrate(state, controls, config, config.dt);
+    const speed = Math.hypot(state.u, state.v);
+    check('sustained hard-over rudder does not diverge numerically',
+      Number.isFinite(speed) && Number.isFinite(state.phi) && speed < 100 && Math.abs(state.phi) < 2 * Math.PI,
+      `speed=${speed} phi=${(state.phi / DEG).toFixed(1)}deg`);
+    check('sustained hard-over rudder ends capsized, not ghost-sailing', state.capsized === true);
+  }
+
   const stop = scenarioStop(config);
   check('stop scenario: no NaN/Inf', finiteSeries(stop));
   // Round 9 (R9-1): re-derived. The old absolute "<0.5 m/s within 23s"

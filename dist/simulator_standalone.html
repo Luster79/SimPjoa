@@ -2294,6 +2294,21 @@ function addScaled(base, deriv, h) {
   return out;
 }
 
+// isPhysicallyPlausible(s) -> bool. Cheap "has the arithmetic survived"
+// test for a freshly integrated ODE state — see the divergence guard in
+// integrate() for why it exists and why these bounds are absurd on purpose.
+const DIVERGENCE_MAX_PHI = 2 * Math.PI;   // rad; a real capsize fires near 50deg
+const DIVERGENCE_MAX_SPEED = 100;         // m/s; the boat sails at a few m/s
+const DIVERGENCE_MAX_RATE = 50;           // rad/s, for both yaw r and roll p
+function isPhysicallyPlausible(s) {
+  for (const k of ['x', 'y', 'heading', 'u', 'v', 'r', 'phi', 'p']) {
+    if (!Number.isFinite(s[k])) return false;
+  }
+  if (Math.abs(s.phi) > DIVERGENCE_MAX_PHI) return false;
+  if (Math.hypot(s.u, s.v) > DIVERGENCE_MAX_SPEED) return false;
+  return Math.abs(s.r) <= DIVERGENCE_MAX_RATE && Math.abs(s.p) <= DIVERGENCE_MAX_RATE;
+}
+
 // integrate(state, controls, config, dt) -> newState (RK4, fixed dt)
 //
 // R5-2.2: once capsized, the core freezes -- zeroes u/v/r/p (a short
@@ -2330,6 +2345,28 @@ function integrate(state, controls, config, dt) {
     next[k] = s0[k] + (dt / 6) * (k1[k] + 2 * k2[k] + 2 * k3[k] + k4[k]);
   }
   next.heading = Math.atan2(Math.sin(next.heading), Math.cos(next.heading));
+
+  // Numerical divergence guard. The fixed-dt RK4 above is stable across the
+  // whole envelope this boat can actually sail, but a sustained hard-over
+  // rudder spins it fast enough that dt stops resolving the rotation (the
+  // v*r / -u*r coupling in derivatives()), and the state then runs away
+  // exponentially: measured u climbing 3 -> 12 -> 37 m/s and then to 1e91
+  // inside a single 0.25 s window. The capsize test downstream DOES fire on
+  // the way past, so this is not a missing trigger — the problem is purely
+  // that by then the numbers are garbage, and what gets frozen (and
+  // recorded, and replayed) is nonsense rather than a boat.
+  //
+  // So: catch the runaway and freeze the last state that was still physical,
+  // flagged as a capsize — which is unambiguously where the trajectory was
+  // going. The bounds below are deliberately absurd rather than tuned; they
+  // exist to separate "arithmetic has failed" from "sailing badly", and a
+  // real capsize is flagged far inside every one of them (phiCapsizeDeg is
+  // 50deg against a 360deg bound here, hull speed is a few m/s against 100).
+  // They must never become knobs — anything that needs tuning belongs in
+  // config.js, not in a sanity check.
+  if (!isPhysicallyPlausible(next)) {
+    return { ...state, t: state.t + dt, u: 0, v: 0, r: 0, p: 0, capsized: true };
+  }
 
   // Discrete updates: shunt state machine evaluated against the freshly
   // integrated velocities/heading so no substep's dynamics get discarded.
@@ -2657,14 +2694,14 @@ const MS_TO_KN = 1.9438;
 // recording's codeVersion is meaningful (harness/replay.js warns on
 // mismatch) for a downloaded bundle without requiring a build step for
 // plain `python3 -m http.server` development.
-const CODE_VERSION = "3ad08a1";
+const CODE_VERSION = "2ae98c8";
 // BUILD_TIME: same pattern as CODE_VERSION above — tools/bundle.js
 // replaces this with the COMMIT's timestamp (not wall-clock build time),
 // so it stays stable across re-bundling the same commit and always
 // matches CODE_VERSION's hash. Shown in the bottom-right version footer
 // so a bug report/recording can be tied to an exact, dated build without
 // having to separately ask "which commit was this."
-const BUILD_TIME = "2026-07-21T19:46:47+02:00";
+const BUILD_TIME = "2026-07-21T20:03:53+02:00";
 
 // ---------------------------------------------------------------------
 // i18n — EN/PL. Static labels are marked with data-i18n="key" in
