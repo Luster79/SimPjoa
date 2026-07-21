@@ -1745,44 +1745,57 @@ function drawTrail(xs, ys, cam, color) {
   ctx.restore();
 }
 
-// drawAmaWake — a real wake dissipates within a short distance of the
-// hull, not a persistent route line (unlike the hull trail above, which
-// deliberately keeps the whole session). Only the most recent
-// AMA_WAKE_MAX_SAMPLES samples are drawn; each short segment gets its
-// own width/color/alpha interpolated by how far back (in samples) it
-// sits — near the ama: thin, saturated blue, fairly opaque; fading away:
-// wider, paler (toward white-blue), and more transparent, so the trail
-// visibly spreads and dissolves rather than just stopping. (Approximates
-// "blurred" via the width/alpha/color ramp rather than a real per-
-// segment canvas blur filter — a literal `ctx.filter` blur would need
-// its own compositing pass per segment, dozens of times a frame, which
-// isn't worth it for what's already a soft, low-contrast trail at this
-// sample count.)
-const AMA_WAKE_MAX_SAMPLES = 36; // ~5.4s of trailing wake at WAKE_SAMPLE_INTERVAL=0.15s — "not too long a stretch"
-function drawAmaWake(cam) {
-  const n = wakeAmaX.length;
+// drawFadingWake — a real wake dissipates within a short distance of
+// whatever's making it, not a persistent route line. Only the most
+// recent maxSamples samples are drawn; each short segment gets its own
+// width/color/alpha interpolated by how far back (in samples) it sits —
+// near the source: thin-ish, saturated `base` color, fairly opaque;
+// fading away: wider, and its color drifts toward the water's own skin
+// color (getSkin().water, so it blends seamlessly into the background
+// instead of just fading to a fixed pale tone) while its alpha drops
+// toward 0. (Approximates "blurred" via the width/alpha/color ramp
+// rather than a real per-segment canvas blur filter — a literal
+// `ctx.filter` blur would need its own compositing pass per segment,
+// dozens of times a frame, which isn't worth it for what's already a
+// soft, low-contrast trail at this sample count.)
+function drawFadingWake(xs, ys, cam, maxSamples, base, widthStart, widthEnd, alphaStart) {
+  const n = xs.length;
   if (n < 2) return;
-  const start = Math.max(0, n - AMA_WAKE_MAX_SAMPLES);
+  const bg = hexToRgb(getSkin().water);
+  const start = Math.max(0, n - maxSamples);
   ctx.save();
   ctx.lineCap = 'round';
   for (let i = start + 1; i < n; i++) {
-    if (Number.isNaN(wakeAmaX[i]) || Number.isNaN(wakeAmaX[i - 1])) continue; // flying gap
-    const age = (n - 1 - i) / Math.max(1, n - 1 - start); // 0 = newest (at the ama), 1 = oldest kept
-    const p0 = worldToScreen(wakeAmaX[i - 1], wakeAmaY[i - 1], cam);
-    const p1 = worldToScreen(wakeAmaX[i], wakeAmaY[i], cam);
-    const r = Math.round(90 + (210 - 90) * age), g = Math.round(170 + (235 - 170) * age), b = Math.round(230 + (255 - 230) * age);
-    const alpha = 0.55 * (1 - age);
+    if (Number.isNaN(xs[i]) || Number.isNaN(xs[i - 1])) continue; // flying gap
+    const age = (n - 1 - i) / Math.max(1, n - 1 - start); // 0 = newest (at the source), 1 = oldest kept
+    const p0 = worldToScreen(xs[i - 1], ys[i - 1], cam);
+    const p1 = worldToScreen(xs[i], ys[i], cam);
+    const r = Math.round(base.r + (bg.r - base.r) * age), g = Math.round(base.g + (bg.g - base.g) * age), b = Math.round(base.b + (bg.b - base.b) * age);
+    const alpha = alphaStart * (1 - age);
     ctx.strokeStyle = `rgba(${r},${g},${b},${alpha.toFixed(3)})`;
-    ctx.lineWidth = Math.max(1, (1.5 + 6 * age) * dpr);
+    ctx.lineWidth = Math.max(1, (widthStart + (widthEnd - widthStart) * age) * dpr);
     ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.stroke();
   }
   ctx.restore();
 }
 
+const WAKE_FADE_MAX_SAMPLES = 36; // ~5.4s of trailing wake at WAKE_SAMPLE_INTERVAL=0.15s — "not too long a stretch"
+const AMA_WAKE_BASE = { r: 90, g: 170, b: 230 }; // saturated blue near the ama
+const HULL_WAKE_BASE = { r: 90, g: 170, b: 230 }; // same blue, same dissipating treatment as the ama's
+
 function drawWakeTrail(cam) {
   if (!wakeTrailCheckbox.checked) return;
-  drawTrail(wakeX, wakeY, cam, 'rgba(170,225,215,0.35)');
-  drawAmaWake(cam);
+  // Thin blue line for the WHOLE session, unbounded — per feedback, kept
+  // deliberately separate from the dissipating wake effect below so the
+  // full course sailed stays traceable even long after the "real" wake
+  // near the hull has faded out.
+  drawTrail(wakeX, wakeY, cam, 'rgba(90,170,230,0.35)');
+  // Dissipating wake effect, both threads: widens and fades toward the
+  // water's own background color over the last ~5.4s, per feedback
+  // ("bardziej zbliżony do koloru tła i szerszy" — closer to the
+  // background color, and wider).
+  drawFadingWake(wakeX, wakeY, cam, WAKE_FADE_MAX_SAMPLES, HULL_WAKE_BASE, 2, 10, 0.45);
+  drawFadingWake(wakeAmaX, wakeAmaY, cam, WAKE_FADE_MAX_SAMPLES, AMA_WAKE_BASE, 1.5, 10, 0.55);
 }
 
 // ---------------------------------------------------------------------
