@@ -77,6 +77,7 @@ const TRANSLATIONS = {
     'h.display': 'Display', 'lbl.wakeTrail': 'Wake trail (kilwater)', 'hud.luffing': 'LUFFING', 'hud.stalled': 'STALLED',
     'lbl.insetShow': 'Side-view inset', 'lbl.skin': 'Skin', 'opt.skinPjoa': 'Pjoa', 'opt.skinMicronesia': 'Micronesia',
     'tag.newBow': 'BOW', 'inset.label': 'side view (leeward)',
+    'compass.hullAxis': 'hull', 'compass.cog': 'COG',
     'h.polarDiagram': 'Polar diagram',
     'hint.polar': "Runs the headless polar sweep against the current config (TWS 4/6/8/10 m/s) and plots it. The boat's live (TWA, speed) point is overlaid once you return to sailing.",
     'btn.runPolar': 'Run polar', 'btn.exportCsv': 'Export CSV', 'btn.backToSailing': 'Back to sailing',
@@ -137,6 +138,7 @@ const TRANSLATIONS = {
     'h.display': 'Widok', 'lbl.wakeTrail': 'Kilwater', 'hud.luffing': 'ŁOPOCZE', 'hud.stalled': 'PRZECIĄGNIĘTY',
     'lbl.insetShow': 'Widok z boku', 'lbl.skin': 'Skórka', 'opt.skinPjoa': 'Pjoa', 'opt.skinMicronesia': 'Mikronezja',
     'tag.newBow': 'DZIÓB', 'inset.label': 'widok z boku (zawietrzna)',
+    'compass.hullAxis': 'kadłub', 'compass.cog': 'KNG',
     'h.polarDiagram': 'Diagram polarny',
     'hint.polar': 'Uruchamia pomiar polary (bezekranowy silnik fizyki) dla bieżącej konfiguracji (TWS 4/6/8/10 m/s) i rysuje wykres. Po powrocie do żeglugi na wykresie pojawia się bieżący punkt (TWA, prędkość) łódki.',
     'btn.runPolar': 'Uruchom polarę', 'btn.exportCsv': 'Eksportuj CSV', 'btn.backToSailing': 'Powrót do żeglugi',
@@ -780,6 +782,95 @@ function drawSideViewInset(state, forces) {
   ctx.restore();
 }
 
+// R11-3 (round 11, ROUND11_proa_identity_graphics.md): shunt narrative —
+// three fixed-screen-position overlays proving "the hull does not turn":
+// a 4-icon phase strip, a hull-axis-vs-course-over-ground compass ribbon,
+// and a brief BOW/DZIOB callout at the newly active end.
+const SHUNT_PHASE_ORDER = ['ease', 'transfer', 'swap', 'sheet'];
+
+function drawShuntPhaseStrip(state) {
+  const idx = SHUNT_PHASE_ORDER.indexOf(state.shunt.phase);
+  if (idx < 0) return; // 'none' — no shunt in progress, nothing to show
+  const cx = canvas.width / 2, y = 30, gap = 46;
+  const startX = cx - gap * 1.5;
+  ctx.save();
+  for (let i = 0; i < SHUNT_PHASE_ORDER.length; i++) {
+    const x = startX + i * gap;
+    if (i > 0) {
+      ctx.strokeStyle = i <= idx ? 'rgba(127,199,255,0.6)' : 'rgba(159,180,200,0.2)';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(x - gap + 9, y); ctx.lineTo(x - 9, y); ctx.stroke();
+    }
+    const active = i === idx;
+    ctx.beginPath();
+    ctx.arc(x, y, active ? 9 : 6, 0, Math.PI * 2);
+    ctx.fillStyle = active ? '#ffb84d' : i < idx ? '#7fc7ff' : 'rgba(159,180,200,0.25)';
+    ctx.fill();
+  }
+  ctx.font = 'bold 11px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#ffb84d';
+  ctx.fillText(t(`shuntPhase.${state.shunt.phase}`), cx, y + 24);
+  ctx.textAlign = 'start';
+  ctx.restore();
+}
+
+// Compass ribbon — always visible, not just during a shunt (a real
+// hull-axis-vs-COG comparison is a useful proa reading generally, and
+// gating it on shunt.phase would hide the "hull axis holds still while
+// COG reverses" story right as it's happening on the FIRST frame after
+// 'swap' completes and phase moves on to 'sheet'). Hull axis (the
+// PHYSICAL hull's own heading, independent of which tip is currently
+// labeled bow — same formula as R11-1/R11-2's `fwd`/amaWorldPos) sits
+// fixed at the ribbon's center by construction (it IS the reference
+// angle); course-over-ground is plotted relative to it, so a clean
+// shunt visibly sweeps the COG marker across while the hull-axis marker
+// never moves at all.
+function drawCompassRibbon(state) {
+  const physicalHeading = state.heading + (state.end === 1 ? 0 : Math.PI);
+  const boatWx = state.u * Math.cos(state.heading) - state.v * Math.sin(state.heading);
+  const boatWy = state.u * Math.sin(state.heading) + state.v * Math.cos(state.heading);
+  const speed = Math.hypot(boatWx, boatWy);
+  const cogHeading = speed > 0.05 ? Math.atan2(boatWy, boatWx) : physicalHeading;
+  const relDeg = normalizeAngle(cogHeading - physicalHeading) / DEG; // -180..180, hull axis at 0
+
+  const cx = canvas.width / 2, y = 66, w = 180;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(159,180,200,0.3)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(cx - w / 2, y); ctx.lineTo(cx + w / 2, y); ctx.stroke();
+  ctx.fillStyle = '#7a5a3a';
+  ctx.beginPath(); ctx.moveTo(cx, y - 7); ctx.lineTo(cx - 5, y + 5); ctx.lineTo(cx + 5, y + 5); ctx.closePath(); ctx.fill();
+  const cogX = cx + clamp(relDeg / 180, -1, 1) * (w / 2);
+  ctx.fillStyle = '#7fd0ff';
+  ctx.beginPath(); ctx.arc(cogX, y, 4, 0, Math.PI * 2); ctx.fill();
+  ctx.font = '9px system-ui, sans-serif'; ctx.fillStyle = '#9fb4c8'; ctx.textAlign = 'center';
+  ctx.fillText(t('compass.hullAxis'), cx, y + 18);
+  ctx.fillText(t('compass.cog'), cogX, y - 10);
+  ctx.textAlign = 'start';
+  ctx.restore();
+}
+
+function drawBowCallout(state, cam, now) {
+  if (now >= bowCalloutUntil) return;
+  const halfL = dims.hull.length / 2;
+  const wx = state.x + halfL * Math.cos(state.heading), wy = state.y + halfL * Math.sin(state.heading);
+  const p = worldToScreen(wx, wy, cam);
+  ctx.save();
+  ctx.globalAlpha = clamp((bowCalloutUntil - now) / 400, 0, 1); // fade out over the last 400ms
+  ctx.font = 'bold 13px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#ff8a3d';
+  ctx.fillText(t('tag.newBow'), p.x, p.y - 20);
+  ctx.textAlign = 'start';
+  ctx.restore();
+}
+
+function drawShuntNarrative(state, cam, now) {
+  drawShuntPhaseStrip(state);
+  drawCompassRibbon(state);
+  drawBowCallout(state, cam, now);
+}
+
 // Sail shape: an arc from the tack (near centerline) to the clew (swept to
 // leeward by the ACTUAL yard angle, state.delta — P4.1: this is a real,
 // dynamic piece of state now, not the commanded sheet), curvature/fill
@@ -975,12 +1066,22 @@ function drawBoat(state, forces, cam) {
     // toward the far end, along the leeward side, per B3's shunt-animation
     // spec — the actual bow/stern role swap itself happens instantaneously
     // in the core at the 'swap' sub-phase.
+    // R11-3: upgraded from a single moving tick into an actual HAULED LINE
+    // — the tack line grows from its starting point along the leeward
+    // gunwale as it's hauled, with a small fairlead ring at the moving,
+    // leading end, so the "the sail travels to the other end" story reads
+    // as a rope actually being pulled, not a blip jumping across the deck.
     const fromX = 0.35 * yardLen, toX = -halfL * 0.75;
     const tx = fromX + (toX - fromX) * state.shunt.progress;
+    const gunwaleY = -0.42 * state.end; // leeward gunwale line, physical frame
     ctx.save();
-    ctx.globalAlpha = 0.5;
-    ctx.strokeStyle = '#8a8060'; ctx.lineWidth = 0.12;
-    ctx.beginPath(); ctx.moveTo(tx, 0); ctx.lineTo(tx + 0.6, -0.35 * state.end); ctx.stroke();
+    ctx.globalAlpha = 0.6;
+    ctx.strokeStyle = '#c9b878'; ctx.lineWidth = 0.05;
+    ctx.beginPath(); ctx.moveTo(fromX, 0); ctx.lineTo(fromX, gunwaleY); ctx.lineTo(tx, gunwaleY); ctx.stroke();
+    ctx.fillStyle = '#e8d9a0';
+    ctx.beginPath(); ctx.arc(tx, gunwaleY, 0.14, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#8a8060'; ctx.lineWidth = 0.1;
+    ctx.beginPath(); ctx.moveTo(tx, gunwaleY); ctx.lineTo(tx + 0.6, -0.35 * state.end); ctx.stroke();
     ctx.restore();
   } else {
     // Foreshorten the drawn chord by cos(phi) (2.3, optional): subtle at
@@ -1518,6 +1619,7 @@ let lastT = performance.now();
 let camera = { x: 0, y: 0 };
 let prevShuntHeld = false;
 let shuntFlashUntil = 0;
+let bowCalloutUntil = 0; // R11-3: "BOW/DZIOB" tag, pops for ~2s right as the swap completes
 
 function frame(now) {
   const dtFrame = Math.min(0.1, Math.max(0, (now - lastT) / 1000)); // clamp 100ms, tab-switch protection
@@ -1584,12 +1686,21 @@ function frame(now) {
     }
     prevShuntHeld = shuntHeld;
 
+    // R11-3: the 'swap' sub-phase is where the core actually flips
+    // state.end/heading (core/shunt.js) — the instant it completes
+    // (phase moves on to 'sheet') is exactly "the newly active end",
+    // so that's the edge the BOW/DZIOB callout pops on.
+    if (phaseBefore === 'swap' && state.shunt.phase === 'sheet') {
+      bowCalloutUntil = now + 2000;
+    }
+
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     drawWaterGrid(camera);
     drawWakeTrail(camera);
     drawBoat(state, forces, camera);
     drawTrueWindArrow();
     drawSideViewInset(state, forces);
+    drawShuntNarrative(state, camera, now);
     updateHud(state, forces);
     updateAlarms(state, forces);
 
