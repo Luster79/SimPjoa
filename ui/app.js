@@ -73,6 +73,7 @@ const TRANSLATIONS = {
     'lbl.rudderUp': 'Rudder up (shipped)', 'hint.rudderUp': 'A steering oar, not a fixed rudder — usually out of the water; produces no force while shipped',
     'lbl.crewPos': 'Crew position', 'hint.crewPos': 'Drag the dot, or J/L (lateral), I/K (fore-aft)',
     'pad.ama': 'ama', 'pad.leeward': 'leeward', 'pad.aft': 'aft', 'pad.fwd': 'fwd',
+    'pad.headUp': 'heading up', 'pad.bearAway': 'bearing away',
     'h.shunt': 'Shunt', 'btn.shunt': 'SHUNT (space)',
     'h.amaLoad': 'Ama load', 'hud.heel': 'Heel', 'hint.heelBar': 'Heel (centered = upright)', 'h.reset': 'Reset',
     'h.display': 'Display', 'lbl.wakeTrail': 'Wake trail (kilwater)', 'hud.luffing': 'LUFFING', 'hud.stalled': 'STALLED',
@@ -135,6 +136,7 @@ const TRANSLATIONS = {
     'lbl.rudderUp': 'Wiosło wyjęte', 'hint.rudderUp': 'Ster to wiosło, nie stały ster — zwykle jest wyjęte z wody; nie wytwarza wtedy żadnej siły',
     'lbl.crewPos': 'Pozycja załogi', 'hint.crewPos': 'Przeciągnij kropkę, lub J/L (bok), I/K (wzdłuż)',
     'pad.ama': 'ama', 'pad.leeward': 'zawietrzna', 'pad.aft': 'rufa', 'pad.fwd': 'dziób',
+    'pad.headUp': 'Ostrzenie', 'pad.bearAway': 'Odpadanie',
     'h.shunt': 'Zwrot', 'btn.shunt': 'ZWROT (spacja)',
     'h.amaLoad': 'Obciążenie amy', 'hud.heel': 'Przechył', 'hint.heelBar': 'Przechył (środek = pion)', 'h.reset': 'Reset',
     'h.display': 'Widok', 'lbl.wakeTrail': 'Kilwater', 'hud.luffing': 'ŁOPOCZE', 'hud.stalled': 'PRZECIĄGNIĘTY',
@@ -376,21 +378,26 @@ const crewDot = document.getElementById('crewDot');
 // this point, and syncSlidersFromControls() already runs before it).
 const clampLocal = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
+// Pad axes (per user request): vertical = fore-aft (crewPosX, bow/dziób
+// at top, stern/rufa at bottom); horizontal = lateral (crewPos, ama at
+// left, leeward/zawietrzna at right). Both axes keep the same
+// "high/forward-toward-ama value at the low-fraction edge" convention
+// the pad always used, just swapped onto the other screen axis.
 function updateCrewDot() {
   const { posMin, posMax, posXMin, posXMax } = dims.crew;
-  const fracY = (clampLocal(controls.crewPos, posMin, posMax) - posMin) / (posMax - posMin);
-  const fracX = (clampLocal(controls.crewPosX, posXMin, posXMax) - posXMin) / (posXMax - posXMin);
-  crewDot.style.left = `${fracX * 100}%`;
-  crewDot.style.top = `${(1 - fracY) * 100}%`;
+  const fracLateral = (posMax - clampLocal(controls.crewPos, posMin, posMax)) / (posMax - posMin); // 0=ama(left), 1=leeward(right)
+  const fracFwdAft = (posXMax - clampLocal(controls.crewPosX, posXMin, posXMax)) / (posXMax - posXMin); // 0=bow(top), 1=stern(bottom)
+  crewDot.style.left = `${fracLateral * 100}%`;
+  crewDot.style.top = `${fracFwdAft * 100}%`;
 }
 
 function setCrewFromPad(clientX, clientY) {
   const rect = crewPad.getBoundingClientRect();
   const { posMin, posMax, posXMin, posXMax } = dims.crew;
-  const fracX = clampLocal((clientX - rect.left) / rect.width, 0, 1);
-  const fracY = clampLocal((clientY - rect.top) / rect.height, 0, 1);
-  controls.crewPosX = posXMin + fracX * (posXMax - posXMin);
-  controls.crewPos = posMax - fracY * (posMax - posMin);
+  const fracLateral = clampLocal((clientX - rect.left) / rect.width, 0, 1); // 0=ama(left), 1=leeward(right)
+  const fracFwdAft = clampLocal((clientY - rect.top) / rect.height, 0, 1); // 0=bow(top), 1=stern(bottom)
+  controls.crewPos = posMax - fracLateral * (posMax - posMin);
+  controls.crewPosX = posXMax - fracFwdAft * (posXMax - posXMin);
   updateCrewDot();
   refreshOutputs();
 }

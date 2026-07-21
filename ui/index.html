@@ -72,6 +72,9 @@
   .padLabelBottom { bottom: 3px; left: 50%; transform: translateX(-50%); }
   .padLabelLeft { left: 4px; top: 50%; transform: translateY(-50%); }
   .padLabelRight { right: 4px; top: 50%; transform: translateY(-50%); }
+  .padLabelQuadrant { font-size: 10px; font-style: italic; color: #4a6480; transform: translate(-50%, -50%); text-align: center; }
+  .padLabelQuadrantTL { top: 27%; left: 30%; }
+  .padLabelQuadrantBR { top: 73%; left: 70%; }
   .padDot { position: absolute; width: 14px; height: 14px; border-radius: 50%; background: #7fc7ff; border: 2px solid #dbe7f2; transform: translate(-50%, -50%); pointer-events: none; box-shadow: 0 0 6px rgba(127,199,255,0.6); }
   .padReadout { font-size: 11px; color: #9fb4c8; margin-top: 4px; text-align: center; font-variant-numeric: tabular-nums; }
   .buttons { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
@@ -181,10 +184,14 @@
           <div id="crewPad" class="pad2D">
             <div class="padAxis padAxisV"></div>
             <div class="padAxis padAxisH"></div>
-            <span class="padLabel padLabelTop" data-i18n="pad.ama">ama</span>
-            <span class="padLabel padLabelBottom" data-i18n="pad.leeward">leeward</span>
-            <span class="padLabel padLabelLeft" data-i18n="pad.aft">aft</span>
-            <span class="padLabel padLabelRight" data-i18n="pad.fwd">fwd</span>
+            <!-- Axes per user request: bow (dziób) top, stern (rufa)
+                 bottom, ama left, leeward (zawietrzna) right. -->
+            <span class="padLabel padLabelTop" data-i18n="pad.fwd">fwd</span>
+            <span class="padLabel padLabelBottom" data-i18n="pad.aft">aft</span>
+            <span class="padLabel padLabelLeft" data-i18n="pad.ama">ama</span>
+            <span class="padLabel padLabelRight" data-i18n="pad.leeward">leeward</span>
+            <span class="padLabel padLabelQuadrant padLabelQuadrantTL" data-i18n="pad.headUp">Heading up</span>
+            <span class="padLabel padLabelQuadrant padLabelQuadrantBR" data-i18n="pad.bearAway">Bearing away</span>
             <div id="crewDot" class="padDot"></div>
           </div>
           <div class="padReadout"><output id="crewPosOut">0.30</output> / <output id="crewPosXOut">0.00</output></div>
