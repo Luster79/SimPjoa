@@ -87,7 +87,23 @@ const HEADING_HOLD_TOLERANCE = 15 * DEG;
 // two-regime brailWind characteristic makes a partial carrot pull a real
 // candidate for the polar-optimal deep trim, not just a survival/panic
 // control.
-function simulateToSteady(config, twaDeg, tws, sheetDeg, crewPos, brailWind = 0, maxSeconds = 25) {
+// P2 (docs/work-order-2026-07-22.md, docs/diagnostic-2026-07-22-residuary-hump.md
+// Result 5): the OLD gate required 10 CONSECUTIVE per-step samples each
+// within 0.01 m/s of the last one, reset to zero by a single noisy tick —
+// with maxSeconds=25 that left only ~15s for acceleration, and some
+// trims (e.g. TWA100/TWS6, sheet16/crewPos0.3) genuinely need close to
+// 30s to cross into that window at all, so they were discarded as
+// "unsettled" at 25s even though a 400s run confirms they are: speed
+// 7.38 at both 25s and 400s, `out/polar.csv` reporting 4.36 for that row
+// because the fast trims never accumulated their 10 consecutive seconds
+// in time. Fixed with a SLIDING window instead of a resettable counter
+// (settleWindow most recent 1Hz samples; converged once their spread,
+// not their per-step delta, is small) — this detects the same genuine
+// convergence without needing every intermediate second to individually
+// look flat, and maxSeconds raised 25->35 to give slow trims enough
+// runway to actually reach it (verified against the diagnostic's own
+// case: settles at t=29s, speed 7.382, within 0.02% of the 400s value).
+function simulateToSteady(config, twaDeg, tws, sheetDeg, crewPos, brailWind = 0, maxSeconds = 35) {
   const windDirFrom = HEADING0 + twaDeg * DEG;
   const controls = {
     windDirFrom, windSpeed: tws, sheet: sheetDeg * DEG, rudder: 0,
@@ -97,9 +113,9 @@ function simulateToSteady(config, twaDeg, tws, sheetDeg, crewPos, brailWind = 0,
   let state = makeInitialState(Math.min(Math.abs(sheetDeg) * DEG, Math.PI / 2));
   const dt = config.dt;
   const stepsPerSecond = Math.round(1 / dt);
-  const settleWindow = 10; // seconds of near-constant speed required
-  let lastSampleSpeed = 0;
-  let stableSeconds = 0;
+  const settleWindow = 10; // seconds of trailing samples the spread check looks across
+  const SETTLE_SPREAD = 0.05; // m/s — max-min allowed across that trailing window
+  const window = [];
   let settled = false;
 
   const maxSteps = Math.round(maxSeconds * stepsPerSecond);
@@ -109,17 +125,13 @@ function simulateToSteady(config, twaDeg, tws, sheetDeg, crewPos, brailWind = 0,
 
     if (i % stepsPerSecond === 0) {
       const speed = Math.hypot(state.u, state.v);
-      if (Math.abs(speed - lastSampleSpeed) < 0.01) {
-        stableSeconds += 1;
-        if (stableSeconds >= settleWindow) {
-          const headingError = Math.abs(normalizeAngle(state.heading - HEADING0));
-          settled = headingError <= HEADING_HOLD_TOLERANCE;
-          break;
-        }
-      } else {
-        stableSeconds = 0;
+      window.push(speed);
+      if (window.length > settleWindow) window.shift();
+      if (window.length === settleWindow && Math.max(...window) - Math.min(...window) < SETTLE_SPREAD) {
+        const headingError = Math.abs(normalizeAngle(state.heading - HEADING0));
+        settled = headingError <= HEADING_HOLD_TOLERANCE;
+        break;
       }
-      lastSampleSpeed = speed;
     }
   }
   return { speed: Math.hypot(state.u, state.v), settled, deltaDeg: state.delta / DEG };
