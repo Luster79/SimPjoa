@@ -664,6 +664,23 @@ function buildDefaultConfig() {
       residuaryPeakCr: 0.006,             // tunable — Cr at the hump's peak, ~2x Cf (slender-hull order of magnitude, not a monohull's 100x+)
       residuaryFrPeak: 0.5,               // tunable — Fr at which residuary resistance peaks (the main prismatic hump)
       residuaryFrWidth: 0.18,             // tunable — Gaussian width; keeps the hump's rise/fall gentle (naturally ~0 below Fr~0.3, per work order's "~0 below Fr~0.35")
+      // Tail plateau past the hump (P1, docs/work-order-2026-07-22.md;
+      // docs/diagnostic-2026-07-22-residuary-hump.md; docs/adr/0006):
+      // the pure Gaussian falls back toward 0 for Fr well past FrPeak,
+      // which let the polar's settle-gate bug hide a SECOND, unphysically
+      // fast branch (semi-planing relief past the hump is real, but a
+      // slender canoe hull doesn't shed residuary resistance all the way
+      // back to ~friction-only — Dierking's proa speed data tops out
+      // well short of that). Holds Cr at this fraction of its peak value
+      // for Fr > FrPeak instead of letting the Gaussian tail go to ~0,
+      // capping reach-speed at TWS6 well under the un-plateaued model's
+      // >14.4kn. The diagnostic's own 2-seed hysteresis probe (TWA135,
+      // u0=1.0 vs 6.5) only needs >=0.10 to lose the double branch there,
+      // but P1's own acceptance bar is stricter — total resistance
+      // genuinely non-decreasing across a fine 3-9 m/s sweep, not just at
+      // those two sample speeds — which a dense sweep showed first holds
+      // at ~0.32; 0.35 clears it with margin.
+      residuaryTailPlateau: 0.35,          // tunable — fraction of residuaryPeakCr retained far past FrPeak (smallest value clearing a fine-grained non-decreasing-resistance sweep, 3-9 m/s)
       // hullSideForceCoeff (round 10, R10-3, docs/adr/0004): replaces the
       // old sideForceCoeff/leewaySaturationDeg/leewayMushingCoeff trio
       // (a saturate-then-mush shape with NO measured basis) with a
@@ -1034,12 +1051,32 @@ function buildDefaultConfig() {
       coeff: 2.1,
     },
 
+    // P4 (docs/work-order-2026-07-22.md; docs/diagnostic-2026-07-22-
+    // residuary-hump.md Result 6): the shipped speedLockout=4 m/s (7.8kn)
+    // and 5.0s total sequence let a proa shunt near full reach speed —
+    // the literature is unanimous a proa comes to a genuine stop first,
+    // with the crew physically carrying the yard heel end to end (a
+    // materially slower process than a quick automatic animation).
+    // speedLockout is lowered toward "nearly stopped," bounded below by
+    // harness/scenarios.js's scenarioShunt — an unmodified structural test
+    // of shunt continuity on a steady TWA90/TWS6 beam reach, not a "ease
+    // down to a stop" maneuver test (see its own header comment) — whose
+    // fixed sheet=60deg trim settles to 2.49 m/s by the time it requests
+    // its first shunt. A value below that would simply never fire the
+    // scenario's shunts rather than model a real stop; fully closing that
+    // gap would mean reworking the scenario to ease down before
+    // requesting a shunt, out of this item's small-effort scope. Phase
+    // durations are lengthened ~3x (5.0s -> 16.4s total) to reflect the
+    // same "this is a deliberate human process, not a quick trim" finding
+    // — transferDuration (physically carrying the yard) gets the largest
+    // share; swapDuration (bookkeeping bow/stern relabel, no physical
+    // action) is left unchanged.
     shunt: {
-      speedLockout: 4,          // m/s — shunt locked out above this speed
-      easeDuration: 1.2,        // s
-      transferDuration: 1.8,    // s
+      speedLockout: 2.6,        // m/s — shunt locked out above this speed
+      easeDuration: 4.0,        // s
+      transferDuration: 8.0,    // s
       swapDuration: 0.4,        // s (near-instantaneous role swap)
-      sheetDuration: 1.6,       // s
+      sheetDuration: 4.0,       // s
     },
 
     aeroTableV1,
@@ -1575,9 +1612,20 @@ function hullResistance(u, config) {
   // as a bounded Gaussian hump peaking near the main prismatic hump
   // (residuaryFrPeak), never growing past a few x friction. See config.js
   // hull.residuaryPeakCr/FrPeak/FrWidth comment for the literature basis.
+  //
+  // Past the hump (Fr > FrPeak) the pure Gaussian falls back toward 0,
+  // which is the "gear change" hysteresis bug P1 fixes (docs/work-order-
+  // 2026-07-22.md; docs/diagnostic-2026-07-22-residuary-hump.md; docs/adr/
+  // 0006): the settle-gate could reach a second, unphysically fast branch
+  // riding that low tail. A slender hull's residuary resistance doesn't
+  // fall all the way back to ~friction-only past the hump, so the tail is
+  // held at a plateau fraction of the peak instead of decaying to 0.
   const Fr = uAbs / Math.sqrt(g * hull.length);
   const z = (Fr - hull.residuaryFrPeak) / hull.residuaryFrWidth;
-  const Cr = hull.residuaryPeakCr * Math.exp(-z * z);
+  const gaussian = Math.exp(-z * z);
+  const Cr = hull.residuaryPeakCr * (Fr > hull.residuaryFrPeak
+    ? hull.residuaryTailPlateau + (1 - hull.residuaryTailPlateau) * gaussian
+    : gaussian);
   const residuary = 0.5 * rho_w * hull.wettedSurface * Cr * uAbs * uAbs;
 
   return -Math.sign(u) * (friction + residuary);
@@ -1952,7 +2000,7 @@ function computeAmaLoad(phi, config) {
   return Math.abs(phi) / (stability.phiSubmergeDeg * DEG__b5);
 }
 
-// updateAback(state, amaLoad, Msail, dt, config) -> { abackTimer, capsized, abackWarning }
+// updateAback(state, amaLoad, Msail, dt, config) -> { abackTimer, capsized }
 //   Round 8 (ROUND8_physical_capsize.md, R8-1) retires the phi>=0
 //   "overload timer" as a capsize trigger. It was a v0.1 proxy from
 //   before roll dynamics existed at all (FIX_REQUEST_step1_review.md) —
@@ -1983,49 +2031,41 @@ function computeAmaLoad(phi, config) {
 //   submersion stays the physically-motivated capsize question it always
 //   was.
 //
-//   abackWarning (NEW, round 10d, H2, ROUND10d_helm_balance.md) is a
-//   SEPARATE, non-capsize-affecting signal for the through-gybe gap the
-//   round's diagnosis actually found: several reproduced through-gybe
-//   trajectories (wind crossing to the ama-leeward side via a bear-away,
-//   yard slammed to delta~0 against the mast, sheet.js regime c) settle
-//   phi at a genuinely pressed, SUSTAINED -3..-9deg (amaLoad 0.3-0.9,
-//   short of the 1.0 full-submersion bar) — the buoyancy-side restoring
-//   arm is strong enough (ama.maxBuoyancy vs the flying side's much
-//   lighter ama.mass, R8's own asymmetry) to hold it there indefinitely,
-//   sail jammed, unable to trim — with the old detector completely
-//   silent for the boat's entire time in that state, timer or warning.
-//   amaLoad>1 (full submersion) is a severe, LATER-STAGE CONSEQUENCE of
-//   sustained aback, not aback's own nautical definition (wind on the
-//   wrong side of the sail); `phi<0 && Msail<0` (the sail's OWN current
-//   roll-moment contribution — "the pressing moment on the ama" — already
-//   computed every step in integrator.js's breakdown) is the direct,
-//   physical reading of that definition: pressed, AND actively being
-//   pressed right now (not coasting on residual momentum from a past
-//   press, and not a geometry-only alpha reading that would false-
-//   positive during a force-faded shunt transition — see aero.js
-//   shuntForceFade, which already zeroes Msail through 'transfer'/
-//   'swap'). Kept OUT of abackTimer/capsized specifically because it
-//   fires far more readily than full submersion (see above); it exists
-//   so the pressed-through-gybe state is no longer silent (ui/app.js
-//   surfaces it the same on-the-fly way as "AMA FLYING", no stored
-//   state), while a genuinely severe crossing still reaches full
-//   submersion fast enough (verified: within a few seconds of the wind
-//   crossing) that the EXISTING, unchanged timer/capsize path still
-//   fires on its own for that case — see the H2 scenario/assertion in
-//   harness/scenarios.js and harness/asserts.js.
+//   The through-gybe aback WARNING (round 10d, H2, ROUND10d_helm_balance.md,
+//   archived) is a separate, non-capsize-affecting signal for a gap that
+//   round's diagnosis found: several reproduced through-gybe trajectories
+//   (wind crossing to the ama-leeward side via a bear-away, yard slammed to
+//   delta~0 against the mast, sheet.js regime c) settle phi at a genuinely
+//   pressed, SUSTAINED -3..-9deg (amaLoad 0.3-0.9, short of the 1.0 full-
+//   submersion bar) — the buoyancy-side restoring arm is strong enough
+//   (ama.maxBuoyancy vs the flying side's much lighter ama.mass, R8's own
+//   asymmetry) to hold it there indefinitely, sail jammed, unable to trim —
+//   with the old detector completely silent for the boat's entire time in
+//   that state. amaLoad>1 (full submersion) is a severe, LATER-STAGE
+//   CONSEQUENCE of sustained aback, not aback's own nautical definition
+//   (wind on the wrong side of the sail); `phi<0 && Msail<0` (the sail's OWN
+//   current roll-moment contribution, already computed every step in
+//   integrator.js's breakdown) is the direct, physical reading of that
+//   definition: pressed, AND actively being pressed right now. Deliberately
+//   kept OUT of abackTimer/capsized since it fires far more readily than
+//   full submersion, so it is computed independently by each consumer
+//   (ui/app.js's "PRESSED" banner, harness/asserts.js's H2 assertion)
+//   directly from state.phi/breakdown.roll.Msail, rather than threaded
+//   through this return value (R3, docs/work-order-2026-07-22.md: nothing
+//   read the value this function used to also return here, making it a
+//   redundant, unread second source of truth for the same condition).
 function updateAback(state, amaLoad, Msail, dt, config) {
   const { abackCapsizeTime, phiCapsizeDeg, capsizeTriggerMarginDeg } = config.stability;
 
   const isAback = state.phi < 0 && amaLoad > 1.0;
   const abackTimer = isAback ? state.abackTimer + dt : 0;
-  const abackWarning = state.phi < 0 && Msail < 0;
 
   const flyingCapsizeRad = (phiCapsizeDeg + capsizeTriggerMarginDeg) * DEG__b5;
   const capsized = state.capsized
     || abackTimer > abackCapsizeTime
     || state.phi >= flyingCapsizeRad;
 
-  return { abackTimer, capsized, abackWarning };
+  return { abackTimer, capsized };
 }
 
 
@@ -2403,13 +2443,20 @@ function integrate(state, controls, config, dt) {
 
 
 
+// Neutral controls used to seed lastForces for a state nothing has
+// stepped yet — both at creation and after reset() (R14, docs/work-order-
+// 2026-07-22.md: reset() used to leave lastForces holding the PREVIOUS
+// run's forces until the next step(), a real facade inconsistency even
+// though the live UI never observes it, since it steps every frame).
+const NEUTRAL_CONTROLS = {
+  windDirFrom: 0, windSpeed: 0, sheet: 0, rudder: 0,
+  brailLee: 0, brailWind: 0, crewPos: 0, crewPosX: 0, shuntRequest: false,
+};
+
 function createSimulator(userConfig) {
   let config = createConfig(userConfig);
   let state = createInitialState(config);
-  let lastForces = computeForces(state, {
-    windDirFrom: 0, windSpeed: 0, sheet: 0, rudder: 0,
-    brailLee: 0, brailWind: 0, crewPos: 0, crewPosX: 0, shuntRequest: false,
-  }, config);
+  let lastForces = computeForces(state, NEUTRAL_CONTROLS, config);
   let lastShuntRequest = false;
 
   function step(controls, dtFrame) {
@@ -2437,6 +2484,7 @@ function createSimulator(userConfig) {
 
   function reset() {
     state = createInitialState(config);
+    lastForces = computeForces(state, NEUTRAL_CONTROLS, config);
     lastShuntRequest = false;
   }
 
@@ -2541,7 +2589,23 @@ const HEADING_HOLD_TOLERANCE = 15 * DEG__b10;
 // two-regime brailWind characteristic makes a partial carrot pull a real
 // candidate for the polar-optimal deep trim, not just a survival/panic
 // control.
-function simulateToSteady(config, twaDeg, tws, sheetDeg, crewPos, brailWind = 0, maxSeconds = 25) {
+// P2 (docs/work-order-2026-07-22.md, docs/diagnostic-2026-07-22-residuary-hump.md
+// Result 5): the OLD gate required 10 CONSECUTIVE per-step samples each
+// within 0.01 m/s of the last one, reset to zero by a single noisy tick —
+// with maxSeconds=25 that left only ~15s for acceleration, and some
+// trims (e.g. TWA100/TWS6, sheet16/crewPos0.3) genuinely need close to
+// 30s to cross into that window at all, so they were discarded as
+// "unsettled" at 25s even though a 400s run confirms they are: speed
+// 7.38 at both 25s and 400s, `out/polar.csv` reporting 4.36 for that row
+// because the fast trims never accumulated their 10 consecutive seconds
+// in time. Fixed with a SLIDING window instead of a resettable counter
+// (settleWindow most recent 1Hz samples; converged once their spread,
+// not their per-step delta, is small) — this detects the same genuine
+// convergence without needing every intermediate second to individually
+// look flat, and maxSeconds raised 25->35 to give slow trims enough
+// runway to actually reach it (verified against the diagnostic's own
+// case: settles at t=29s, speed 7.382, within 0.02% of the 400s value).
+function simulateToSteady(config, twaDeg, tws, sheetDeg, crewPos, brailWind = 0, maxSeconds = 35) {
   const windDirFrom = HEADING0 + twaDeg * DEG__b10;
   const controls = {
     windDirFrom, windSpeed: tws, sheet: sheetDeg * DEG__b10, rudder: 0,
@@ -2551,9 +2615,9 @@ function simulateToSteady(config, twaDeg, tws, sheetDeg, crewPos, brailWind = 0,
   let state = makeInitialState(Math.min(Math.abs(sheetDeg) * DEG__b10, Math.PI / 2));
   const dt = config.dt;
   const stepsPerSecond = Math.round(1 / dt);
-  const settleWindow = 10; // seconds of near-constant speed required
-  let lastSampleSpeed = 0;
-  let stableSeconds = 0;
+  const settleWindow = 10; // seconds of trailing samples the spread check looks across
+  const SETTLE_SPREAD = 0.05; // m/s — max-min allowed across that trailing window
+  const window = [];
   let settled = false;
 
   const maxSteps = Math.round(maxSeconds * stepsPerSecond);
@@ -2563,17 +2627,13 @@ function simulateToSteady(config, twaDeg, tws, sheetDeg, crewPos, brailWind = 0,
 
     if (i % stepsPerSecond === 0) {
       const speed = Math.hypot(state.u, state.v);
-      if (Math.abs(speed - lastSampleSpeed) < 0.01) {
-        stableSeconds += 1;
-        if (stableSeconds >= settleWindow) {
-          const headingError = Math.abs(normalizeAngle__b10(state.heading - HEADING0));
-          settled = headingError <= HEADING_HOLD_TOLERANCE;
-          break;
-        }
-      } else {
-        stableSeconds = 0;
+      window.push(speed);
+      if (window.length > settleWindow) window.shift();
+      if (window.length === settleWindow && Math.max(...window) - Math.min(...window) < SETTLE_SPREAD) {
+        const headingError = Math.abs(normalizeAngle__b10(state.heading - HEADING0));
+        settled = headingError <= HEADING_HOLD_TOLERANCE;
+        break;
       }
-      lastSampleSpeed = speed;
     }
   }
   return { speed: Math.hypot(state.u, state.v), settled, deltaDeg: state.delta / DEG__b10 };
@@ -2741,14 +2801,14 @@ const MS_TO_KN = 1.9438;
 // recording's codeVersion is meaningful (harness/replay.js warns on
 // mismatch) for a downloaded bundle without requiring a build step for
 // plain `python3 -m http.server` development.
-const CODE_VERSION = "96b833b+dirty";
+const CODE_VERSION = "9a11c2a";
 // BUILD_TIME: same pattern as CODE_VERSION above — tools/bundle.js
 // replaces this with the COMMIT's timestamp (not wall-clock build time),
 // so it stays stable across re-bundling the same commit and always
 // matches CODE_VERSION's hash. Shown in the bottom-right version footer
 // so a bug report/recording can be tied to an exact, dated build without
 // having to separately ask "which commit was this."
-const BUILD_TIME = "2026-07-21T22:58:17+02:00";
+const BUILD_TIME = "2026-07-22T22:00:01+02:00";
 
 // ---------------------------------------------------------------------
 // i18n — EN/PL. Static labels are marked with data-i18n="key" in
