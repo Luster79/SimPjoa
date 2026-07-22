@@ -28,6 +28,34 @@ jobs:
       - name: Run the acceptance suite
         run: node run_tests.js
 
+      # out/polar.csv is a committed reference snapshot, and the only one
+      # that has actually caught a regression the assertions missed: removing
+      # crewPos=1.0 from the search grid cut speeds 6-9% at 10 m/s, which no
+      # assertion reads (the acceptance bands are anchored at 4/6, and the
+      # deep-course tests do not sweep the crew grid) and which was noticed
+      # purely from the diff. Until this step existed, that tripwire depended
+      # on somebody eyeballing `git status` — the exact manual-vigilance
+      # failure the 2026-07-22 review is about.
+      #
+      # The sweep is deterministic (pure function of config + grid, no RNG,
+      # dt-converged), so byte equality is the right test: any difference is
+      # a real change in the model or the search. A legitimate physics change
+      # is expected to fail this step once and be committed with the
+      # regenerated file, same contract as the bundle job below.
+      #
+      # Scoped to polar.csv on purpose. The scenario CSVs in out/ are ~12 MB
+      # of per-step diagnostic dump whose behaviour the assertions already
+      # cover directly; gating on those would force a 12 MB diff into every
+      # physics PR to re-verify what the suite just checked.
+      - name: Committed polar reference is unchanged
+        run: |
+          if ! git diff --quiet -- out/polar.csv; then
+            echo "::error::out/polar.csv changed — the model or the search moved. Review the diff; if intended, commit the regenerated file."
+            git diff -- out/polar.csv
+            exit 1
+          fi
+          echo "Polar reference unchanged."
+
   bundle:
     name: dist/ matches its sources
     timeout-minutes: 10

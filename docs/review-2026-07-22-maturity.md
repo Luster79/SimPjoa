@@ -2,6 +2,8 @@
 
 *Last reviewed: 2026-07-22*
 *Zakres: cały projekt na commicie `96b833b`. Kod, testy, build, CI, dokumentacja, higiena repo.*
+*Uzupełnione po `f9920bf`: pkt 15 oraz sekcja „Stan realizacji" — patrz
+`review-2026-07-22-response.md` po stronę wykonawczą.*
 
 ---
 
@@ -31,7 +33,7 @@ Cała gwarancja jakości opiera się dziś na tym, że ktoś ręcznie pamięta o
 
 ### Krytyczne
 
-- [ ] **1. CI nie testuje tego projektu.**
+- [x] **1. CI nie testuje tego projektu.**
   `.github/workflows/playwright.yml` uruchamia `npx playwright test`, a jedyny test to
   `tests/example.spec.js` — nietknięty scaffold Playwrighta, który wchodzi na
   `playwright.dev` i sprawdza tytuł ich strony. Prawdziwy pakiet (80 asercji,
@@ -61,6 +63,36 @@ Cała gwarancja jakości opiera się dziś na tym, że ktoś ręcznie pamięta o
   co sugeruje że bundle bywał budowany na nie do końca aktualnym drzewie.)
   *Naprawa:* budować bundle w hooku `post-commit`, albo stemplować hash po commicie.
 
+### Dopisane po weryfikacji (stan po `f9920bf`)
+
+- [ ] **15. Pakiet asercji nie wykrywa realnych zmian w modelu.**
+  Nowy punkt, nieobecny w pierwotnym review — wyszedł dopiero przy weryfikacji
+  odpowiedzi. Waga: **krytyczna**, i rosnąca, bo od `59b589e` CI opiera swój
+  werdykt właśnie na tym pakiecie.
+
+  Trzy niezależne potwierdzenia:
+
+  1. Zmiana w `rollRestoreMoment` oparta na błędnej diagnozie przeszła **80/80**
+     — asercje nie pokrywają reżimu głęboko zanurzonej amy.
+     *(zgłoszone w `review-2026-07-22-response.md`)*
+  2. Usunięcie `crewPos=1.0` z siatki wyszukiwania obcięło prędkości o 6-9 %
+     przy 10 m/s, przeszło asercje i zostało wychwycone dopiero przez diff
+     `out/polar.csv` — asercje nie sięgają 10 m/s.
+     *(jw.)*
+  3. **Zmierzone przy tym review:** `sail.area` +2 % — zmiana jednoznacznie
+     fizyczna — porusza **42 z 43** wierszy `out/polar.csv`, a mimo to
+     przechodzi **80/80 asercji bez jednej porażki**.
+
+  Wniosek: pakiet dobrze pokrywa *jakościowe* własności (ciągłość przy shuncie,
+  kierunek sterowania, determinizm, kolejność zdarzeń przy wywrotce), ale prawie
+  nie ma asercji *ilościowych* zakotwiczonych na tyle ciasno, żeby wykryć
+  przesunięcie kalibracji. Pasma są ustawione na 4/6 m/s i szerokie.
+
+  *Kierunek naprawy:* kilka wąskich asercji na wartości bezwzględne przy 10 m/s
+  i w reżimie zanurzonej amy — albo, taniej, uznanie diffu `out/polar.csv` za
+  formalną część kontraktu testowego (zrobione w CI, patrz pkt 1) i
+  udokumentowanie tego jako świadomej decyzji, a nie przypadku.
+
 ### Średnie
 
 - [ ] **3. `abackWarning` jest martwym kodem, który wygląda na żywy.**
@@ -72,7 +104,7 @@ Cała gwarancja jakości opiera się dziś na tym, że ktoś ręcznie pamięta o
   *Naprawa:* albo przepuścić przez `integrate()`, albo usunąć z `updateAback()`
   i poprawić komentarz sygnatury.
 
-- [ ] **4. Bundle jest commitowanym artefaktem budowania i cicho się rozjeżdża.**
+- [x] **4. Bundle jest commitowanym artefaktem budowania i cicho się rozjeżdża.**
   `dist/simulator_standalone.html` (300 KB) jest w repo, ale **nic nie weryfikuje,
   że odpowiada źródłom**. W momencie review był niezgodny w drzewie roboczym.
   To samo dotyczy `tools/sync-demo.sh`, które pcha ten plik na publiczne GitHub Pages —
@@ -87,7 +119,7 @@ Cała gwarancja jakości opiera się dziś na tym, że ktoś ręcznie pamięta o
   *Naprawa:* `out/` do `.gitignore`. Nagrania i bundle to osobna decyzja (są celowo
   dystrybuowane), ale warto je świadomie potwierdzić.
 
-- [ ] **6. Siatka polara rozjeżdża się między harnessem a UI.**
+- [x] **6. Siatka polara rozjeżdża się między harnessem a UI.**
   `run_tests.js:57` używa `twsList: [4, 6, 10]`, `ui/app.js:2273` używa `[4, 6, 8, 10]`.
   `out/polar.csv` ma 41 wierszy danych, UI produkuje 56. README twierdzi przy tym,
   że tryb polara uruchamia *„the same expensive grid-search sweep `run_tests.js` runs"* —
@@ -123,7 +155,7 @@ Cała gwarancja jakości opiera się dziś na tym, że ktoś ręcznie pamięta o
   `ROUND*`/`DIAGNOSTIC*`. Konwencja archiwizowania po rundzie istnieje
   (`Archive/` ma 16 plików), ale rundy 10c, 10d i 11 przez nią nie przeszły.
 
-- [ ] **12. `.claude/settings.json` dodaje `"Bash(python3 -c ' *)"`.**
+- [x] **12. `.claude/settings.json` dodaje `"Bash(python3 -c ' *)"`.**
   W praktyce zgoda na wykonanie dowolnego kodu Pythona, i to w ustawieniach
   *projektowych* (współdzielonych), nie lokalnych. (Zmiana niezacommitowana
   w momencie review.)
@@ -139,13 +171,40 @@ Cała gwarancja jakości opiera się dziś na tym, że ktoś ręcznie pamięta o
 
 ---
 
-## Sugerowana kolejność
+## Stan realizacji
 
-1. **Wpiąć `node run_tests.js` do CI** i usunąć scaffold Playwrighta. (pkt 1)
-2. **Naprawić stempel `CODE_VERSION`.** (pkt 2)
-3. **Dodać do CI bramkę „bundle jest aktualny".** (pkt 4)
-4. **Wypchnąć `out/` z gita** do `.gitignore`. (pkt 5)
-5. **Przepisać `CLAUDE.md`** pod ten projekt. (pkt 8)
+Zamknięte w `59b589e` (zweryfikowane niezależnie, nie przyjęte na słowo):
+**1** (CI uruchamia `run_tests.js`, scaffold usunięty), **4** (bramka zgodności
+bundla — testy pozytywny i negatywny), **6** (`SWEEP_CI`/`SWEEP_FULL` + README),
+**12** (wzorzec `python3 -c` usunięty).
 
-Punkty 1+2+3 tworzą jedną spójną porcję („zaufanie do buildu i CI") i domykają
-największą lukę. Punkty 3, 6, 9, 14 to drobne, szybkie poprawki na przy okazji.
+Zamknięte później: **pkt 1 rozszerzony** o bramkę na `out/polar.csv`
+(negatywny test przechodzi; osobno zmierzono czułość — `sail.area` +2 % rusza
+42 z 43 wierszy).
+
+Częściowo: **2** — marker `+dirty` czyni stempel *uczciwym*, ale nie
+*identyfikującym*. Wydany bundle nosi `96b833b+dirty`, co nigdy nie zrówna się
+z żadnym checkoutem, więc `harness/replay.js` będzie ostrzegać przy każdym
+nagraniu z każdego dema. Cel z README („tie a recording to an exact build")
+pozostaje nieosiągnięty. Uwaga: argument przeciw hookowi `post-commit`
+(„wywali bramkę z pkt 4") **nie trzyma się** — bramka wycina stempel przed
+porównaniem, co sprawdzono.
+
+Wycofane: **5** — założenie, że `out/` generuje szum w `git status`, jest
+**nieprawdziwe**. Po pełnym `node run_tests.js` drzewo jest czyste; pliki są
+deterministyczne. Koszt to wyłącznie rozmiar historii, a korzyść (tripwire,
+pkt 15) jest realna i teraz zautomatyzowana.
+
+## Sugerowana kolejność dalej
+
+1. **pkt 15 — czułość pakietu asercji.** Największa otwarta luka: CI ufa
+   pakietowi, który nie widzi zmiany `sail.area` o 2 %.
+2. **pkt 8 — `CLAUDE.md` opisuje inny projekt.** Najtańszy, ładuje się na
+   starcie każdej sesji.
+3. **pkt 2 — dokończyć stempel.** Wymaga decyzji: hook `post-commit` czy
+   wyprowadzenie `dist/` z repo i budowanie w CI.
+4. **pkt 9, 14, 3** — drobne, szybkie (`npm test`; `reset()` i `lastForces`;
+   rozstrzygnięcie `abackWarning`).
+5. **pkt 7** — podział szybki/wolny pakiet; waga rośnie, odkąd CI faktycznie
+   testuje.
+6. **pkt 11, 13, 10** — archiwizacja rund, podział monolitów, lint/typy.
