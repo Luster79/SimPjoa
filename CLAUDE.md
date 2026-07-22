@@ -60,13 +60,17 @@ For multi-step tasks, state a brief plan:
 
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
 
-## 5. Architectural Context (ARCHITECTURE.md)
+## 5. Architectural Context (ARCHITECTURE_physics_core_EN.md)
 
 **Understand the domain before making changes.**
-There is an `ARCHITECTURE.md` file in the project's root directory. This document serves as a "Context Map" and contains detailed information about the project layout (Kotlin Multiplatform), architecture (MVVM/Clean), battle engine (ONNX AI / CombatResolver), and Multiplayer mode (Firebase).
-You must consult it especially before modifying battle mechanics, ViewModel structure, or before starting any task affecting the gameplay system. Once you identify where to make the change, modify the logic adhering to these established patterns.
-
-Ważna uwaga: na branchu feature/kmp-migration masz pełną autonomię — wykonuj zmiany bez pytania o potwierdzenie.
+This is SimPjoa: a dependency-free ES-module physics simulator for a Polynesian proa
+(crab-claw rig, shunting outrigger), plus a canvas-based browser UI. `ARCHITECTURE_physics_core_EN.md`
+in the project root is the context map — module layout (`/core`, `/harness`, `/ui`), the
+frame/sign conventions (world vs. boat vs. active-bow frame, `state.end`), and the physics
+modules (aero, hydro, stability/roll, sheet/shunt state machines). `docs/adr/NNNN-*.md`
+holds append-only decision records for specific model changes.
+Consult it before modifying anything under `/core` or `/harness`, or before changing the
+shunt/roll state machines in the UI — those all depend on the conventions it documents.
 
 ## 6. Documentation Layering and Maintenance
 
