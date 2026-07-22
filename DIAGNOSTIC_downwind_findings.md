@@ -1,6 +1,6 @@
 # Diagnostic: deep-course behaviour (TWA 140-180)
 
-Date: 2026-07-20. Last reviewed: 2026-07-21.
+Date: 2026-07-20. Last reviewed: 2026-07-22.
 Scope: investigation only — **no physics code was changed**. One fix was attempted
 against Result 2 and reverted; see the correction note there.
 
@@ -101,6 +101,14 @@ Fore-aft ballast (`crewPosX`) is equally inert downwind: it shifts CLR only
 A beam reach is always fastest, and a dead run is capped below wind speed. The 2.2x
 ratio is expected — it is why a proa tacks downwind rather than running square. No
 change recommended.
+
+> **Follow-up (2026-07-22).** The closing inference does not survive measurement.
+> Timed end to end, running deep beats tacking downwind on this boat once the
+> residuary tail is given a physically plausible plateau — the reverse holds only
+> on the shipped drag model. Note also that the 6.33 m/s above is the model's FAST
+> branch; `out/polar.csv` reports 4.41 m/s as its maximum at this wind, because the
+> polar's settle gate discards the fast trims. See
+> `docs/diagnostic-2026-07-22-residuary-hump.md`.
 
 The recordings do show a trim problem, though: all three carry `brailWind = 0.92`,
 well inside the SURVIVAL regime (`sail.brailTrimRange` = 0.6), where CL is cut **x0.2**
