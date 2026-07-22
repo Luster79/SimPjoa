@@ -260,7 +260,11 @@ Step 2, since the UI doesn't change them):
 - **No waves or current.** Water is a still reference frame; residuary
   (wave-making) resistance is a bounded Froude-number-dependent term on
   the hull only (round 9, `ROUND9_physics_fidelity_work_order.md` R9-1 —
-  a slender-hull hump, not a simulated sea state).
+  a slender-hull hump, not a simulated sea state). Consequence (P5,
+  docs/work-order-2026-07-22.md): a followed sea is the main real-world
+  cause of yaw-hunting on offwind courses, so the model's stable,
+  rudder-free deep-course equilibria are optimistic — they should not be
+  read as "this boat holds a dead run hands-off on the water."
 
 Carried forward from the round-2 sign-off (`STEP1_SIGNOFF_and_STEP2_instructions.md`
 Part A) as calibration watch items, not bugs:
