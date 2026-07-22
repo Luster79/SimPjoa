@@ -298,6 +298,23 @@ function buildDefaultConfig() {
       residuaryPeakCr: 0.006,             // tunable — Cr at the hump's peak, ~2x Cf (slender-hull order of magnitude, not a monohull's 100x+)
       residuaryFrPeak: 0.5,               // tunable — Fr at which residuary resistance peaks (the main prismatic hump)
       residuaryFrWidth: 0.18,             // tunable — Gaussian width; keeps the hump's rise/fall gentle (naturally ~0 below Fr~0.3, per work order's "~0 below Fr~0.35")
+      // Tail plateau past the hump (P1, docs/work-order-2026-07-22.md;
+      // docs/diagnostic-2026-07-22-residuary-hump.md; docs/adr/0006):
+      // the pure Gaussian falls back toward 0 for Fr well past FrPeak,
+      // which let the polar's settle-gate bug hide a SECOND, unphysically
+      // fast branch (semi-planing relief past the hump is real, but a
+      // slender canoe hull doesn't shed residuary resistance all the way
+      // back to ~friction-only — Dierking's proa speed data tops out
+      // well short of that). Holds Cr at this fraction of its peak value
+      // for Fr > FrPeak instead of letting the Gaussian tail go to ~0,
+      // capping reach-speed at TWS6 well under the un-plateaued model's
+      // >14.4kn. The diagnostic's own 2-seed hysteresis probe (TWA135,
+      // u0=1.0 vs 6.5) only needs >=0.10 to lose the double branch there,
+      // but P1's own acceptance bar is stricter — total resistance
+      // genuinely non-decreasing across a fine 3-9 m/s sweep, not just at
+      // those two sample speeds — which a dense sweep showed first holds
+      // at ~0.32; 0.35 clears it with margin.
+      residuaryTailPlateau: 0.35,          // tunable — fraction of residuaryPeakCr retained far past FrPeak (smallest value clearing a fine-grained non-decreasing-resistance sweep, 3-9 m/s)
       // hullSideForceCoeff (round 10, R10-3, docs/adr/0004): replaces the
       // old sideForceCoeff/leewaySaturationDeg/leewayMushingCoeff trio
       // (a saturate-then-mush shape with NO measured basis) with a
@@ -668,12 +685,32 @@ function buildDefaultConfig() {
       coeff: 2.1,
     },
 
+    // P4 (docs/work-order-2026-07-22.md; docs/diagnostic-2026-07-22-
+    // residuary-hump.md Result 6): the shipped speedLockout=4 m/s (7.8kn)
+    // and 5.0s total sequence let a proa shunt near full reach speed —
+    // the literature is unanimous a proa comes to a genuine stop first,
+    // with the crew physically carrying the yard heel end to end (a
+    // materially slower process than a quick automatic animation).
+    // speedLockout is lowered toward "nearly stopped," bounded below by
+    // harness/scenarios.js's scenarioShunt — an unmodified structural test
+    // of shunt continuity on a steady TWA90/TWS6 beam reach, not a "ease
+    // down to a stop" maneuver test (see its own header comment) — whose
+    // fixed sheet=60deg trim settles to 2.49 m/s by the time it requests
+    // its first shunt. A value below that would simply never fire the
+    // scenario's shunts rather than model a real stop; fully closing that
+    // gap would mean reworking the scenario to ease down before
+    // requesting a shunt, out of this item's small-effort scope. Phase
+    // durations are lengthened ~3x (5.0s -> 16.4s total) to reflect the
+    // same "this is a deliberate human process, not a quick trim" finding
+    // — transferDuration (physically carrying the yard) gets the largest
+    // share; swapDuration (bookkeeping bow/stern relabel, no physical
+    // action) is left unchanged.
     shunt: {
-      speedLockout: 4,          // m/s — shunt locked out above this speed
-      easeDuration: 1.2,        // s
-      transferDuration: 1.8,    // s
+      speedLockout: 2.6,        // m/s — shunt locked out above this speed
+      easeDuration: 4.0,        // s
+      transferDuration: 8.0,    // s
       swapDuration: 0.4,        // s (near-instantaneous role swap)
-      sheetDuration: 1.6,       // s
+      sheetDuration: 4.0,       // s
     },
 
     aeroTableV1,

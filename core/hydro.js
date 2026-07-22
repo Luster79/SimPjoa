@@ -32,9 +32,20 @@ export function hullResistance(u, config) {
   // as a bounded Gaussian hump peaking near the main prismatic hump
   // (residuaryFrPeak), never growing past a few x friction. See config.js
   // hull.residuaryPeakCr/FrPeak/FrWidth comment for the literature basis.
+  //
+  // Past the hump (Fr > FrPeak) the pure Gaussian falls back toward 0,
+  // which is the "gear change" hysteresis bug P1 fixes (docs/work-order-
+  // 2026-07-22.md; docs/diagnostic-2026-07-22-residuary-hump.md; docs/adr/
+  // 0006): the settle-gate could reach a second, unphysically fast branch
+  // riding that low tail. A slender hull's residuary resistance doesn't
+  // fall all the way back to ~friction-only past the hump, so the tail is
+  // held at a plateau fraction of the peak instead of decaying to 0.
   const Fr = uAbs / Math.sqrt(g * hull.length);
   const z = (Fr - hull.residuaryFrPeak) / hull.residuaryFrWidth;
-  const Cr = hull.residuaryPeakCr * Math.exp(-z * z);
+  const gaussian = Math.exp(-z * z);
+  const Cr = hull.residuaryPeakCr * (Fr > hull.residuaryFrPeak
+    ? hull.residuaryTailPlateau + (1 - hull.residuaryTailPlateau) * gaussian
+    : gaussian);
   const residuary = 0.5 * rho_w * hull.wettedSurface * Cr * uAbs * uAbs;
 
   return -Math.sign(u) * (friction + residuary);
