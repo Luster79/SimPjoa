@@ -11,6 +11,7 @@ import { computeAmaLoad, updateAback, rollRestoreMoment, crewRollMoment, rollDam
 import { amaDrag, hullResistance, hullSideForce } from '../core/hydro.js';
 import { createConfig } from '../core/config.js';
 import { computePolar, headingHoldRudder } from './polar.js';
+import { createSimulator } from '../core/simulator.js';
 import { scenarioSquall, scenarioShunt, scenarioAback, scenarioStop, scenarioBackwindSlam, scenarioThroughGybeAback } from './scenarios.js';
 import { hashState } from './checksum.js';
 
@@ -76,7 +77,14 @@ function finiteSeries(series) {
     Number.isFinite(s.u) && Number.isFinite(s.v) && Number.isFinite(s.r));
 }
 
-export function runAsserts(config) {
+// slow (R7, docs/work-order-2026-07-22.md): every check that calls
+// computePolar() runs a sheet/crewPos/brail grid search, each cell its own
+// settle-to-steady simulation — the dominant cost of the whole suite's
+// runtime. Defaults true (the full, `npm run test:full` behavior); the
+// fast set (`npm test`) passes slow=false to skip these and stay under
+// ~20s for a quick inner-loop check, at the cost of not covering polar
+// shape/speed-band regressions — run_tests.js's CI job runs the full set.
+export function runAsserts(config, { slow = true } = {}) {
   const results = [];
   // xfail (ROUND7_DECISION.md D-3/D-4): a known, diagnosed model limitation
   // that still RUNS every time (never silently skipped) but is expected to
@@ -160,7 +168,8 @@ export function runAsserts(config) {
       speed >= 0.05 && speed <= 0.4, `speed=${speed.toFixed(4)} m/s (u=${state.u.toFixed(4)} v=${state.v.toFixed(4)})`);
   }
 
-  // --- 3. Polar shape + speed anchor (TWS=6) ---
+  // --- 3. Polar shape + speed anchor (TWS=6) --- (slow: computePolar sweep)
+  if (slow) {
   const polar = computePolar(config, { twsList: [6], twaFrom: 40, twaTo: 170, step: 10 });
   const bySpeed = (twa) => polar.find((r) => r.twa === twa)?.bestSpeed ?? 0;
   const globalMax = Math.max(...polar.map((r) => r.bestSpeed));
@@ -197,12 +206,23 @@ export function runAsserts(config) {
   // report it, do not steer it") — but only slightly, to 0.622: real,
   // measured, and correctly signed, but not enough on its own to bring
   // the ratio back in-band. Reported honestly as the combined R10-1+R10-3
-  // outcome, not retuned to force a pass — see
-  // ROUND10_data_integration_findings.md.
+  // outcome, not retuned to force a pass (demoted to xfail:CALIBRATION
+  // rather than block the build over an honestly-reported, unresolved
+  // gap) — see ROUND10_data_integration_findings.md.
+  //
+  // Closed for real by P1+P2 (docs/work-order-2026-07-22.md), not by any
+  // close-hauled-specific fix: bySpeed(40) is untouched by either change
+  // (a slow beat, nowhere near the residuary hump), but globalMax was
+  // wrong the whole time it stayed in-band — harness/polar.js's settle
+  // gate (P2) was discarding the polar's true fast branch as "unsettled,"
+  // and even once seen (P2 alone), that branch's speed was unphysically
+  // high because the residuary tail decayed to ~0 past the hump instead
+  // of holding a plateau (P1). With both fixed, globalMax rose to its
+  // true, properly-bounded value and the ratio fell back under 0.55
+  // (measured 0.502) — promoted back to a real, always-must-pass check.
   check('no meaningful progress below ~50deg TWA',
     bySpeed(40) < 0.55 * globalMax,
-    `speed(40)=${bySpeed(40).toFixed(2)} globalMax=${globalMax.toFixed(2)} ratio=${(bySpeed(40) / globalMax).toFixed(3)} -- R10-1 alone: 0.641; R10-3's opposing pull brought it to this value (still above the 0.55 band); see ROUND10_data_integration_findings.md`,
-    'CALIBRATION');
+    `speed(40)=${bySpeed(40).toFixed(2)} globalMax=${globalMax.toFixed(2)} ratio=${(bySpeed(40) / globalMax).toFixed(3)} -- closed by P1+P2 (was 0.641/0.622 pre-fix, above the 0.55 band); see docs/work-order-2026-07-22.md`);
   check('polar peak lands on a reach (90-135deg near the global max)', maxIn90to135 >= 0.85 * globalMax,
     `max@90-135=${maxIn90to135.toFixed(2)} globalMax=${globalMax.toFixed(2)}`);
   const speed90 = bySpeed(90);
@@ -234,14 +254,26 @@ export function runAsserts(config) {
   // drive to punch through the hump into the falling-away, semi-planing
   // side (confirmed NOT a grid-search artifact at fine 2deg resolution:
   // a genuine cliff between TWA=114/118 at TWS=6 — see ROUND9_physics_
-  // fidelity_findings.md). Round 10 (R10-1): the weaker Di Piazza-anchored
-  // sail no longer generates enough drive anywhere in the polar to reach
-  // that breakthrough regime (TWS=6 max speed now ~4.4 m/s, down from
-  // ~7.9) — re-checked at fine (5deg) resolution across the whole 60-170
-  // range with NO discontinuity anywhere (worst adjacent drop 9.2%, was
-  // >27%) — promoted, not re-tagged: the hump is still there in the
-  // model (hydro.js, unchanged), the boat just doesn't reach it anymore
-  // at this sail power; see ROUND10_data_integration_findings.md.
+  // fidelity_findings.md).
+  //
+  // Round 10's promotion rationale ("the weaker Di Piazza-anchored sail no
+  // longer generates enough drive anywhere in the polar to reach that
+  // breakthrough regime ... the boat just doesn't reach it anymore at this
+  // sail power") was FALSIFIED by docs/diagnostic-2026-07-22-residuary-
+  // hump.md Result 5: the boat did still reach the breakthrough regime the
+  // whole time — harness/polar.js's settle gate (fixed as P2, docs/work-
+  // order-2026-07-22.md) was discarding those still-accelerating trims as
+  // "unsettled" before they could show it, so the check passed on a
+  // filtered dataset, not because the discontinuity was absent.
+  //
+  // Re-verified honestly with P2's settle gate fixed: the cliff DOES
+  // reappear in the raw data (worstDrop 38.3% with P2 alone, hump
+  // uncapped) — but P1's residuary tail plateau (docs/adr/0006) bounds how
+  // fast the breakthrough branch can get relative to its neighbors, and
+  // with both fixes applied together the adjacent-row jump falls back
+  // under the 20% bar (worst measured 13.5% at TWA=110-120) for real, not
+  // by hiding the reach. The hump breakthrough is genuinely being sailed
+  // through now, just no longer steeply enough to read as a cliff.
   {
     const twasInRange = polar.map((r) => r.twa).filter((twa) => twa >= 60 && twa <= 170).sort((a, b) => a - b);
     let worstDrop = 0, worstTwa = null;
@@ -254,6 +286,22 @@ export function runAsserts(config) {
     check('polar speed does not drop >20% between adjacent TWA rows (60-170deg)', worstDrop <= 0.20,
       `worstDrop=${(worstDrop * 100).toFixed(1)}% at twa=${worstTwa}`);
   }
+
+  // R15 (docs/work-order-2026-07-22.md): a narrow absolute band, anchored
+  // post-P1 — the review that prompted this item found a +2% sail.area
+  // change moved 42 of 43 polar rows without tripping any assertion (only
+  // the committed out/polar.csv byte-gate caught it, and that gate is a
+  // tripwire, not an assertion: it says something changed, never what).
+  // TWA100/TWS10 (the polar's own fastest TWS10 row) moves by ~0.4-0.6%
+  // for a +-2% area change (measured 9.7588 base, 9.7950 at +2%, 9.6964 at
+  // -2%) — narrow enough that either direction lands outside this band.
+  {
+    const row10 = computePolar(config, { twsList: [10], twaFrom: 100, twaTo: 100, step: 1 })[0];
+    check('R15: reach speed at TWS=10, TWA=100 is within a narrow absolute band [9.70,9.78] m/s',
+      row10.bestSpeed >= 9.70 && row10.bestSpeed <= 9.78,
+      `speed=${row10.bestSpeed.toFixed(4)} m/s (sheet=${row10.bestSheetAngle})`);
+  }
+  } // if (slow) — section 3
 
   // --- 4. Numerical stability + energy damping at zero wind ---
   {
@@ -1167,6 +1215,15 @@ export function runAsserts(config) {
       staticRatio >= 0.05 && staticRatio <= 0.15, `ratio=${staticRatio.toFixed(3)}`);
     check('R7-4a: ama/hull drag ratio at max immersion is in [0.15,0.45] (re-derived R9-3 for the physical formFactor range)',
       maxRatio >= 0.15 && maxRatio <= 0.45, `ratio=${maxRatio.toFixed(3)}`);
+
+    // R15 (docs/work-order-2026-07-22.md): the ratio checks above are
+    // insensitive to a change that moves ama and hull drag by the same
+    // factor (a ratio-only suite misses that entirely — the same class of
+    // gap the review found with sail.area). A narrow absolute band on the
+    // submerged-ama regime's own drag force, same reference condition
+    // (u=1.6, amaLoad=1.3 — past full submersion), anchored post-R9-3.
+    check('R15: ama drag force at max immersion (amaLoad=1.3, u=1.6 m/s) is within a narrow absolute band [4.0,4.45] N',
+      maxAmaFx >= 4.0 && maxAmaFx <= 4.45, `Fx=${maxAmaFx.toFixed(3)}N`);
   }
 
   // --- R7-4b (ROUND7_drag_calibration.md, refined per ROUND7_DECISION.md
@@ -1299,11 +1356,14 @@ export function runAsserts(config) {
     }
     const twaFinal = Math.abs(normalizeAngle(windDirFrom - state.heading)) / DEG;
     const speed = Math.hypot(state.u, state.v);
-    const polar120 = computePolar(config, { twsList: [6], twaFrom: 120, twaTo: 120, step: 1 })[0];
-    const halfPolar120 = polar120.bestSpeed / 2;
-    check('D4-1: eased polar-optimal trim + carrot holds TWA165+-10 with moderate rudder at real speed',
-      !state.capsized && Math.abs(twaFinal - twaDeg) <= 10 && (sum / n) <= 0.5 && speed > halfPolar120,
-      `twaFinal=${twaFinal.toFixed(1)} mean|rudder|=${(sum / n).toFixed(4)} speed=${speed.toFixed(2)} (half TWA120 polar=${halfPolar120.toFixed(2)})`);
+    // slow: the halfPolar120 threshold needs its own computePolar call.
+    if (slow) {
+      const polar120 = computePolar(config, { twsList: [6], twaFrom: 120, twaTo: 120, step: 1 })[0];
+      const halfPolar120 = polar120.bestSpeed / 2;
+      check('D4-1: eased polar-optimal trim + carrot holds TWA165+-10 with moderate rudder at real speed',
+        !state.capsized && Math.abs(twaFinal - twaDeg) <= 10 && (sum / n) <= 0.5 && speed > halfPolar120,
+        `twaFinal=${twaFinal.toFixed(1)} mean|rudder|=${(sum / n).toFixed(4)} speed=${speed.toFixed(2)} (half TWA120 polar=${halfPolar120.toFixed(2)})`);
+    }
 
     // D4-2: dead run (TWA175) is holdable without sternway, at that TWA's
     // own polar-optimal sheet (60deg).
@@ -1356,8 +1416,8 @@ export function runAsserts(config) {
   // after numbers). Likewise "survival regime regression" is the existing
   // T6 / stop-scenario / squall-scenario checks elsewhere in this file
   // continuing to pass unchanged — no new code needed for that item,
-  // just confirmed by the full suite run. ---
-  {
+  // just confirmed by the full suite run. --- (slow: computePolar x2)
+  if (slow) {
     // C-speed: deep-course speed sanity, data-anchored. steady speed
     // ratio speed(TWA160)/speed(TWA105) at TWS6 with optimal trim
     // (computePolar's own search now includes brailWind for TWA>=135 —
@@ -1492,6 +1552,26 @@ export function runAsserts(config) {
       firstDivergence !== -1
         ? `first divergence at step ${firstDivergence}/${n}`
         : lengthMatch ? `${seriesA.length} steps matched` : `length mismatch: ${seriesA.length} vs ${seriesB.length}`);
+  }
+
+  // --- R14 (docs/work-order-2026-07-22.md): simulator.js facade —
+  // reset() must clear lastForces along with state, not just leave it
+  // holding whatever the previous run last computed until the next
+  // step(). Invisible in the live UI (which steps every frame right
+  // after a reset), but a real facade inconsistency for any other
+  // caller that reads forcesBreakdown() before stepping.
+  {
+    const sim = createSimulator();
+    sim.step({ windDirFrom: Math.PI, windSpeed: 8, sheet: 40 * DEG, rudder: 0,
+      brailLee: 0, brailWind: 0, crewPos: 0.3, crewPosX: 0, shuntRequest: false }, 2);
+    const forcesBeforeReset = sim.forcesBreakdown();
+    sim.reset();
+    const forcesAfterReset = sim.forcesBreakdown();
+    const freshForces = createSimulator().forcesBreakdown();
+    check('R14: reset() clears lastForces, not just state',
+      forcesAfterReset.Fx === freshForces.Fx && forcesAfterReset.Fy === freshForces.Fy && forcesAfterReset.M === freshForces.M
+      && (forcesBeforeReset.Fx !== freshForces.Fx || forcesBeforeReset.Fy !== freshForces.Fy),
+      `before=${forcesBeforeReset.Fx.toFixed(2)},${forcesBeforeReset.Fy.toFixed(2)} after=${forcesAfterReset.Fx.toFixed(2)},${forcesAfterReset.Fy.toFixed(2)} fresh=${freshForces.Fx.toFixed(2)},${freshForces.Fy.toFixed(2)}`);
   }
 
   return results;

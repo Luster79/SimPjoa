@@ -12,8 +12,25 @@ on:
     branches: [main, master]
 
 jobs:
+  # fast-tests (R7, docs/work-order-2026-07-22.md): the computePolar-backed
+  # checks and the CSV/polar export (below, in `tests`) are the dominant
+  # cost of the full suite (~6min) — this job runs everything else
+  # (`npm test`, harness/asserts.js's `slow: false` path) for quick
+  # feedback, in parallel with the full job rather than instead of it.
+  fast-tests:
+    name: Fast acceptance suite (no polar sweep)
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      - name: Run the fast acceptance suite
+        run: npm test
+
   tests:
-    name: Physics + acceptance suite
+    name: Physics + acceptance suite (full)
     timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
@@ -25,8 +42,8 @@ jobs:
       # the only devDependencies are Playwright + @types/node, neither of
       # which this job needs. Skipping the install keeps it quick and stops
       # the suite failing over an unrelated dependency problem.
-      - name: Run the acceptance suite
-        run: node run_tests.js
+      - name: Run the full acceptance suite
+        run: npm run test:full
 
       # out/polar.csv is a committed reference snapshot, and the only one
       # that has actually caught a regression the assertions missed: removing

@@ -8,15 +8,23 @@ import { scenarioSquall, scenarioShunt, scenarioAback, scenarioStop, scenarioThr
 import { computePolar, SWEEP_CI } from './harness/polar.js';
 import { toCSV } from './harness/export.js';
 
+// --fast (R7, docs/work-order-2026-07-22.md): skips every computePolar-
+// backed assertion (see harness/asserts.js's `slow` param) and the CSV/
+// polar export below — both dominated by grid-search settle-to-steady
+// simulations, the slow part of the ~6min full run. Target <~20s, for a
+// quick inner-loop check; `npm run test:full` (no flag) runs everything,
+// including the out/polar.csv byte-gate CI depends on.
 function main() {
+  const fast = process.argv.includes('--fast');
+
   console.log('Building CONFIG (loading + cross-checking aero table)...');
   const config = createConfig();
   console.log('CONFIG OK.\n');
 
   mkdirSync('out', { recursive: true });
 
-  console.log('Running acceptance assertions...');
-  const results = runAsserts(config);
+  console.log(`Running acceptance assertions${fast ? ' (--fast: skipping polar-sweep checks)' : ''}...`);
+  const results = runAsserts(config, { slow: !fast });
   const nonXfail = results.filter((r) => !r.xfail);
   const xfail = results.filter((r) => r.xfail);
 
@@ -46,21 +54,25 @@ function main() {
     console.log('');
   }
 
-  console.log('Exporting scenario CSVs to /out...');
-  writeFileSync('out/scenario_squall.csv', toCSV(scenarioSquall(config)));
-  writeFileSync('out/scenario_shunt.csv', toCSV(scenarioShunt(config)));
-  writeFileSync('out/scenario_aback.csv', toCSV(scenarioAback(config)));
-  writeFileSync('out/scenario_stop.csv', toCSV(scenarioStop(config)));
-  writeFileSync('out/scenario_through_gybe_aback.csv', toCSV(scenarioThroughGybeAback(config)));
+  if (fast) {
+    console.log('Skipping CSV/polar export (--fast).\n');
+  } else {
+    console.log('Exporting scenario CSVs to /out...');
+    writeFileSync('out/scenario_squall.csv', toCSV(scenarioSquall(config)));
+    writeFileSync('out/scenario_shunt.csv', toCSV(scenarioShunt(config)));
+    writeFileSync('out/scenario_aback.csv', toCSV(scenarioAback(config)));
+    writeFileSync('out/scenario_stop.csv', toCSV(scenarioStop(config)));
+    writeFileSync('out/scenario_through_gybe_aback.csv', toCSV(scenarioThroughGybeAback(config)));
 
-  console.log('Computing + exporting polar.csv...');
-  const polar = computePolar(config, SWEEP_CI);
-  const polarCsv = ['twa,tws,bestSpeed,bestSheetAngle,deltaAngle,bestCamberUse,bestBrailWind']
-    .concat(polar.map((r) => `${r.twa},${r.tws},${r.bestSpeed.toFixed(4)},${r.bestSheetAngle},${r.deltaAngle.toFixed(2)},${r.bestCamberUse},${r.bestBrailWind}`))
-    .join('\n');
-  writeFileSync('out/polar.csv', polarCsv);
+    console.log('Computing + exporting polar.csv...');
+    const polar = computePolar(config, SWEEP_CI);
+    const polarCsv = ['twa,tws,bestSpeed,bestSheetAngle,deltaAngle,bestCamberUse,bestBrailWind']
+      .concat(polar.map((r) => `${r.twa},${r.tws},${r.bestSpeed.toFixed(4)},${r.bestSheetAngle},${r.deltaAngle.toFixed(2)},${r.bestCamberUse},${r.bestBrailWind}`))
+      .join('\n');
+    writeFileSync('out/polar.csv', polarCsv);
 
-  console.log('Done. Output written to /out.\n');
+    console.log('Done. Output written to /out.\n');
+  }
 
   if (failCount > 0 || promotionCount > 0) {
     if (failCount > 0) console.error(`FAILED: ${failCount} assertion(s) did not pass.`);

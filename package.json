@@ -3,7 +3,10 @@
   "version": "1.0.0",
   "description": "",
   "main": "run_tests.js",
-  "scripts": {},
+  "scripts": {
+    "test": "node run_tests.js --fast",
+    "test:full": "node run_tests.js"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Luster79/SimPjoa.git"
