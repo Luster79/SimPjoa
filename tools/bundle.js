@@ -156,6 +156,40 @@ function currentCodeVersion() {
   }
 }
 
+// R2 (docs/work-order-2026-07-22.md): '+dirty' is honest but, built the
+// ordinary way — commit source changes and the freshly rebuilt dist/ file
+// together in ONE commit — it is also PERMANENT: at the moment this script
+// runs, the dist/ file it is about to write is itself still uncommitted
+// (that's the very thing making the tree dirty), so a bundle built and
+// committed in the same commit as its own sources can never carry anything
+// but '<head>+dirty', and '+dirty' never resolves to a real checkout —
+// defeating README's "tie a recording to an exact build" goal in exactly
+// the ordinary case, not just an unusual one.
+//
+// Considered a `post-commit` git hook that rebuilds dist/ once the source
+// commit has landed (tree clean, HEAD real) and commits the result
+// separately. Rejected: hooks live in .git/hooks, are not versioned or
+// auto-installed on clone, so they would silently stop applying for
+// anyone (including CI) who did not separately set one up — not a fix
+// that holds for every contributor, just for whoever remembers to install
+// it locally. Considered building dist/ only in CI/deploy and dropping it
+// from the repo — rejected too: the committed bundle's whole point is a
+// double-clickable, no-server-needed artifact for anyone who clones (see
+// this file's own "no build framework" design goal), and the CI `bundle`
+// job's staleness check (.github/workflows/ci.yml) depends on it being
+// checked in.
+//
+// Decision: process discipline, not tooling — commit source changes
+// first, THEN run this script and commit the resulting dist/ file as its
+// own, separate, immediately-following commit. By the time that second
+// commit is made, HEAD is the (real, resolvable) source commit and the
+// tree is clean, so CODE_VERSION is a plain hash with no '+dirty' — a
+// checkout of that hash reproduces the recording exactly. This is manual
+// (nothing enforces the ordering), which is the honest tradeoff for a
+// project with no existing hook/CI-install infrastructure to hang a
+// stronger guarantee on.
+
+
 // The COMMIT's own timestamp, not wall-clock build time: re-running
 // tools/bundle.js against the same commit (e.g. to pick up an unrelated
 // data-file change) shouldn't make the version footer's date drift, and
