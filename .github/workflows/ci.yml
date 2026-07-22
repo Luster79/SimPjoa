@@ -1,0 +1,60 @@
+name: CI
+
+# Replaces the Playwright scaffold workflow, which ran `npx playwright test`
+# against tests/example.spec.js — an untouched generator sample that loaded
+# playwright.dev and asserted THEIR page title. It tested nothing here, and
+# could fail on somebody else's site being down, so a green tick meant
+# neither "this project works" nor "the network was fine".
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  tests:
+    name: Physics + acceptance suite
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      # No `npm ci`: core/ and harness/ are dependency-free ES modules, and
+      # the only devDependencies are Playwright + @types/node, neither of
+      # which this job needs. Skipping the install keeps it quick and stops
+      # the suite failing over an unrelated dependency problem.
+      - name: Run the acceptance suite
+        run: node run_tests.js
+
+  bundle:
+    name: dist/ matches its sources
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      # dist/simulator_standalone.html is a committed build artifact that
+      # nothing verified: it was already out of sync in the working tree
+      # during the 2026-07-22 review, and had been committed at ab4eb27
+      # while HEAD was 3ad08a1. Rebuild and require the result to match.
+      #
+      # CODE_VERSION/BUILD_TIME are stripped from the comparison on purpose.
+      # They record which commit the sources came from, so a bundle
+      # committed alongside its own sources necessarily carries the parent's
+      # hash (see tools/bundle.js) — that is expected, and is not drift.
+      # What must not differ is the CODE.
+      - name: Rebuild the standalone bundle
+        run: |
+          cp dist/simulator_standalone.html /tmp/committed.html
+          node tools/bundle.js
+          strip() { sed -E 's/const (CODE_VERSION|BUILD_TIME) = "[^"]*"/const \1 = "X"/' "$1"; }
+          if ! diff -q <(strip /tmp/committed.html) <(strip dist/simulator_standalone.html) >/dev/null; then
+            echo "::error::dist/simulator_standalone.html is stale — run 'node tools/bundle.js' and commit the result."
+            diff <(strip /tmp/committed.html) <(strip dist/simulator_standalone.html) | head -40
+            exit 1
+          fi
+          echo "Bundle matches its sources."

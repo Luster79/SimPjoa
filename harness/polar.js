@@ -197,6 +197,21 @@ export function* computePolarSteps(config, { twsList, twaFrom = 40, twaTo = 170,
   }
 }
 
+// The two sweeps this project actually runs. They are DELIBERATELY not the
+// same grid, and naming both here is the point: they used to differ only by
+// two literals sitting in run_tests.js and ui/app.js, which read as an
+// oversight (and had the README claiming they were identical).
+//
+// SWEEP_CI omits 8 m/s. Nothing in harness/asserts.js needs that wind — the
+// acceptance bands are anchored at 4/6/10 — and the sweep is the slowest
+// part of the suite, so a fourth wind costs a third more runtime to
+// regenerate a column no assertion reads.
+// SWEEP_FULL is what the demo offers, where the extra wind is worth having:
+// it is a diagram a person reads, not an assertion, and nobody is waiting on
+// CI for it.
+export const SWEEP_CI = { twsList: [4, 6, 10], twaFrom: 40, twaTo: 170, step: 10 };
+export const SWEEP_FULL = { twsList: [4, 6, 8, 10], twaFrom: 40, twaTo: 170, step: 10 };
+
 // computePolar — unchanged blocking API for Node (tests, CSV export): drains
 // the generator above, so there is exactly one implementation of the search.
 export function computePolar(config, opts) {

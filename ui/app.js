@@ -27,7 +27,7 @@ import { createSimulator } from '../core/simulator.js';
 import { createConfig, CONFIG_VERSION } from '../core/config.js';
 import { createDefaultControls } from '../core/state.js';
 import { deltaAlign } from '../core/sheet.js';
-import { computePolar, computePolarSteps } from '../harness/polar.js';
+import { computePolar, computePolarSteps, SWEEP_FULL } from '../harness/polar.js';
 import { hashState } from '../harness/checksum.js';
 
 const DEG = Math.PI / 180;
@@ -2270,7 +2270,7 @@ btnBoat.addEventListener('click', toggleBoat);
 // build it is the literal 'dev' and never changes, so while editing core/
 // or polar.js locally the cache will happily serve a stale polar — hit Run
 // to force a recompute.
-const POLAR_SWEEP = { twsList: [4, 6, 8, 10], twaFrom: 40, twaTo: 170, step: 10 };
+const POLAR_SWEEP = SWEEP_FULL;
 
 function polarValidityKey() {
   const physics = {};

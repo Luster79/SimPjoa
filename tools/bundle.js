@@ -123,9 +123,34 @@ function readFileSync(p) {
 // checkout (or with git unavailable) falls back to 'unknown' rather than
 // failing the build over a diagnostic nicety.
 // ---------------------------------------------------------------------
+// The hash names the commit the BUNDLED SOURCES were taken from — which is
+// HEAD only when those sources are actually committed. Building on a dirty
+// tree and then committing the result in the same commit (the ordinary way
+// to change ui/app.js and refresh dist together) used to stamp the PARENT,
+// silently claiming a provenance the bundle does not have: verified at
+// 96b833b, whose dist declares 1d64cea yet contains polarValidityKey, a
+// symbol that did not exist at 1d64cea. A recording made from such a build
+// carries a codeVersion that cannot reproduce it, which is precisely what
+// harness/replay.js's mismatch warning exists to catch.
+//
+// So: check the files that actually go into the bundle (ALL_FILES, not the
+// whole tree — an unrelated edit elsewhere does not change this artifact)
+// and append '+dirty' when any of them differs from HEAD. The stamp is then
+// never a lie; at worst it says "based on X, plus uncommitted work".
+function bundledSourcesAreDirty() {
+  try {
+    const out = execSync(`git status --porcelain -- ${ALL_FILES.join(' ')}`,
+      { cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    return out.length > 0;
+  } catch {
+    return false;
+  }
+}
+
 function currentCodeVersion() {
   try {
-    return execSync('git rev-parse --short HEAD', { cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    const head = execSync('git rev-parse --short HEAD', { cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    return bundledSourcesAreDirty() ? `${head}+dirty` : head;
   } catch {
     return 'unknown';
   }
