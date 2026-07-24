@@ -36,6 +36,7 @@
 //   only the CL/CD table lookup magnitude, not by reflecting alpha itself.
 
 import { polhamusAR, polhamusKp, polhamusKv, polhamusCL } from './config.js';
+import { clrXPosition } from './hydro.js';
 
 const DEG = Math.PI / 180;
 // Flogging-drag window (R5-1): how close to a genuine zero-AoA weathervane
@@ -90,11 +91,81 @@ function blendApexCL(apexDeg, alphaAbsDeg, aeroTable) {
   return lerp(clLo, clHi, w);
 }
 
+// camberCLFactor (round 10d, C-C, ROUND10d_helm_balance.md): CL multiplier
+// for a given ABSOLUTE camber ratio, low-alpha value unchanged since round
+// 5 (1+1.75*camber, calibrated against the flat/theoretical v1/Polhamus
+// table, where camber=0 genuinely means a flat plate) — see camberCLDelta
+// below for the v2-table-relative wrapper callers actually use.
+//
+// CAMBER_FADE_END_DEG extended 45 -> 75 (was: hard zero above 45deg,
+// exactly where deep-course trims live — flagged as a known limitation at
+// C1's brailCamberGain, round 10c, and left out of scope there). Sampled
+// alphaSailor across the TRIM-regime deep-course scenarios this bonus
+// actually targets (D4/C's own TWA140-178 recipes): 32-85deg, i.e. mostly
+// PAST the old 45deg cutoff — the camber bonus was silently inactive for
+// most of its own intended use case. 75deg (not a flat extension to 90)
+// keeps a taper-to-zero near true flat-plate/stalled flow (alpha~90),
+// where camber stops being a meaningful attached-flow concept at all —
+// empirically chosen to cover the sampled range without claiming
+// camber still matters at the most extreme, most-separated angles.
+const CAMBER_FADE_END_DEG = 75;
 function camberCLFactor(alphaAbsDeg, camber) {
   if (alphaAbsDeg <= 30) return 1 + 1.75 * camber;
-  if (alphaAbsDeg >= 45) return 1.0;
-  const t = (alphaAbsDeg - 30) / 15;
+  if (alphaAbsDeg >= CAMBER_FADE_END_DEG) return 1.0;
+  const t = (alphaAbsDeg - 30) / (CAMBER_FADE_END_DEG - 30);
   return lerp(1 + 1.75 * camber, 1.0, t);
+}
+
+// camberCLDelta(alphaAbsDeg, camberDelta, builtinCamber) -> CL multiplier
+// relative to the aero TABLE's own baked-in camber, not a flat plate (C-C:
+// "the v2 aero table was digitized from ALREADY-CAMBERED rigid sails,
+// while the legacy camber machinery still multiplies on top" — the old
+// call site fed sail.camber/brailCamberGain straight into camberCLFactor,
+// which computes its multiplier RELATIVE TO A FLAT PLATE; on the v2 table
+// (already carrying the source sail's own ~1:10 camber, config.js
+// AERO_V2_BUILTIN_CAMBER) that double-counts the table's built-in camber
+// every time camberDelta is nonzero — i.e. every TRIM-regime brail pull,
+// which is exactly the deep-course case this round's other items are
+// tuning). Fix: treat camberDelta as ADDITIONAL camber beyond
+// builtinCamber, and take the RATIO of the two absolute camberCLFactor
+// evaluations, so the table's own baseline cancels out algebraically:
+//   ratio = camberCLFactor(alpha, builtin+delta) / camberCLFactor(alpha, builtin)
+// At camberDelta=0 this is an exact identity (ratio=1, no change) for ANY
+// builtinCamber — matching today's already-correct camberDelta=0 default
+// exactly. At builtinCamber=0 (v1, a genuinely flat theoretical table)
+// this reduces algebraically to camberCLFactor(alpha, delta)/1, i.e. the
+// OLD absolute formula, unchanged — v1's camber semantics (config.js:
+// "Only re-enable camber>0 if aeroTableVersion is switched back to v1")
+// are untouched by this change.
+function camberCLDelta(alphaAbsDeg, camberDelta, builtinCamber) {
+  const atBuiltin = camberCLFactor(alphaAbsDeg, builtinCamber);
+  const atBuiltinPlusDelta = camberCLFactor(alphaAbsDeg, builtinCamber + camberDelta);
+  return atBuiltinPlusDelta / atBuiltin;
+}
+
+function smoothstep01(t) {
+  const c = Math.min(Math.max(t, 0), 1);
+  return c * c * (3 - 2 * c);
+}
+
+// brailRegimeBlend (round 10c, C1, ROUND10c_carrot_two_regime.md): the
+// manual's windward brail has two real roles the old single linear cut
+// conflated — TRIM (partial pull, b in [0, trimRange]: deepens the belly,
+// sail keeps drawing) and SURVIVAL (b in (trimRange, 1]: spills power,
+// panic/furl territory). Each regime is a plain lerp from its own two
+// endpoint values, but the interpolation PARAMETER is smoothstep(t) rather
+// than raw t — smoothstep's derivative is exactly 0 at both t=0 and t=1,
+// so the two regimes' curves meet at b=trimRange with matching VALUE (both
+// evaluate valAtTrim there) AND matching slope (0 from both sides): a
+// single brailTrimRange knob is enough to get a smooth (no-kink) join
+// without a separate blend-width parameter. Used for the CL and heel-
+// moment multipliers below, and for the trim-regime camber bonus.
+function brailRegimeBlend(b, trimRange, valAtZero, valAtTrim, valAtOne) {
+  const bc = Math.min(Math.max(b, 0), 1);
+  if (trimRange <= 0) return lerp(valAtTrim, valAtOne, smoothstep01(bc));
+  if (trimRange >= 1) return lerp(valAtZero, valAtTrim, smoothstep01(bc));
+  if (bc <= trimRange) return lerp(valAtZero, valAtTrim, smoothstep01(bc / trimRange));
+  return lerp(valAtTrim, valAtOne, smoothstep01((bc - trimRange) / (1 - trimRange)));
 }
 
 // sailCoefficients(alpha, controls, config) -> { CL, CD }
@@ -126,16 +197,36 @@ export function sailCoefficients(alpha, controls, config) {
   const luffFrac = Math.max(0, 1 - alphaAbsDeg / LUFF_WINDOW_DEG);
   const floggingCD = sail.floggingCDFactor * sail.CD0 * luffFrac;
 
-  const camberCLf = camberCLFactor(alphaAbsDeg, sail.camber);
-  const camberCDf = 1 + 1.0 * sail.camber;
+  const brailLee = controls.brailLee ?? 0;
+  const brailWind = controls.brailWind ?? 0;
+  const brailTrimRange = sail.brailTrimRange ?? 0.6;
+
+  // Trim-regime camber bonus (C1): the manual's partial windward-brail
+  // technique bags the remaining draft, not just spills area — peaks at
+  // brailTrimRange (full TRIM pull), fades back to sail.camber's own
+  // baseline by brailWind=1 (a fully spilled SURVIVAL sail is gathered,
+  // not bagged). camberEff is now a DELTA beyond the active table's own
+  // built-in camber (round 10d, C-C — see camberCLDelta's own comment for
+  // the double-counting this fixes and why camberEff=0 is an unchanged
+  // no-op either way).
+  const brailCamberGain = sail.brailCamberGain ?? 0;
+  const camberEff = sail.camber + brailRegimeBlend(brailWind, brailTrimRange, 0, brailCamberGain, 0);
+  const builtinCamber = sail.aeroTableVersion === 'v2' ? (sail.aeroV2BuiltinCamber ?? 0.10) : 0;
+
+  const camberCLf = camberCLDelta(alphaAbsDeg, camberEff, builtinCamber);
+  const camberCDf = 1 + 1.0 * camberEff;
 
   let CL1 = CLtable * camberCLf;
   let CD1 = (CDbase + floggingCD) * camberCDf;
 
-  const brailLee = controls.brailLee ?? 0;
-  const brailWind = controls.brailWind ?? 0;
-
-  let CL2 = CL1 * (1 - 0.7 * brailLee) * (1 - 0.8 * brailWind);
+  // Windward-brail CL cut (C1): two-regime, see brailRegimeBlend() above.
+  // TRIM (b<=brailTrimRange): mild, x(1-0.15*b_norm) at the endpoint — the
+  // sail stays powered, consistent with the manual's downwind chapter.
+  // SURVIVAL (b>brailTrimRange): ramps to the original strong cut, x0.2 at
+  // b=1 — preserves T6/panic, the stop scenario, and the squall
+  // controller's semantics unchanged at full pull.
+  const brailWindCLFactor = brailRegimeBlend(brailWind, brailTrimRange, 1, 0.85, 0.2);
+  let CL2 = CL1 * (1 - 0.7 * brailLee) * brailWindCLFactor;
   let CD2 = CD1 * (1 - 0.3 * brailLee);
 
   // Both brails fully on: sail furled against the yard, forces -> spar drag only.
@@ -192,57 +283,89 @@ export function sailForces(state, controls, config) {
   Fx *= cosPhi; Fy *= cosPhi;
 
   const brailWind = controls.brailWind ?? 0;
-  const heelMoment = Fy * config.sail.CEheight * (1 - 0.9 * brailWind);
+  // verticalLiftFraction (round 9, R9-4, ROUND9_physics_fidelity_work_
+  // order.md): Marchaj's central claim for the crab claw is that its
+  // twisted delta geometry generates substantial VERTICAL (upward) lift
+  // via leading-edge vortices — a lot of drive for relatively little
+  // heeling moment (the same physical basis the windward-brail mechanism
+  // below already uses, just previously only through that one knob). A
+  // conservative, tunable reduction of the BASE heel moment, deliberately
+  // small: Di Piazza et al. 2014 (also cited by this project) found more
+  // modest crab-claw performance than Marchaj, so the magnitude here is
+  // genuinely contested — this does NOT touch Fx/Fy (drive/side force),
+  // only unloads the heeling arm.
+  const verticalLiftFraction = config.sail.verticalLiftFraction ?? 0;
+  // Windward-brail heel-moment cut (C1): two-regime, mirroring the CL cut
+  // above. TRIM: moderate, x(1-0.3*b_norm) at the endpoint — vertical
+  // redirection of the deep belly, sail still drawing. SURVIVAL: ramps to
+  // the original strong cut, x0.1 at b=1 (unchanged panic/survival
+  // authority).
+  const brailTrimRangeHeel = config.sail.brailTrimRange ?? 0.6;
+  const brailWindHeelFactor = brailRegimeBlend(brailWind, brailTrimRangeHeel, 1, 0.7, 0.1);
+  const heelMoment = Fy * config.sail.CEheight * (1 - verticalLiftFraction) * brailWindHeelFactor;
 
-  // CE geometry (ROUND5_CONSOLIDATED_work_order.md P1.2 — replaces the old
-  // fixed ceXFraction offset with a delta-dependent lever, same physical
-  // scale as before): the tack sits toward the active-bow SIDE of CG —
-  // tackX = tackXFraction*(hull.length/2), no `end` factor needed since the
-  // boat frame's own +x axis is already "toward the active bow" by
-  // construction (state.js Conventions). tackXFraction reuses the exact
-  // value (0.06) the old, now-removed ceXFraction tunable had — this is
-  // that same knob, repositioned to mean "where the mast/tack sits" instead
-  // of "the CE's own fixed position" (zero net new tunables). Numerically
-  // probed against literally placing the tack at the hull's physical tip
-  // (tackX = hull.length/2, ~16x larger): that let x_CE*Fy alone dwarf
-  // every other yaw source in the model (rudder, hull side force, and
-  // P2-1's ama-drag moment alike), which is inconsistent with the rest of
-  // the tuned model and, in particular, defeats P2-2's requirement that the
-  // ama-drag moment be able to dominate at moderate heel — a real mast
-  // step sits near midships on a canoe this size, not at the bow tip.
+  // CE geometry — round 7, D-6 (ROUND7_DECISION.md): rebuilt around a
+  // classical yacht-design "lead" (the CE-CLR longitudinal separation,
+  // a standard order-5-25%-of-waterline-length quantity — Larsson &
+  // Eliasson, Principles of Yacht Design) instead of round 5's from-
+  // scratch tack/chord geometry. That round-5 model measured the CE
+  // directly as a small CG-relative offset (~0.15-0.25m) and got the
+  // *scale* of sail-trim-induced steering badly wrong: real Pjoa sail-trim
+  // response is slow (owner's field datum, D-6) — the net helm is the
+  // SMALL DIFFERENCE of two large, nearly-matched levers (CE and CLR each
+  // measured from a common reference, not two independent small numbers),
+  // which is precisely why it's insensitive to trim. `hull.lead` anchors
+  // that difference directly: xCE's neutral point is the hull's own CLR
+  // (hydro.js's clrXPosition, at the neutral crewPosX=0 — moving crew
+  // fore-aft shifts the hull's CLR for T2's benefit, it does NOT drag the
+  // sail's CE around too, which would cancel that mechanism) plus `lead`.
   //
-  // The CE slides aft along the yard from the tack as delta swings the
-  // sail out, landing on the leeward (-end) side:
-  //   x_CE = tackX - (chord/2)*cos(delta)
-  //   y_CE = -end * (chord/2)*sin(delta)
-  // Chord scale reuses config.sail.CEheight/2 (zero new tunables): a full
-  // aerodynamic yard span (~5.6m, from the area/apex-angle triangle
-  // relation) was also probed and makes the y_CE*Fx term (Fx itself
-  // changes SIGN across a normal trim sweep, from drive to net aft thrust
-  // near alignment) dominate and REVERSE the qualitative trend x_CE*Fy
-  // alone already gets right, flipping "ease -> luffs to windward" (Pjoa
-  // manual III.3, T3) into its opposite.
+  // The yard's OWN swing (delta) still moves the CE further, same
+  // direction as round 5 (aft along the yard from the tack, landing to
+  // leeward) — a real crab-claw's CE does shift with trim, that's the
+  // whole reason trimming steers at all — but the excursion is scaled by
+  // `sail.ceSwingFraction` (round 7, new tunable, ~0.5): a real, flow-
+  // attached aerodynamic center tracks much closer to the leading
+  // edge/tack across the practical trim range than the raw geometric
+  // half-chord midpoint the round-5 model assumed, so only a FRACTION of
+  // the full geometric swing should reach the CE. Empirically landed
+  // (D-6's target: 0.3-1.5deg/s steady sail-trim turn rate at TWS 6,
+  // 5-15deg over a 10s window) — see harness/asserts.js's T1/T3/T4/T5.
   //
-  // P2-3 (brail-induced CE shift): spilling the sail's rear/upper area
-  // (windward brail) moves the effective CE toward the tack — shrink the
-  // along-yard FORE-AFT distance from the tack proportionally to brailWind
-  // (config.sail.ceBrailShift, default ~0.3: full brailWind moves x_CE
-  // ~30% of the half-chord toward the tack). Only x_CE shifts, not y_CE —
-  // probed both ways (T5, downwind rudder-workload investigation): shrinking
-  // BOTH shrinks the whole lever uniformly and leaves the net yaw-moment
-  // magnitude essentially unchanged (or slightly larger, since x_CE and
-  // y_CE partly cancel through the ceLeverSign flip above), whereas shifting
-  // only x_CE genuinely reduces the yaw moment's magnitude — the "carrot"
-  // (a spilled sail bunched near the tack) damping the boat's yaw
-  // sensitivity downwind, not just relocating it.
+  // P2-3 (brail-induced CE shift). Spilling the sail's rear/upper area
+  // (windward brail) gathers the working area of the sail back toward the
+  // yard's own pivot (the tack) — physically this shrinks the CE's WHOLE
+  // excursion along the yard from that pivot, fore-aft AND lateral, not
+  // just its fore-aft component. Round 5-7 originally shrank only x_CE,
+  // reasoning that shrinking both "cancels through ceLeverSign" and so
+  // only x_CE need move to damp the yaw moment; that was a bookkeeping
+  // argument about net magnitude, not a physical one, and round 5's own
+  // spilling-line description (gathering the sail toward the yard pulls
+  // the pressure centroid inboard/up) applies to both axes. Round 10b
+  // (D2) unified them onto the SAME effective half-chord (shrunk by
+  // ceBrailShift*brailWind), projected onto cos(delta)/sin(delta)
+  // respectively — see ROUND10b_downwind_wall.md and
+  // ROUND10b_downwind_wall_findings.md for that before/after measurement.
+  //
+  // Round 10c (C1) splits xCE and yCE back onto their OWN half-chords:
+  // xCE keeps ceBrailShift (the fore-aft "CE shift toward the tack" bear-
+  // away lever, unchanged, full strength across brailWind) while yCE gets
+  // its own, stronger sail.yceBrailShift — the lateral arm is what
+  // directly attacks the deep-course luffing/yaw moment (-yCE*Fx below),
+  // which is what this round's carrot fix is actually chasing (see
+  // ROUND10c_carrot_two_regime.md C1 and sail.yceBrailShift's config.js
+  // comment).
   const chord = config.sail.CEheight / 2;
   const halfChord = chord / 2;
-  const tackXFraction = config.sail.tackXFraction ?? 0.06;
-  const tackX = tackXFraction * (config.hull.length / 2);
+  const lead = config.hull.lead ?? 0.15 * config.hull.length;
+  const clrXNeutral = clrXPosition(0, config);
+  const ceSwingFraction = config.sail.ceSwingFraction ?? 0.5;
   const ceBrailShift = config.sail.ceBrailShift ?? 0.3;
-  const halfChordEffX = halfChord * (1 - ceBrailShift * brailWind);
-  const xCE = tackX - halfChordEffX * Math.cos(delta);
-  const yCE = -state.end * halfChord * Math.sin(delta);
+  const yceBrailShift = config.sail.yceBrailShift ?? 0.6;
+  const halfChordEff = halfChord * ceSwingFraction * (1 - ceBrailShift * brailWind);
+  const halfChordEffY = halfChord * ceSwingFraction * (1 - yceBrailShift * brailWind);
+  const xCE = clrXNeutral + lead - halfChordEff * Math.cos(delta);
+  const yCE = -state.end * halfChordEffY * Math.sin(delta);
 
   // Heel-course coupling (pure geometry, FIX_REQUEST_round4_roll_dof.md
   // 1.4): heeling tips the mast, offsetting the CE laterally by
@@ -257,17 +380,29 @@ export function sailForces(state, controls, config) {
   // under heel vs. the yard's OWN swing angle) and stays additive with it.
   const yawHeelSign = config.hull.yawHeelSign ?? 1;
   const yawMomentHeel = yawHeelSign * state.end * config.sail.CEheight * Math.sin(phi) * Fx;
-  // ceLeverSign (P1.2/T3 — verified-empirically flip knob, same pattern as
-  // yawHeelSign above): the from-scratch geometric derivation (CE aft of
-  // CG when trimmed-in, forward when eased) gives standard weather/lee-helm
-  // physics — trim-in -> weather helm/luffs, ease -> lee helm/bears away —
-  // which is the OPPOSITE polarity from the Pjoa manual's field-validated
-  // rule III.3/4 ("sheet in bears away, eased luffs", ROUND5_CONSOLIDATED_
-  // work_order.md T3). Flipped to match the manual's documented practice
-  // rather than the unaided derivation, exactly as yawHeelSign was already
-  // fixed empirically elsewhere in this codebase without a from-scratch
-  // proof.
-  const ceLeverSign = config.hull.ceLeverSign ?? -1;
+  // ceLeverSign: history below; CURRENTLY AN IDENTITY (+1) — round 10
+  // (R10-4, ROUND10_data_integration.md, docs/adr/0004) re-examined this
+  // TODO and found the flip is no longer active. Round 5-7's derivation
+  // (CE aft of CG when trimmed-in) gave standard weather-helm physics —
+  // the OPPOSITE of the round-4-era Pjoa-manual rule this codebase used
+  // to encode ("sheet in bears away"), so ceLeverSign was set to -1 to
+  // flip it. The round-9 follow-up (ROUND9_physics_fidelity_findings.md)
+  // retired that manual-encoded rule entirely — a structural lee-helm
+  // bias at the old lead=15%LWL was masking the boat's REAL behavior;
+  // once `lead` was corrected to 5%LWL, the boat genuinely points AND
+  // bears away through the sail in the STANDARD (non-inverted) direction
+  // (harness/asserts.js's "Sail steers" block) — i.e. the naive,
+  // unflipped r x F derivation is what the corrected geometry actually
+  // wants, and ceLeverSign now defaults to +1 (config.js), the identity.
+  //
+  // R10-4 could not go further to a fully from-scratch, assumption-free
+  // derivation: Di Piazza 2014 and Flay 2025 (this round's new data)
+  // measured FORCE coefficients (sail CL/CD, hull CS), not CE/CLR
+  // POSITION — `hull.lead`, `sail.ceSwingFraction`, and `hull.clrXFraction`
+  // remain estimated lever-arm geometry, not measured. The sign question
+  // is resolved (no active flip); the lever-arm MAGNITUDES are still
+  // tunable estimates, same standing TODO, narrower scope.
+  const ceLeverSign = config.hull.ceLeverSign ?? 1;
   const yawMoment = ceLeverSign * (xCE * Fy - yCE * Fx) + yawMomentHeel;
 
   return { Fx, Fy, heelMoment, yawMoment, yawMomentHeel, alpha, alphaSailor, aw, CL, CD };

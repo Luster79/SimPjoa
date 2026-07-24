@@ -1,7 +1,7 @@
 parameter,value,note
 boat_length_m,5.5,T2 ~18ft; Wa'apa 4.9 lub 7.3 m
-hull_beam_m,0.55,waski kadlub kanu
-displacement_kg,250.0,"kadlub+zaloga, szacunek"
+hull_beam_m,0.45,waski kadlub kanu
+displacement_kg,190.0,"kadlub+zaloga (masa wlasna ~100kg + zaloga 90kg)"
 ama_length_m,3.5,plywak nawietrzny
 ama_buoyancy_kg,80.0,szacunek
 ama_mass_kg,25.0,szacunek (drewno/kompozyt, znacznie lzejszy od jego wypornosci)

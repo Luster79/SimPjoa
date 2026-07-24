@@ -41,6 +41,7 @@ const ALL_FILES = [...CORE_FILES, ...HARNESS_FILES, ...UI_FILES];
 
 const DATA_FILES = {
   'crab_claw_CL_CD_polhamus.csv': 'data/crab_claw_CL_CD_polhamus.csv',
+  'crab_claw_CL_CD_v2.csv': 'data/crab_claw_CL_CD_v2.csv', // round 10, R10-1 — see docs/adr/0003
   'example_proa_parameters.csv': 'data/example_proa_parameters.csv',
 };
 
@@ -122,9 +123,82 @@ function readFileSync(p) {
 // checkout (or with git unavailable) falls back to 'unknown' rather than
 // failing the build over a diagnostic nicety.
 // ---------------------------------------------------------------------
+// The hash names the commit the BUNDLED SOURCES were taken from — which is
+// HEAD only when those sources are actually committed. Building on a dirty
+// tree and then committing the result in the same commit (the ordinary way
+// to change ui/app.js and refresh dist together) used to stamp the PARENT,
+// silently claiming a provenance the bundle does not have: verified at
+// 96b833b, whose dist declares 1d64cea yet contains polarValidityKey, a
+// symbol that did not exist at 1d64cea. A recording made from such a build
+// carries a codeVersion that cannot reproduce it, which is precisely what
+// harness/replay.js's mismatch warning exists to catch.
+//
+// So: check the files that actually go into the bundle (ALL_FILES, not the
+// whole tree — an unrelated edit elsewhere does not change this artifact)
+// and append '+dirty' when any of them differs from HEAD. The stamp is then
+// never a lie; at worst it says "based on X, plus uncommitted work".
+function bundledSourcesAreDirty() {
+  try {
+    const out = execSync(`git status --porcelain -- ${ALL_FILES.join(' ')}`,
+      { cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    return out.length > 0;
+  } catch {
+    return false;
+  }
+}
+
 function currentCodeVersion() {
   try {
-    return execSync('git rev-parse --short HEAD', { cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    const head = execSync('git rev-parse --short HEAD', { cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    return bundledSourcesAreDirty() ? `${head}+dirty` : head;
+  } catch {
+    return 'unknown';
+  }
+}
+
+// R2 (docs/work-order-2026-07-22.md): '+dirty' is honest but, built the
+// ordinary way — commit source changes and the freshly rebuilt dist/ file
+// together in ONE commit — it is also PERMANENT: at the moment this script
+// runs, the dist/ file it is about to write is itself still uncommitted
+// (that's the very thing making the tree dirty), so a bundle built and
+// committed in the same commit as its own sources can never carry anything
+// but '<head>+dirty', and '+dirty' never resolves to a real checkout —
+// defeating README's "tie a recording to an exact build" goal in exactly
+// the ordinary case, not just an unusual one.
+//
+// Considered a `post-commit` git hook that rebuilds dist/ once the source
+// commit has landed (tree clean, HEAD real) and commits the result
+// separately. Rejected: hooks live in .git/hooks, are not versioned or
+// auto-installed on clone, so they would silently stop applying for
+// anyone (including CI) who did not separately set one up — not a fix
+// that holds for every contributor, just for whoever remembers to install
+// it locally. Considered building dist/ only in CI/deploy and dropping it
+// from the repo — rejected too: the committed bundle's whole point is a
+// double-clickable, no-server-needed artifact for anyone who clones (see
+// this file's own "no build framework" design goal), and the CI `bundle`
+// job's staleness check (.github/workflows/ci.yml) depends on it being
+// checked in.
+//
+// Decision: process discipline, not tooling — commit source changes
+// first, THEN run this script and commit the resulting dist/ file as its
+// own, separate, immediately-following commit. By the time that second
+// commit is made, HEAD is the (real, resolvable) source commit and the
+// tree is clean, so CODE_VERSION is a plain hash with no '+dirty' — a
+// checkout of that hash reproduces the recording exactly. This is manual
+// (nothing enforces the ordering), which is the honest tradeoff for a
+// project with no existing hook/CI-install infrastructure to hang a
+// stronger guarantee on.
+
+
+// The COMMIT's own timestamp, not wall-clock build time: re-running
+// tools/bundle.js against the same commit (e.g. to pick up an unrelated
+// data-file change) shouldn't make the version footer's date drift, and
+// this way it always agrees with CODE_VERSION's hash — "commit X, made at
+// time Y" stays a stable, meaningful pair. ISO 8601 with the commit's own
+// timezone offset (%cI), same best-effort fallback as currentCodeVersion.
+function currentBuildTime() {
+  try {
+    return execSync('git log -1 --format=%cI', { cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
   } catch {
     return 'unknown';
   }
@@ -141,6 +215,15 @@ function injectCodeVersion(bundleScript, version) {
     throw new Error(`bundle.js: expected to find ${JSON.stringify(needle)} in ui/app.js to inject the code version — did that line change?`);
   }
   return bundleScript.replace(needle, `const CODE_VERSION = ${JSON.stringify(version)};`);
+}
+
+// Same pattern as injectCodeVersion, for the version footer's timestamp.
+function injectBuildTime(bundleScript, buildTime) {
+  const needle = "const BUILD_TIME = 'dev';";
+  if (!bundleScript.includes(needle)) {
+    throw new Error(`bundle.js: expected to find ${JSON.stringify(needle)} in ui/app.js to inject the build time — did that line change?`);
+  }
+  return bundleScript.replace(needle, `const BUILD_TIME = ${JSON.stringify(buildTime)};`);
 }
 
 // ---------------------------------------------------------------------
@@ -195,6 +278,7 @@ function buildHtml(bundleScript) {
 function main() {
   let bundleScript = buildBundleScript();
   bundleScript = injectCodeVersion(bundleScript, currentCodeVersion());
+  bundleScript = injectBuildTime(bundleScript, currentBuildTime());
   const html = buildHtml(bundleScript);
   const outDir = path.join(ROOT, 'dist');
   mkdirSync(outDir, { recursive: true });

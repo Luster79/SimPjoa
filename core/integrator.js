@@ -15,11 +15,13 @@ import { sheetStep, effectiveDeltaMax, isLuffing } from './sheet.js';
 
 // computeForces(state, controls, config) -> total forces/moment + readouts
 // shared with derivatives() and the harness/UI (alpha, aw, amaLoad, ...).
-// amaLoad is the raw physics value (unbounded, drives the overload capsize
-// timer in stability.js — must NOT be clamped); amaLoadDisplay is the same
-// value capped at config.stability.amaLoadDisplayCap for UI readouts, since
-// raw values like 2000 (see stability.js computeAmaLoad — a near-zero
-// restoring capacity denominator) are meaningless as a percentage gauge.
+// amaLoad is the raw physics value (unbounded — round 8: drives the
+// aback timer on the phi<0 side and the "AMA FLYING" warning readout on
+// the phi>=0 side, must NOT be clamped for either); amaLoadDisplay is the
+// same value capped at config.stability.amaLoadDisplayCap for UI
+// readouts, since raw values like 2000 (see stability.js computeAmaLoad —
+// a near-zero restoring capacity denominator) are meaningless as a
+// percentage gauge.
 // alpha is the raw chord-flow angle; alphaSailor is the sailor's AoA. Both
 // pairs are FIX_REQUEST_step1_round2.md R2-3.
 export function computeForces(state, controls, config) {
@@ -94,6 +96,21 @@ function addScaled(base, deriv, h) {
   return out;
 }
 
+// isPhysicallyPlausible(s) -> bool. Cheap "has the arithmetic survived"
+// test for a freshly integrated ODE state — see the divergence guard in
+// integrate() for why it exists and why these bounds are absurd on purpose.
+const DIVERGENCE_MAX_PHI = 2 * Math.PI;   // rad; a real capsize fires near 50deg
+const DIVERGENCE_MAX_SPEED = 100;         // m/s; the boat sails at a few m/s
+const DIVERGENCE_MAX_RATE = 50;           // rad/s, for both yaw r and roll p
+function isPhysicallyPlausible(s) {
+  for (const k of ['x', 'y', 'heading', 'u', 'v', 'r', 'phi', 'p']) {
+    if (!Number.isFinite(s[k])) return false;
+  }
+  if (Math.abs(s.phi) > DIVERGENCE_MAX_PHI) return false;
+  if (Math.hypot(s.u, s.v) > DIVERGENCE_MAX_SPEED) return false;
+  return Math.abs(s.r) <= DIVERGENCE_MAX_RATE && Math.abs(s.p) <= DIVERGENCE_MAX_RATE;
+}
+
 // integrate(state, controls, config, dt) -> newState (RK4, fixed dt)
 //
 // R5-2.2: once capsized, the core freezes -- zeroes u/v/r/p (a short
@@ -131,6 +148,28 @@ export function integrate(state, controls, config, dt) {
   }
   next.heading = Math.atan2(Math.sin(next.heading), Math.cos(next.heading));
 
+  // Numerical divergence guard. The fixed-dt RK4 above is stable across the
+  // whole envelope this boat can actually sail, but a sustained hard-over
+  // rudder spins it fast enough that dt stops resolving the rotation (the
+  // v*r / -u*r coupling in derivatives()), and the state then runs away
+  // exponentially: measured u climbing 3 -> 12 -> 37 m/s and then to 1e91
+  // inside a single 0.25 s window. The capsize test downstream DOES fire on
+  // the way past, so this is not a missing trigger — the problem is purely
+  // that by then the numbers are garbage, and what gets frozen (and
+  // recorded, and replayed) is nonsense rather than a boat.
+  //
+  // So: catch the runaway and freeze the last state that was still physical,
+  // flagged as a capsize — which is unambiguously where the trajectory was
+  // going. The bounds below are deliberately absurd rather than tuned; they
+  // exist to separate "arithmetic has failed" from "sailing badly", and a
+  // real capsize is flagged far inside every one of them (phiCapsizeDeg is
+  // 50deg against a 360deg bound here, hull speed is a few m/s against 100).
+  // They must never become knobs — anything that needs tuning belongs in
+  // config.js, not in a sanity check.
+  if (!isPhysicallyPlausible(next)) {
+    return { ...state, t: state.t + dt, u: 0, v: 0, r: 0, p: 0, capsized: true };
+  }
+
   // Discrete updates: shunt state machine evaluated against the freshly
   // integrated velocities/heading so no substep's dynamics get discarded.
   const shuntPatch = shuntStep({ ...state, ...next }, controls, config, dt);
@@ -148,13 +187,12 @@ export function integrate(state, controls, config, dt) {
 
   const finalState = { ...state, ...next, t: state.t + dt };
   const forcesAtNew = computeForces(finalState, controls, config);
-  const aback = updateAback(finalState, forcesAtNew.amaLoad, dt, config);
+  const aback = updateAback(finalState, forcesAtNew.amaLoad, forcesAtNew.breakdown.roll.Msail, dt, config);
 
   return {
     ...finalState,
     amaLoad: forcesAtNew.amaLoad,
     abackTimer: aback.abackTimer,
-    overloadTimer: aback.overloadTimer,
     capsized: aback.capsized,
   };
 }

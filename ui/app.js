@@ -24,9 +24,10 @@
 // wind arrow stay in the outer (active-bow) frame, matching the core.
 
 import { createSimulator } from '../core/simulator.js';
-import { createConfig } from '../core/config.js';
+import { createConfig, CONFIG_VERSION } from '../core/config.js';
 import { createDefaultControls } from '../core/state.js';
-import { computePolar } from '../harness/polar.js';
+import { deltaAlign } from '../core/sheet.js';
+import { computePolar, computePolarSteps, SWEEP_FULL } from '../harness/polar.js';
 import { hashState } from '../harness/checksum.js';
 
 const DEG = Math.PI / 180;
@@ -38,6 +39,13 @@ const MS_TO_KN = 1.9438;
 // mismatch) for a downloaded bundle without requiring a build step for
 // plain `python3 -m http.server` development.
 const CODE_VERSION = 'dev';
+// BUILD_TIME: same pattern as CODE_VERSION above — tools/bundle.js
+// replaces this with the COMMIT's timestamp (not wall-clock build time),
+// so it stays stable across re-bundling the same commit and always
+// matches CODE_VERSION's hash. Shown in the bottom-right version footer
+// so a bug report/recording can be tied to an exact, dated build without
+// having to separately ask "which commit was this."
+const BUILD_TIME = 'dev';
 
 // ---------------------------------------------------------------------
 // i18n — EN/PL. Static labels are marked with data-i18n="key" in
@@ -50,73 +58,133 @@ const TRANSLATIONS = {
     'hud.speed': 'Speed', 'unit.kn': 'kn', 'hud.leeway': 'Leeway', 'hud.amaLoad': 'Ama load', 'hud.shunt': 'Shunt',
     'hud.sheet': 'Sheet', 'hud.yard': 'Yard',
     'btn.rec': 'REC (F9)', 'btn.mark': 'Mark (F10)', 'btn.downloadRec': 'Download rec.',
-    'btn.pause': 'Pause (P)', 'btn.step': 'Step (.)', 'btn.forces': 'Forces (F)', 'btn.polar': 'Polar (O)',
+    'btn.pause': 'Pause (P)', 'btn.step': 'Step (.)', 'btn.forces': 'Forces (F)', 'btn.polar': 'Polar (O)', 'btn.boat': 'Boat (B)',
     'legend.lift': 'sail lift', 'legend.drag': 'sail drag', 'legend.hullSide': 'hull side', 'legend.rudder': 'rudder',
     'capsize.title': 'CAPSIZED', 'btn.reset': 'Reset (R)',
     'h.wind': 'Wind', 'lbl.direction': 'Direction', 'lbl.strength': 'Strength',
     'h.sail': 'Sail', 'lbl.sheet': 'Sheet (szot)', 'hint.yard': '←/→ arrow keys ease/sheet',
     'lbl.brailLee': 'Brail (lee)', 'hint.brailLee': 'Q sheets in, Z eases',
     'lbl.brailWind': 'Brail (wind)', 'hint.brailWind': 'W sheets in, X eases',
+    // C-B (round 10c review, ROUND10d_helm_balance.md): the windward brail
+    // has two real regimes (aero.js brailRegimeBlend) — this tooltip names
+    // both so the split isn't only discoverable by reading the source.
+    'tooltip.brailWindZones': (pct) => `0-${pct}%: trim (carrot) — sail keeps drawing · ${pct}-100%: power dump — spills power, panic/furl`,
     'h.steering': 'Steering & trim', 'lbl.rudder': 'Rudder', 'hint.rudder': 'A/D deflect, auto-centers on release',
-    'lbl.crewPos': 'Crew pos.', 'hint.crewPos': 'J moves to leeward, L moves to the ama',
-    'lbl.crewPosX': 'Crew fore-aft', 'hint.crewPosX': 'I moves forward, K moves aft',
+    'lbl.rudderUp': 'Rudder up (shipped)', 'hint.rudderUp': 'A steering oar, not a fixed rudder — usually out of the water; produces no force while shipped',
+    'lbl.crewPos': 'Crew position', 'hint.crewPos': 'Drag the dot, or J/L (lateral), I/K (fore-aft)',
+    'pad.ama': 'ama', 'pad.leeward': 'leeward', 'pad.aft': 'aft', 'pad.fwd': 'fwd',
+    'pad.headUp': 'heading up', 'pad.bearAway': 'bearing away',
     'h.shunt': 'Shunt', 'btn.shunt': 'SHUNT (space)',
     'h.amaLoad': 'Ama load', 'hud.heel': 'Heel', 'hint.heelBar': 'Heel (centered = upright)', 'h.reset': 'Reset',
-    'h.display': 'Display', 'lbl.wakeTrail': 'Wake trail (kilwater)', 'hud.luffing': 'LUFFING',
+    'h.display': 'Display', 'lbl.wakeTrail': 'Wake trail (kilwater)', 'hud.luffing': 'LUFFING', 'hud.stalled': 'STALLED',
+    'lbl.insetShow': 'Side-view inset', 'lbl.skin': 'Skin', 'opt.skinPjoa': 'Pjoa', 'opt.skinMicronesia': 'Micronesia',
+    'tag.newBow': 'BOW', 'inset.label': 'side view (leeward)',
+    'compass.hullAxis': 'hull', 'compass.cog': 'COG',
+    'balance.label': 'balance (bow-on)',
     'h.polarDiagram': 'Polar diagram',
     'hint.polar': "Runs the headless polar sweep against the current config (TWS 4/6/8/10 m/s) and plots it. The boat's live (TWA, speed) point is overlaid once you return to sailing.",
     'btn.runPolar': 'Run polar', 'btn.exportCsv': 'Export CSV', 'btn.backToSailing': 'Back to sailing',
     'shunt.holdHint': 'Hold SPACE / click SHUNT to swap ends',
     'shunt.lockoutHint': (v) => `Speed lockout: ease sail first (>${v} m/s)`,
     'alarm.aback': (t) => `ABACK — ama to leeward — capsize in ${t}s`,
-    'alarm.overload': (t) => `OVERLOAD — ama flying — capsize in ${t}s`,
+    'alarm.amaFlying': 'AMA FLYING',
+    // H2 (round 10d, ROUND10d_helm_balance.md): pressed-but-not-yet-timing
+    // warning — sail genuinely backwinded and actively pressing the ama,
+    // short of the full-submersion bar that starts the real countdown.
+    'alarm.abackWarning': 'ABACK WARNING — sail pressed, ama loading',
     'capsize.causeAback': 'Cause: sustained ABACK (ama to leeward too long)',
-    'capsize.causeOverload': 'Cause: sustained OVERLOAD (ama flying too long)',
+    'capsize.causeOverload': 'Cause: heel passed the point of no return (ama flying)',
     'shuntPhase.none': 'none', 'shuntPhase.ease': 'easing', 'shuntPhase.transfer': 'transfer',
     'shuntPhase.swap': 'swap', 'shuntPhase.sheet': 'sheeting in',
     'polar.running': 'Running...',
     'polar.progress': (tws, twa) => `TWS ${tws} m/s, TWA ${twa}°...`,
     'polar.done': (n) => `Done — ${n} points.`,
     'polar.placeholder': 'Run the polar sweep to see the diagram.',
+    'polar.fromBoat': (name) => `Stored with boat "${name}" — not recomputed.`,
+    'polar.stale': 'Saved polar is for a different boat or build — run it again.',
+    'polar.attached': (name) => `Saved with boat "${name}", including its polar.`,
     'wind.trueWindLabel': (v) => `TWS ${v} m/s`,
     'polar.twsLegend': (v) => `TWS ${v} m/s`,
     'doc.title': 'Proa Simulator — Step 2',
+    'h.boatDesign': 'Boat design',
+    'hint.boatDesign': 'Physical design parameters — hull, ama, sail, rudder, stability. Changes apply on "Apply" and reset the boat\'s motion state.',
+    'tag.physics': 'affects physics', 'tag.graphics': 'drawing/UI only',
+    'btn.applyBoat': 'Apply', 'btn.resetBoatDefaults': 'Reset to defaults',
+    'h.boatPresets': 'Saved boats', 'lbl.boatName': 'Name',
+    'btn.saveBoat': 'Save', 'btn.exportBoat': 'Export file', 'btn.importBoat': 'Import file',
+    'lbl.boatPresetList': 'Saved', 'opt.boatPresetNone': '— select —', 'btn.deleteBoat': 'Delete',
+    'boat.needName': 'Enter a name before saving.',
+    'boat.saved': (name) => `Saved as "${name}".`,
+    'boat.deleted': (name) => `Deleted "${name}".`,
+    'boat.invalid': (msg) => `Invalid values, not applied: ${msg}`,
+    'boat.applied': 'Applied — boat reset.',
+    'boat.imported': (name) => `Imported "${name}".`,
+    'boat.importFailed': 'Could not read that file.',
+    'cat.hull': 'Hull', 'cat.ama': 'Ama', 'cat.sail': 'Sail', 'cat.crew': 'Crew',
+    'cat.rudder': 'Rudder', 'cat.stability': 'Stability', 'cat.shunt': 'Shunt',
   },
   pl: {
     'hud.speed': 'Prędkość', 'unit.kn': 'w', 'hud.leeway': 'Znos', 'hud.amaLoad': 'Obc. amy', 'hud.shunt': 'Zwrot',
     'hud.sheet': 'Szot', 'hud.yard': 'Reja',
     'btn.rec': 'NAGR (F9)', 'btn.mark': 'Znacznik (F10)', 'btn.downloadRec': 'Pobierz nagranie',
-    'btn.pause': 'Pauza (P)', 'btn.step': 'Krok (.)', 'btn.forces': 'Siły (F)', 'btn.polar': 'Polara (O)',
+    'btn.pause': 'Pauza (P)', 'btn.step': 'Krok (.)', 'btn.forces': 'Siły (F)', 'btn.polar': 'Polara (O)', 'btn.boat': 'Łódź (B)',
     'legend.lift': 'siła nośna żagla', 'legend.drag': 'opór żagla', 'legend.hullSide': 'siła boczna kadłuba', 'legend.rudder': 'ster',
     'capsize.title': 'WYWROTKA', 'btn.reset': 'Reset (R)',
     'h.wind': 'Wiatr', 'lbl.direction': 'Kierunek', 'lbl.strength': 'Siła',
     'h.sail': 'Żagiel', 'lbl.sheet': 'Szot', 'hint.yard': 'Strzałki ←/→: luzuj / wybieraj',
-    'lbl.brailLee': 'Brajda zawietrzna', 'hint.brailLee': 'Q wybiera, Z luzuje',
-    'lbl.brailWind': 'Brajda nawietrzna', 'hint.brailWind': 'W wybiera, X luzuje',
+    'lbl.brailLee': 'Gejtawa zawietrzna', 'hint.brailLee': 'Q wybiera, Z luzuje',
+    'lbl.brailWind': 'Gejtawa nawietrzna', 'hint.brailWind': 'W wybiera, X luzuje',
+    'tooltip.brailWindZones': (pct) => `0-${pct}%: trym (marchewka) — żagiel dalej ciągnie · ${pct}-100%: zrzut mocy — panika/refowanie`,
     'h.steering': 'Sterowanie i wyważenie', 'lbl.rudder': 'Ster', 'hint.rudder': 'A/D wychyla ster, centruje się po puszczeniu',
-    'lbl.crewPos': 'Poz. załogi', 'hint.crewPos': 'J w stronę zawietrznej, L w stronę amy',
-    'lbl.crewPosX': 'Załoga wzdłuż', 'hint.crewPosX': 'I w stronę dziobu, K w stronę rufy',
+    'lbl.rudderUp': 'Wiosło wyjęte', 'hint.rudderUp': 'Ster to wiosło, nie stały ster — zwykle jest wyjęte z wody; nie wytwarza wtedy żadnej siły',
+    'lbl.crewPos': 'Pozycja załogi', 'hint.crewPos': 'Przeciągnij kropkę, lub J/L (bok), I/K (wzdłuż)',
+    'pad.ama': 'ama', 'pad.leeward': 'zawietrzna', 'pad.aft': 'rufa', 'pad.fwd': 'dziób',
+    'pad.headUp': 'Ostrzenie', 'pad.bearAway': 'Odpadanie',
     'h.shunt': 'Zwrot', 'btn.shunt': 'ZWROT (spacja)',
     'h.amaLoad': 'Obciążenie amy', 'hud.heel': 'Przechył', 'hint.heelBar': 'Przechył (środek = pion)', 'h.reset': 'Reset',
-    'h.display': 'Widok', 'lbl.wakeTrail': 'Kilwater', 'hud.luffing': 'ŁOPOCZE',
+    'h.display': 'Widok', 'lbl.wakeTrail': 'Kilwater', 'hud.luffing': 'ŁOPOCZE', 'hud.stalled': 'PRZECIĄGNIĘTY',
+    'lbl.insetShow': 'Widok z boku', 'lbl.skin': 'Skórka', 'opt.skinPjoa': 'Pjoa', 'opt.skinMicronesia': 'Mikronezja',
+    'tag.newBow': 'DZIÓB', 'inset.label': 'widok z boku (zawietrzna)',
+    'compass.hullAxis': 'kadłub', 'compass.cog': 'KNG',
+    'balance.label': 'wyważenie (od dziobu)',
     'h.polarDiagram': 'Diagram polarny',
     'hint.polar': 'Uruchamia pomiar polary (bezekranowy silnik fizyki) dla bieżącej konfiguracji (TWS 4/6/8/10 m/s) i rysuje wykres. Po powrocie do żeglugi na wykresie pojawia się bieżący punkt (TWA, prędkość) łódki.',
     'btn.runPolar': 'Uruchom polarę', 'btn.exportCsv': 'Eksportuj CSV', 'btn.backToSailing': 'Powrót do żeglugi',
     'shunt.holdHint': 'Przytrzymaj SPACJĘ / kliknij ZWROT, aby zamienić końce',
     'shunt.lockoutHint': (v) => `Blokada zwrotu: najpierw wyluzuj żagiel (>${v} m/s)`,
     'alarm.aback': (t) => `ABACK — ama po zawietrznej — wywrotka za ${t}s`,
-    'alarm.overload': (t) => `PRZECIĄŻENIE — ama unosi się — wywrotka za ${t}s`,
+    'alarm.amaFlying': 'AMA W POWIETRZU',
+    'alarm.abackWarning': 'OSTRZEŻENIE ABACK — żagiel dociska amę',
     'capsize.causeAback': 'Przyczyna: długotrwały ABACK (ama zbyt długo po zawietrznej)',
-    'capsize.causeOverload': 'Przyczyna: długotrwałe przeciążenie (ama zbyt długo w powietrzu)',
+    'capsize.causeOverload': 'Przyczyna: przechył minął punkt bez powrotu (ama w powietrzu)',
     'shuntPhase.none': 'brak', 'shuntPhase.ease': 'luzowanie', 'shuntPhase.transfer': 'przenoszenie',
     'shuntPhase.swap': 'zamiana', 'shuntPhase.sheet': 'wybieranie',
     'polar.running': 'Uruchamianie...',
     'polar.progress': (tws, twa) => `TWS ${tws} m/s, TWA ${twa}°...`,
     'polar.done': (n) => `Gotowe — ${n} punktów.`,
     'polar.placeholder': 'Uruchom pomiar polary, aby zobaczyć wykres.',
+    'polar.fromBoat': (name) => `Zapisana przy konstrukcji „${name}" — bez przeliczania.`,
+    'polar.stale': 'Zapisana polara dotyczy innej konstrukcji lub wersji — przelicz ponownie.',
+    'polar.attached': (name) => `Zapisano konstrukcję „${name}" wraz z polarą.`,
     'wind.trueWindLabel': (v) => `Wiatr ${v} m/s`,
     'polar.twsLegend': (v) => `Wiatr ${v} m/s`,
     'doc.title': 'Symulator proa — Krok 2',
+    'h.boatDesign': 'Charakterystyka łodzi',
+    'hint.boatDesign': 'Fizyczne parametry konstrukcyjne — kadłub, ama, żagiel, ster, stateczność. Zmiany wchodzą w życie po "Zastosuj" i resetują ruch łodzi.',
+    'tag.physics': 'wpływa na fizykę', 'tag.graphics': 'tylko rysunek/UI',
+    'btn.applyBoat': 'Zastosuj', 'btn.resetBoatDefaults': 'Przywróć domyślne',
+    'h.boatPresets': 'Zapisane łodzie', 'lbl.boatName': 'Nazwa',
+    'btn.saveBoat': 'Zapisz', 'btn.exportBoat': 'Eksportuj plik', 'btn.importBoat': 'Importuj plik',
+    'lbl.boatPresetList': 'Zapisane', 'opt.boatPresetNone': '— wybierz —', 'btn.deleteBoat': 'Usuń',
+    'boat.needName': 'Podaj nazwę przed zapisem.',
+    'boat.saved': (name) => `Zapisano jako "${name}".`,
+    'boat.deleted': (name) => `Usunięto "${name}".`,
+    'boat.invalid': (msg) => `Nieprawidłowe wartości, nie zastosowano: ${msg}`,
+    'boat.applied': 'Zastosowano — łódź zresetowana.',
+    'boat.imported': (name) => `Zaimportowano "${name}".`,
+    'boat.importFailed': 'Nie udało się odczytać pliku.',
+    'cat.hull': 'Kadłub', 'cat.ama': 'Ama', 'cat.sail': 'Żagiel', 'cat.crew': 'Załoga',
+    'cat.rudder': 'Ster', 'cat.stability': 'Stateczność', 'cat.shunt': 'Zwrot',
   },
 };
 
@@ -141,6 +209,7 @@ function setLang(lang) {
   currentLang = lang;
   localStorage.setItem('proaLang', lang);
   applyStaticTranslations();
+  updateBrailZoneUI();
   // Canvas text (drawPolarView) is baked into pixels, not DOM — re-render
   // immediately so a language switch doesn't leave stale text on screen
   // until the next natural redraw. drawPolarView is a hoisted function
@@ -149,9 +218,10 @@ function setLang(lang) {
   // reachable via the btnLang click handler, wired after full module
   // evaluation) — safe despite the forward textual reference.
   if (polarMode) drawPolarView(lastPolarRows);
+  if (boatMode) buildBoatPanel();
 }
 
-const dims = createConfig(); // dimensions/limits only; the sim keeps its own internal config
+let dims = createConfig(); // dimensions/limits only; the sim keeps its own internal config. Reassigned wholesale by the boat-design panel's Apply (see bottom of file) — never mutated field-by-field.
 const sim = createSimulator();
 
 // ---------------------------------------------------------------------
@@ -168,6 +238,7 @@ const amaBarWrap = document.getElementById('amaBar');
 const heelBarWrap = document.getElementById('heelBar');
 const heelNeedle = document.getElementById('heelNeedle');
 const shuntHint = document.getElementById('shuntHint');
+const brailWindTick = document.getElementById('brailWindTick');
 
 const sliders = {
   windDir: document.getElementById('windDir'),
@@ -176,8 +247,6 @@ const sliders = {
   brailLee: document.getElementById('brailLee'),
   brailWind: document.getElementById('brailWind'),
   rudder: document.getElementById('rudder'),
-  crewPos: document.getElementById('crewPos'),
-  crewPosX: document.getElementById('crewPosX'),
 };
 const outs = {
   windDir: document.getElementById('windDirOut'),
@@ -189,7 +258,52 @@ const outs = {
   crewPos: document.getElementById('crewPosOut'),
   crewPosX: document.getElementById('crewPosXOut'),
 };
+
+// Step buttons (-/+) flanking every slider, for finer/click-based control
+// alongside dragging. Reuse each slider's own min/max/step and just
+// dispatch a real 'input' event, so every existing per-slider listener
+// (including side effects like rudder's autoRudder=false) fires unchanged.
+const stepButtons = {};
+function stepInputValue(input, direction) {
+  const step = Number(input.step) || 1;
+  const decimals = (String(input.step).split('.')[1] || '').length;
+  const min = Number(input.min), max = Number(input.max);
+  const next = Math.min(max, Math.max(min, Number(input.value) + direction * step));
+  input.value = next.toFixed(decimals);
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+for (const key of Object.keys(sliders)) {
+  const input = sliders[key];
+  if (!input) continue;
+  const minus = document.createElement('button');
+  minus.type = 'button';
+  minus.className = 'stepBtn';
+  minus.textContent = '−';
+  minus.setAttribute('aria-label', 'decrease');
+  minus.addEventListener('click', () => stepInputValue(input, -1));
+  const plus = document.createElement('button');
+  plus.type = 'button';
+  plus.className = 'stepBtn';
+  plus.textContent = '+';
+  plus.setAttribute('aria-label', 'increase');
+  plus.addEventListener('click', () => stepInputValue(input, 1));
+  input.insertAdjacentElement('beforebegin', minus);
+  input.insertAdjacentElement('afterend', plus);
+  stepButtons[key] = { minus, plus };
+}
 const wakeTrailCheckbox = document.getElementById('wakeTrail');
+const insetShowCheckbox = document.getElementById('insetShow');
+const skinSelect = document.getElementById('skinSelect');
+// R11-8: skin choice is pure display state (not a CONFIG/physics field —
+// bolting it onto the boat-design preset mechanism, which round-trips
+// createConfig() patches, would be a category error), so it persists the
+// same simple way the language toggle already does: localStorage.
+skinSelect.value = localStorage.getItem('proaSkin') || 'pjoa';
+skinSelect.addEventListener('change', () => {
+  localStorage.setItem('proaSkin', skinSelect.value);
+  renderCrewPad(); // the SVG backdrop is static — the live canvas repaints itself, this doesn't
+});
+const rudderUpCheckbox = document.getElementById('rudderUp');
 const btnRec = document.getElementById('btnRec');
 const btnMark = document.getElementById('btnMark');
 const btnDownloadRec = document.getElementById('btnDownloadRec');
@@ -224,9 +338,21 @@ function syncSlidersFromControls() {
   sliders.brailLee.value = String(Math.round(controls.brailLee * 100));
   sliders.brailWind.value = String(Math.round(controls.brailWind * 100));
   sliders.rudder.value = String(controls.rudder);
-  sliders.crewPos.value = String(controls.crewPos);
-  sliders.crewPosX.value = String(controls.crewPosX);
+  updateCrewDot();
   refreshOutputs();
+}
+
+// C-B (round 10c review, ROUND10d_helm_balance.md): the brailWind slider's
+// TRIM/SURVIVAL two-tone track, boundary tick, and tooltip are all read
+// from CONFIG.sail.brailTrimRange (aero.js brailRegimeBlend's own split
+// point) rather than hardcoded, so a boat-design change to it (or a
+// language switch, for the tooltip text) stays in sync. Re-run wherever
+// `dims` is (re)assigned or the language changes.
+function updateBrailZoneUI() {
+  const pct = Math.round(dims.sail.brailTrimRange * 100);
+  sliders.brailWind.style.setProperty('--trim-pct', `${pct}%`);
+  brailWindTick.style.left = `${pct}%`;
+  sliders.brailWind.title = t('tooltip.brailWindZones', pct);
 }
 
 function refreshOutputs() {
@@ -246,10 +372,157 @@ sliders.sheet.addEventListener('input', () => { controls.sheet = Number(sliders.
 sliders.brailLee.addEventListener('input', () => { controls.brailLee = Number(sliders.brailLee.value) / 100; refreshOutputs(); });
 sliders.brailWind.addEventListener('input', () => { controls.brailWind = Number(sliders.brailWind.value) / 100; refreshOutputs(); });
 sliders.rudder.addEventListener('input', () => { autoRudder = false; controls.rudder = Number(sliders.rudder.value); refreshOutputs(); });
-sliders.crewPos.addEventListener('input', () => { controls.crewPos = Number(sliders.crewPos.value); refreshOutputs(); });
-sliders.crewPosX.addEventListener('input', () => { controls.crewPosX = Number(sliders.crewPosX.value); refreshOutputs(); });
+
+// Crew position 2D pad: one draggable dot standing in for the old crewPos
+// (lateral, toward the ama) and crewPosX (fore-aft) sliders. Two layers:
+//  - the STAGE (#crewPadStage) shows a to-scale, bow-up plan view of the
+//    boat as a BACKDROP — the long hull deliberately bleeds off the top and
+//    bottom, clipped by the stage;
+//  - the PAD (#crewPad) is the region the crew can actually move over,
+//    overlaid on that backdrop. Its box is the reachable area — leeward..ama
+//    laterally (the hull->ama distance, which dominates), bow..stern fore-
+//    aft — so it comes out landscape (lateral > fore-aft), its very shape
+//    telling you where the crew can go. The dot lives in the pad.
+// Axes: vertical = fore-aft (crewPosX, bow top, stern bottom), horizontal =
+// lateral (crewPos, ama left, leeward right) — matching the J/L (lateral)
+// and I/K (fore-aft) keyboard convention (L/I increase, J/K decrease).
+// renderCrewPad() draws the backdrop and sizes/places the pad box from the
+// SAME metre frame, so the pad sits exactly over the reachable part of the
+// drawn boat (crewPos=1 lands on the ama, crewPosX=+1 at the bow).
+const crewPadStage = document.getElementById('crewPadStage');
+const crewPad = document.getElementById('crewPad');
+const crewPadArt = document.getElementById('crewPadArt');
+const crewDot = document.getElementById('crewDot');
+
+// Local clamp (not the module-level one below — that's declared after
+// this point, and syncSlidersFromControls() already runs before it).
+const clampLocal = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+// The pad box spans exactly the crew's range, so the dot is a plain fraction
+// of it: ama/bow (posMax/posXMax) at the low-fraction edge (left/top).
+function updateCrewDot() {
+  const { posMin, posMax, posXMin, posXMax } = dims.crew;
+  const fracLateral = (posMax - clampLocal(controls.crewPos, posMin, posMax)) / (posMax - posMin);
+  const fracFwdAft = (posXMax - clampLocal(controls.crewPosX, posXMin, posXMax)) / (posXMax - posXMin);
+  crewDot.style.left = `${fracLateral * 100}%`;
+  crewDot.style.top = `${fracFwdAft * 100}%`;
+}
+
+function setCrewFromPad(clientX, clientY) {
+  const rect = crewPad.getBoundingClientRect();
+  const { posMin, posMax, posXMin, posXMax } = dims.crew;
+  const fracLateral = clampLocal((clientX - rect.left) / rect.width, 0, 1);
+  const fracFwdAft = clampLocal((clientY - rect.top) / rect.height, 0, 1);
+  controls.crewPos = posMax - fracLateral * (posMax - posMin);
+  controls.crewPosX = posXMax - fracFwdAft * (posXMax - posXMin);
+  updateCrewDot();
+  refreshOutputs();
+}
+
+// renderCrewPad — (re)draw the boat backdrop, size the stage, and place the
+// pad box over the reachable region. Run once at startup and whenever `dims`
+// or the skin changes (boat-design Apply/reset, skin switch), same
+// discipline as updateBrailZoneUI. Mirrors the main scene's own plan
+// geometry (see drawBoat): a narrow double-ender hull, a slimmer/shorter ama
+// bolted out to windward, and the platform + two crossbeams between them.
+function renderCrewPad() {
+  const halfL = dims.hull.length / 2;
+  const beam = dims.hull.beam;
+  const spacing = dims.ama.spacing, amaLen = dims.ama.length;
+  const { posMin, posMax, posXMin, posXMax } = dims.crew;
+  const amaHalfW = beam * 0.38;      // ama lateral half-width in plan — a pjoa float is slimmer than the vaka
+  const foreAftReach = halfL * 0.42; // metres a crewPosX of 1 stands from mid-hull; < the lateral reach so the pad is landscape
+
+  // The reachable region (the pad box), in metres. +y = ama (drawn LEFT),
+  // +x = active bow (drawn UP).
+  const padYama = posMax * spacing, padYlee = posMin * spacing;     // lateral edges
+  const padXbow = posXMax * foreAftReach, padXstern = posXMin * foreAftReach; // fore-aft edges
+
+  // The drawing window (the stage), larger so the boat reads as a backdrop:
+  // the ama shows fully to windward, the long hull runs off the top and
+  // bottom to be clipped by the stage.
+  const amaMargin = 0.4, leeMargin = 0.4, foreBleed = 0.9;
+  const yL = padYama + amaHalfW + amaMargin;  // stage left edge (ama side)
+  const yR = padYlee - leeMargin;             // stage right edge (leeward)
+  const xT = padXbow + foreBleed;             // stage top edge (bow)
+  const xB = padXstern - foreBleed;           // stage bottom edge (stern)
+  const Wm = yL - yR, Hm = xT - xB;
+
+  crewPadStage.style.aspectRatio = `${Wm} / ${Hm}`;
+  const vx = (yf) => yL - yf; // +y (ama) -> left
+  const vy = (xf) => xT - xf; // +x (bow) -> top
+
+  // Pad box as % of the stage — same metre frame, so it lands exactly over
+  // the reachable slice of the drawn boat.
+  const pct = (v, span) => `${(v / span) * 100}%`;
+  crewPad.style.left = pct(vx(padYama), Wm);
+  crewPad.style.top = pct(vy(padXbow), Hm);
+  crewPad.style.width = pct(vx(padYlee) - vx(padYama), Wm);
+  crewPad.style.height = pct(vy(padXstern) - vy(padXbow), Hm);
+
+  const skin = getSkin();
+  const beamCol = skin.lashing ?? '#6b563b';
+  const vxHull = vx(0), vxAma = vx(spacing), midVy = vy(0), hw = beam / 2;
+  const platHalf = foreAftReach + 0.25; // platform fore-aft half-span (crew reach + a little overhang)
+  const platX0 = vxAma, platW = vxHull - vxAma;
+  const f = (n) => n.toFixed(3);
+
+  // Deck planks (fore-aft) and the two crossbeams (aka, hull->ama) that give
+  // the platform its "you stand on this" texture. The plank count is derived
+  // so each board stays clearly NARROWER than the ama's beam (a real pjoa's
+  // deck slats are), holding regardless of the config's spacing.
+  const boardW = 2 * amaHalfW * 0.7;
+  const nBoards = Math.max(4, Math.round(platW / boardW));
+  let planks = '';
+  for (let i = 1; i < nBoards; i++) {
+    const px = platX0 + (platW * i) / nBoards;
+    planks += `<line x1="${f(px)}" y1="${f(vy(platHalf))}" x2="${f(px)}" y2="${f(vy(-platHalf))}" stroke="${beamCol}" stroke-width="0.03" opacity="0.55"/>`;
+  }
+  const beamLine = (xf) => `<line x1="${f(vxAma)}" y1="${f(vy(xf))}" x2="${f(vxHull)}" y2="${f(vy(xf))}" stroke="${beamCol}" stroke-width="0.09"/>`;
+
+  crewPadArt.setAttribute('viewBox', `0 0 ${f(Wm)} ${f(Hm)}`);
+  crewPadArt.innerHTML = `
+    <rect x="0" y="0" width="${f(Wm)}" height="${f(Hm)}" fill="#0a1420"/>
+    <rect x="${f(platX0)}" y="${f(vy(platHalf))}" width="${f(platW)}" height="${f(2 * platHalf)}" fill="${beamCol}" opacity="0.28"/>
+    ${planks}
+    ${beamLine(halfL * 0.35)}${beamLine(-halfL * 0.35)}
+    <ellipse cx="${f(vxAma)}" cy="${f(midVy)}" rx="${f(amaHalfW)}" ry="${f(amaLen / 2)}" fill="${skin.ama}" stroke="rgba(0,0,0,0.35)" stroke-width="0.03"/>
+    <path d="M ${f(vxHull)} ${f(vy(halfL))}
+             Q ${f(vxHull - hw)} ${f(vy(halfL * 0.5))} ${f(vxHull - hw)} ${f(midVy)}
+             Q ${f(vxHull - hw)} ${f(vy(-halfL * 0.5))} ${f(vxHull)} ${f(vy(-halfL))}
+             Q ${f(vxHull + hw)} ${f(vy(-halfL * 0.5))} ${f(vxHull + hw)} ${f(midVy)}
+             Q ${f(vxHull + hw)} ${f(vy(halfL * 0.5))} ${f(vxHull)} ${f(vy(halfL))} Z"
+          fill="${skin.hull}" stroke="rgba(0,0,0,0.3)" stroke-width="0.03"/>`;
+  updateCrewDot();
+}
+
+let draggingCrewPad = false;
+crewPad.addEventListener('pointerdown', (e) => {
+  draggingCrewPad = true;
+  crewPad.setPointerCapture(e.pointerId);
+  setCrewFromPad(e.clientX, e.clientY);
+});
+crewPad.addEventListener('pointermove', (e) => {
+  if (draggingCrewPad) setCrewFromPad(e.clientX, e.clientY);
+});
+crewPad.addEventListener('pointerup', (e) => {
+  draggingCrewPad = false;
+  crewPad.releasePointerCapture(e.pointerId);
+});
+// Rudder up (shipped, core/rudder.js): a steering OAR's normal resting
+// state is lifted clear of the water, not "centered" — while shipped it
+// produces no force regardless of controls.rudder's own value. The
+// slider itself is disabled while shipped (nothing for it to do), not
+// reset, so re-shipping the oar resumes from wherever it was left.
+rudderUpCheckbox.addEventListener('change', () => {
+  controls.rudderUp = rudderUpCheckbox.checked;
+  sliders.rudder.disabled = controls.rudderUp;
+  stepButtons.rudder.minus.disabled = controls.rudderUp;
+  stepButtons.rudder.plus.disabled = controls.rudderUp;
+});
 
 syncSlidersFromControls();
+updateBrailZoneUI();
 
 // ---------------------------------------------------------------------
 // Keyboard
@@ -257,10 +530,19 @@ syncSlidersFromControls();
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 const HANDLED_KEYS = new Set(['Space', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',
-  'KeyQ', 'KeyZ', 'KeyW', 'KeyX', 'KeyJ', 'KeyL', 'KeyI', 'KeyK', 'KeyA', 'KeyD', 'KeyP', 'Period', 'KeyF', 'KeyO', 'KeyR',
+  'KeyQ', 'KeyZ', 'KeyW', 'KeyX', 'KeyJ', 'KeyL', 'KeyI', 'KeyK', 'KeyA', 'KeyD', 'KeyP', 'Period', 'KeyF', 'KeyO', 'KeyB', 'KeyR',
   'F9', 'F10']);
 
+// Text/number inputs (boat-name field, boat-design fields) need normal
+// typing (letters, digits, arrow keys to move the cursor) — the sailing
+// shortcuts below would otherwise steal keystrokes like "b" or arrow keys
+// away from them.
+function isTextEntryTarget(target) {
+  return target instanceof HTMLInputElement && (target.type === 'text' || target.type === 'number');
+}
+
 window.addEventListener('keydown', (e) => {
+  if (isTextEntryTarget(e.target)) return;
   if (HANDLED_KEYS.has(e.code)) e.preventDefault();
   if (e.repeat) return;
   keys.add(e.code);
@@ -269,6 +551,7 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'Period') stepOnce = true;
   if (e.code === 'KeyF') toggleForces();
   if (e.code === 'KeyO') togglePolar();
+  if (e.code === 'KeyB') toggleBoat();
   if (e.code === 'KeyR') doReset();
   if (e.code === 'F9') recToggle();
   if (e.code === 'F10') recMark(sim.getState().t);
@@ -297,7 +580,7 @@ function applyContinuousKeys(dt) {
   if (keys.has('KeyI')) controls.crewPosX = clamp(controls.crewPosX + crewRate * dt, dims.crew.posXMin, dims.crew.posXMax);
   if (keys.has('KeyK')) controls.crewPosX = clamp(controls.crewPosX - crewRate * dt, dims.crew.posXMin, dims.crew.posXMax);
 
-  if (autoRudder) {
+  if (!controls.rudderUp && autoRudder) {
     if (keys.has('KeyA')) controls.rudder = clamp(controls.rudder - rudderRate * dt, -1, 1);
     else if (keys.has('KeyD')) controls.rudder = clamp(controls.rudder + rudderRate * dt, -1, 1);
     else controls.rudder = Math.abs(controls.rudder) < rudderRate * dt ? 0 : controls.rudder - Math.sign(controls.rudder) * rudderRate * dt;
@@ -312,10 +595,11 @@ let paused = false;
 let stepOnce = false;
 let showForces = true;
 let polarMode = false;
+let boatMode = false;
 
 function togglePause() { paused = !paused; document.getElementById('btnPause').classList.toggle('active', paused); }
 function toggleForces() { showForces = !showForces; document.getElementById('btnForces').classList.toggle('active', showForces); }
-function doReset() { recEndForReset(); sim.reset(); capsizeOverlay.classList.remove('show'); wakeReset(); }
+function doReset() { recEndForReset(); sim.reset(); capsizeOverlay.classList.remove('show'); wakeReset(); stalledTimer = 0; }
 
 document.getElementById('btnPause').addEventListener('click', togglePause);
 document.getElementById('btnStep').addEventListener('click', () => { stepOnce = true; });
@@ -346,10 +630,43 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
+// Version footer (bottom-right): ties a bug report/recording to an exact,
+// dated build without a separate "which commit is this" round-trip — the
+// same codeVersion recordings already carry (harness/replay.js), just
+// visible on-screen too. Set once (not per-frame): CODE_VERSION/BUILD_TIME
+// never change while the page is open.
+{
+  const versionInfo = document.getElementById('versionInfo');
+  if (versionInfo) {
+    if (CODE_VERSION === 'dev') {
+      versionInfo.textContent = 'dev build';
+    } else {
+      const when = BUILD_TIME === 'dev' ? '' : ` · ${BUILD_TIME.replace('T', ' ').slice(0, 16)}`;
+      versionInfo.textContent = `${CODE_VERSION}${when}`;
+    }
+  }
+}
+
 let scale = 24; // px per meter, adjustable via wheel zoom
+const ZOOM_MIN = 0.6, ZOOM_MAX = 80; // ZOOM_MIN lowered 10x (was 6) per user request — max zoom-out
 stage.addEventListener('wheel', (e) => {
   e.preventDefault();
-  scale = clamp(scale * (e.deltaY < 0 ? 1.08 : 0.93), 6, 80);
+  // e.deltaY's units/magnitude vary by device and OS — a single mouse
+  // "notch" can arrive as one large event or as a rapid burst of many
+  // small ones, and deltaMode distinguishes pixels/lines/pages. The old
+  // code applied a FIXED ~8% multiplier per EVENT regardless of size, so
+  // a burst of many small events (or one big coalesced one) compounded
+  // into a huge jump — a single scroll gesture rocketed straight to the
+  // min/max clamp, reading as "only two zoom levels" and feeling far too
+  // fast. Normalize to a pixel-equivalent delta, clamp its PER-EVENT
+  // magnitude so nothing can take more than a modest bite, and scale the
+  // zoom factor by that magnitude so many small burst events accumulate
+  // smoothly instead of each taking the old flat-rate jump.
+  let delta = e.deltaY;
+  if (e.deltaMode === 1) delta *= 16; // line mode: ~16px/line
+  else if (e.deltaMode === 2) delta *= window.innerHeight; // page mode
+  delta = clamp(delta, -100, 100);
+  scale = clamp(scale * Math.pow(1.0015, -delta), ZOOM_MIN, ZOOM_MAX);
 }, { passive: false });
 
 // ---------------------------------------------------------------------
@@ -361,8 +678,11 @@ function worldToScreen(wx, wy, cam) {
 }
 
 function drawWaterGrid(cam) {
+  const skin = getSkin();
   ctx.save();
-  ctx.strokeStyle = 'rgba(90,140,180,0.10)';
+  ctx.fillStyle = skin.water;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.strokeStyle = skin.waterGrid;
   ctx.lineWidth = 1;
   const step = 10; // meters
   const spanX = canvas.width / (scale * dpr) + step * 2;
@@ -397,6 +717,40 @@ function drawArrow(x0, y0, x1, y1, color, width = 2) {
   ctx.fill();
 }
 
+// ---------------------------------------------------------------------
+// R11-8: two skins — palette + fill styles only, geometry identical.
+// Read once per draw via getSkin() (skinSelect.value is the source of
+// truth, matching the wakeTrailCheckbox.checked pattern elsewhere — no
+// separate mirrored state variable to keep in sync).
+// ---------------------------------------------------------------------
+const SKINS = {
+  pjoa: {
+    water: '#06121f', waterGrid: 'rgba(90,140,180,0.10)',
+    hull: '#d8c9a8', hullCapsized: '#3a3a3a',
+    sail: 'rgba(232,227,208,0.5)', sailStroke: '#e8e3d0',
+    ama: '#c9a35a',
+    lashing: null,
+  },
+  micronesia: {
+    water: '#041a1c', waterGrid: 'rgba(90,180,160,0.10)',
+    hull: '#5a4126', hullCapsized: '#2a2018',
+    sail: 'rgba(196,168,110,0.55)', sailStroke: '#c4a86e',
+    ama: '#4a3620',
+    lashing: '#8a6a3a',
+  },
+};
+function getSkin() { return SKINS[skinSelect.value] ?? SKINS.pjoa; }
+
+// Initial crew-pad backdrop: deferred to here (rather than beside the pad's
+// own setup above) because renderCrewPad() reads the skin palette, and
+// SKINS/getSkin are only defined at this point in module evaluation.
+renderCrewPad();
+
+function hexToRgb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+}
+
 // True wind arrow — fixed in the top-left corner, world-frame direction
 // only (not boat-relative), independent of camera pan.
 function drawTrueWindArrow() {
@@ -412,6 +766,506 @@ function drawTrueWindArrow() {
   ctx.restore();
 }
 
+// R11-1 (round 11, ROUND11_proa_identity_graphics.md): live side-view
+// inset — a small, collapsible profile view drawn as seen from LEEWARD
+// (viewer stands to windward, so the ama sits on the FAR side of the
+// hull — always drawn slightly above/behind it, a fixed 2D schematic
+// convention, not a true 3D projection). Fixed screen position (top-
+// right), own local origin/scale, clipped to its own rect so nothing
+// leaks onto the main view. Horizontal axis = hull length (fore-aft);
+// `state.end` flips which physical direction reads as "forward" in this
+// snapshot, same as the main view's active-bow marker, so the picture
+// mirrors correctly across a shunt instead of silently staying frozen
+// to one physical side.
+const INSET_W = 220, INSET_H = 140, INSET_MARGIN = 10;
+function drawSideViewInset(state, forces) {
+  if (!insetShowCheckbox.checked) return;
+  const skin = getSkin();
+  // The alarm banner is a full-width DOM bar overlaying the canvas, so it
+  // always wins the stacking order and used to paint straight over this
+  // panel — exactly when the boat is in trouble and the side view is worth
+  // most. Rather than shrink the alarm (it is deliberately loud), drop the
+  // inset below it. offsetHeight is 0 while the banner is hidden, so this
+  // costs nothing in the normal case, and reading it keeps the two in step
+  // if the banner's padding or font ever changes. The *dpr converts the
+  // banner's CSS pixels into the raw canvas pixels this panel is laid out
+  // in (see resize(): canvas.width is already scaled by dpr).
+  const ox = canvas.width - INSET_W - INSET_MARGIN;
+  const oy = INSET_MARGIN + banner.offsetHeight * dpr;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(ox, oy, INSET_W, INSET_H);
+  ctx.clip();
+
+  // Panel background + waterline (a gentle, time-based bob — 2-3px is
+  // "enough" per the spec, not a real wave model).
+  ctx.fillStyle = 'rgba(6,18,31,0.82)';
+  ctx.fillRect(ox, oy, INSET_W, INSET_H);
+  // Waterline lowered (0.62 -> 0.76) to make headroom for the taller
+  // yard/mast combo above — the sail dominates the frame the same way it
+  // does in every reference photo, hull low in the picture.
+  const waterY = oy + INSET_H * 0.76 + Math.sin(performance.now() / 700) * 2;
+  ctx.strokeStyle = 'rgba(120,180,220,0.5)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(ox, waterY); ctx.lineTo(ox + INSET_W, waterY); ctx.stroke();
+  ctx.fillStyle = 'rgba(6,30,45,0.6)';
+  ctx.fillRect(ox, waterY, INSET_W, oy + INSET_H - waterY);
+
+  // Local frame: origin at the hull's on-deck pivot, +x toward the
+  // CURRENT active bow (state.end flips the sign, matching the main
+  // view's own active-bow convention), +y DOWN screen-wise, rotated by
+  // phi so "the whole assembly rotates by phi" (R11-1's own wording).
+  // The local origin sits ORIGIN_ABOVE_WATER px above the waterline, so in
+  // local coords the water surface is at y = +ORIGIN_ABOVE_WATER — named
+  // rather than repeated, since the droplet cue below has to land on it.
+  const ORIGIN_ABOVE_WATER = 6;
+  const originX = ox + INSET_W / 2, originY = waterY - ORIGIN_ABOVE_WATER;
+  const fwd = state.end === 1 ? 1 : -1;
+  ctx.translate(originX, originY);
+  ctx.rotate(-state.phi); // screen y is down, so -phi banks the same way phi heels the boat
+
+  // Fixed schematic pixel budget (not a literal to-scale projection —
+  // this is a small identity cue, not a measuring tool): sized to fill
+  // the ~220x140 inset legibly regardless of the boat's own real
+  // dimensions, same spirit as the rest of this stylized side view.
+  const halfLpx = 62;
+
+  // Ama: on the far side from this leeward viewpoint, so it is drawn FIRST
+  // and the hull then occludes its lower half — a depth cue that reads
+  // correctly instead of the float appearing to float in front of the
+  // canoe. Never mirrored by `end` (the ama is bolted to one physical side
+  // and does not relocate at a shunt — same invariant core/state.js
+  // documents). At rest it tucks down behind the hull; phi>=0 (flying)
+  // lifts it clear with a droplet cue; phi<0 (pressed) dips it with spray.
+  // Kept BELOW the sail's own footprint on purpose: skin.sail is
+  // semi-transparent, so anything drawn under the cloth shows through it.
+  const amaLoad = clamp(forces?.amaLoadDisplay ?? 0, 0, 1.5) / 1.5;
+  const amaBaseY = -17;
+  const amaLiftPx = state.phi >= 0 ? 4 + 8 * amaLoad : -4 * amaLoad;
+  ctx.save();
+  // Kept deliberately faint: it is the FAR-side float seen past the rig, so it
+  // should read as depth behind the sail, never as a hard band across it.
+  ctx.globalAlpha = 0.45;
+  ctx.fillStyle = skin.ama;
+  ctx.beginPath();
+  ctx.ellipse(0, amaBaseY - amaLiftPx, 19, 4.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  if (state.phi >= 0 && amaLoad > 0.1) {
+    // Flying: droplets falling away below the lifted ama, back down to the
+    // waterline. The span is the DISTANCE from the ama down to the water
+    // (local +ORIGIN_ABOVE_WATER), so it must be positive; it was previously
+    // computed as `amaY - 4`, which is negative here and sent the droplets
+    // climbing up off the top of the panel instead of falling.
+    ctx.fillStyle = 'rgba(150,210,255,0.7)';
+    const amaY = amaBaseY - amaLiftPx;
+    const fallSpan = ORIGIN_ABOVE_WATER - amaY;
+    for (let i = 0; i < 3; i++) {
+      const dropT = (performance.now() / 260 + i * 0.33) % 1;
+      ctx.beginPath();
+      ctx.arc(-14 + i * 14, amaY + dropT * fallSpan, 1.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else if (state.phi < 0 && amaLoad > 0.1) {
+    // Pressed: a spray cue at the waterline below the ama.
+    ctx.strokeStyle = 'rgba(220,240,255,0.75)'; ctx.lineWidth = 1.2;
+    for (let i = -1; i <= 1; i++) {
+      ctx.beginPath();
+      ctx.moveTo(i * 12, amaBaseY - amaLiftPx + 6);
+      ctx.lineTo(i * 12 + i * 4, amaBaseY - amaLiftPx - 8);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+
+  // Hull silhouette, drawn OVER the ama: a double-ended canoe, both ends
+  // IDENTICAL and swept up into short stem posts, since a proa has no bow
+  // or stern (the same invariant core/state.js documents and the main
+  // view's active-bow marker exists to communicate). Symmetric about x, so
+  // a shunt cannot change the profile — only which end the sail and crew
+  // sit toward.
+  ctx.fillStyle = state.capsized ? skin.hullCapsized : skin.hull;
+  const stemRise = 7, hullDepth = 11;
+  ctx.beginPath();
+  ctx.moveTo(-halfLpx, -stemRise);
+  ctx.quadraticCurveTo(-halfLpx * 0.55, -2, 0, -1.5);
+  ctx.quadraticCurveTo(halfLpx * 0.55, -2, halfLpx, -stemRise);
+  ctx.lineTo(halfLpx - 3, -stemRise + 2);
+  ctx.quadraticCurveTo(halfLpx * 0.5, hullDepth, 0, hullDepth);
+  ctx.quadraticCurveTo(-halfLpx * 0.5, hullDepth, -halfLpx + 3, -stemRise + 2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = skin.lashing ?? '#5a4a38';
+  ctx.lineWidth = 1.6;
+  ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-halfLpx, -stemRise); ctx.lineTo(-halfLpx - 2, -stemRise - 5); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(halfLpx, -stemRise); ctx.lineTo(halfLpx + 2, -stemRise - 5); ctx.stroke();
+
+  // Crab-claw sail, geometry per the ethnographic description of the
+  // Oceanic lateen (Wikipedia / HandWiki "crab claw sail"): the spars are
+  // CURVED, so the two edges running along them are CONVEX, while the free
+  // LEECH spanning the two spar tips is deeply CONCAVE. That scooped
+  // trailing edge between two outward-bowed spars is what actually makes
+  // the claw/pincer silhouette — earlier revisions had it inverted
+  // (concave luff, convex leech) and compensated with bare spar tips
+  // poking past the cloth; both the inversion and the bare-tip trick are
+  // gone, the shape now carries itself. The two spars are near equal
+  // length (an isosceles triangle), radiating from a low tack, with a
+  // short mast meeting the yard around its midpoint rather than at the
+  // tack. Brail state shrinks the whole rig toward the mast, ending in a
+  // small lashed bundle at full furl; `deltaAbs` (the actual yard swing)
+  // opens the claw wider as the sheet is eased (a side view can't show
+  // the top view's port/starboard swing, only how far open the claw is).
+  const maxBrail = Math.max(controls.brailLee, controls.brailWind);
+  const furled = controls.brailLee > 0.97 && controls.brailWind > 0.97;
+  const deltaAbs = Math.abs(state.delta ?? 0);
+  const openFrac = clamp(deltaAbs / (80 * DEG), 0, 1);
+  const reach = (1 - 0.55 * maxBrail) * 86; // overall rig size, fitted to the inset's headroom
+  const tackX = fwd * halfLpx * 0.46, tackY = -9;
+  const yardDeg = 66 + 5 * openFrac;  // steep upper spar
+  const boomDeg = 20 + 9 * openFrac;  // shallower lower spar, opens with the sheet
+  const yardLen = reach, boomLen = reach * 0.92;
+  const yardTipX = tackX - fwd * yardLen * Math.cos(yardDeg * DEG);
+  const yardTipY = tackY - yardLen * Math.sin(yardDeg * DEG);
+  const boomTipX = tackX - fwd * boomLen * Math.cos(boomDeg * DEG);
+  const boomTipY = tackY - boomLen * Math.sin(boomDeg * DEG);
+  // Each spar bows OUTWARD: offset the curve's control point along the
+  // edge normal, away from the sail's own interior (the triangle centroid).
+  const cgX = (tackX + yardTipX + boomTipX) / 3, cgY = (tackY + yardTipY + boomTipY) / 3;
+  const bowOut = (ax, ay, bx, by, amt) => {
+    const mx = (ax + bx) / 2, my = (ay + by) / 2;
+    let nx = -(by - ay), ny = bx - ax;
+    const len = Math.hypot(nx, ny) || 1; nx /= len; ny /= len;
+    if ((mx + nx - cgX) ** 2 + (my + ny - cgY) ** 2 < (mx - cgX) ** 2 + (my - cgY) ** 2) { nx = -nx; ny = -ny; }
+    return [mx + nx * amt, my + ny * amt];
+  };
+  const [yardCtrlX, yardCtrlY] = bowOut(tackX, tackY, yardTipX, yardTipY, reach * 0.04);
+  const [boomCtrlX, boomCtrlY] = bowOut(tackX, tackY, boomTipX, boomTipY, reach * 0.035);
+  // Concave leech: control point hauled back in toward the tack.
+  const leechMidX = (yardTipX + boomTipX) / 2, leechMidY = (yardTipY + boomTipY) / 2;
+  const leechCtrlX = leechMidX + (tackX - leechMidX) * 0.18;
+  const leechCtrlY = leechMidY + (tackY - leechMidY) * 0.18;
+  // Short mast, meeting the yard at ~45% of its length.
+  const mastX = fwd * halfLpx * 0.10;
+  const mastHeadX = tackX + (yardTipX - tackX) * 0.45;
+  const mastHeadY = tackY + (yardTipY - tackY) * 0.45;
+  ctx.strokeStyle = skin.lashing ?? '#5a4a38'; ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.moveTo(mastX, 0); ctx.lineTo(mastHeadX, mastHeadY); ctx.stroke();
+
+  if (furled) {
+    ctx.strokeStyle = skin.lashing ?? '#8a8060'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(mastHeadX, mastHeadY * 0.35); ctx.lineTo(mastHeadX, mastHeadY * 0.95); ctx.stroke();
+  } else {
+    // Cloth: convex along both spars, concave along the leech, reaching
+    // all the way to the tips.
+    ctx.beginPath();
+    ctx.moveTo(tackX, tackY);
+    ctx.quadraticCurveTo(yardCtrlX, yardCtrlY, yardTipX, yardTipY);
+    ctx.quadraticCurveTo(leechCtrlX, leechCtrlY, boomTipX, boomTipY);
+    ctx.quadraticCurveTo(boomCtrlX, boomCtrlY, tackX, tackY);
+    ctx.closePath();
+    ctx.fillStyle = skin.sail;
+    ctx.fill();
+    ctx.strokeStyle = skin.sailStroke; ctx.lineWidth = 1;
+    ctx.stroke();
+    // The spars themselves, laid along the two convex edges.
+    ctx.strokeStyle = skin.lashing ?? '#5a4a38'; ctx.lineWidth = 1.8; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(tackX, tackY); ctx.quadraticCurveTo(yardCtrlX, yardCtrlY, yardTipX, yardTipY); ctx.stroke();
+    // The yard runs on a little past the head of the cloth — a short bare
+    // spar tip stands clearly above the peak in the FOLK render. Continued
+    // along the curve's end tangent so it reads as one spar, not a kink.
+    const yTanX = yardTipX - yardCtrlX, yTanY = yardTipY - yardCtrlY;
+    const yTanLen = Math.hypot(yTanX, yTanY) || 1;
+    ctx.beginPath();
+    ctx.moveTo(yardTipX, yardTipY);
+    ctx.lineTo(yardTipX + (yTanX / yTanLen) * reach * 0.07, yardTipY + (yTanY / yTanLen) * reach * 0.07);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(tackX, tackY); ctx.quadraticCurveTo(boomCtrlX, boomCtrlY, boomTipX, boomTipY); ctx.stroke();
+  }
+
+  // Crew figures at (crewPos, crewPosX): fore-aft position along the deck
+  // from crewPosX (flipped by `fwd`, matching the mast above); crewPos
+  // (lateral, toward the ama) has no depth axis in a profile view, so it
+  // reads as a vertical lean toward/away from the ama side instead —
+  // toward the ama (crewPos>0, normally windward-side ballast) draws the
+  // figure standing tall on the rail; away from it (crewPos<0) draws them
+  // crouched low, leaning OUT with the heel, same posture a real crew
+  // takes to counterbalance.
+  // Offset the deck-position ZERO point away from the mast cluster
+  // (crewPosX=0 would otherwise land right on top of the mast line,
+  // where it's easy to lose against the sail/ama) — a purely cosmetic
+  // shift, same halfLpx*0.7 excursion range either side of it.
+  const crewDeckX = fwd * (halfLpx * 0.4 + clamp(controls.crewPosX, dims.crew.posXMin, dims.crew.posXMax) * halfLpx * 0.5);
+  const crewLean = clamp(controls.crewPos, dims.crew.posMin, dims.crew.posMax);
+  const crewHeadY = -18 - 10 * Math.max(0, crewLean);
+  ctx.strokeStyle = '#ffe08a'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(crewDeckX, -2); ctx.lineTo(crewDeckX, crewHeadY); ctx.stroke();
+  ctx.fillStyle = '#ffe08a'; ctx.strokeStyle = '#3a2f22'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(crewDeckX, crewHeadY - 4, 4, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+
+  ctx.restore(); // undo translate/rotate/clip
+
+  ctx.save();
+  ctx.font = '10px system-ui, sans-serif';
+  ctx.fillStyle = '#9fb4c8';
+  ctx.fillText(t('inset.label'), ox + 6, oy + 12);
+  ctx.restore();
+}
+
+// R11-3 (round 11, ROUND11_proa_identity_graphics.md): shunt narrative —
+// three fixed-screen-position overlays proving "the hull does not turn":
+// a 4-icon phase strip, a hull-axis-vs-course-over-ground compass ribbon,
+// and a brief BOW/DZIOB callout at the newly active end.
+const SHUNT_PHASE_ORDER = ['ease', 'transfer', 'swap', 'sheet'];
+
+function drawShuntPhaseStrip(state) {
+  const idx = SHUNT_PHASE_ORDER.indexOf(state.shunt.phase);
+  if (idx < 0) return; // 'none' — no shunt in progress, nothing to show
+  const cx = canvas.width / 2, y = 30, gap = 46;
+  const startX = cx - gap * 1.5;
+  ctx.save();
+  for (let i = 0; i < SHUNT_PHASE_ORDER.length; i++) {
+    const x = startX + i * gap;
+    if (i > 0) {
+      ctx.strokeStyle = i <= idx ? 'rgba(127,199,255,0.6)' : 'rgba(159,180,200,0.2)';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(x - gap + 9, y); ctx.lineTo(x - 9, y); ctx.stroke();
+    }
+    const active = i === idx;
+    ctx.beginPath();
+    ctx.arc(x, y, active ? 9 : 6, 0, Math.PI * 2);
+    ctx.fillStyle = active ? '#ffb84d' : i < idx ? '#7fc7ff' : 'rgba(159,180,200,0.25)';
+    ctx.fill();
+  }
+  ctx.font = 'bold 11px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#ffb84d';
+  ctx.fillText(t(`shuntPhase.${state.shunt.phase}`), cx, y + 24);
+  ctx.textAlign = 'start';
+  ctx.restore();
+}
+
+// Compass ribbon — always visible, not just during a shunt (a real
+// hull-axis-vs-COG comparison is a useful proa reading generally, and
+// gating it on shunt.phase would hide the "hull axis holds still while
+// COG reverses" story right as it's happening on the FIRST frame after
+// 'swap' completes and phase moves on to 'sheet'). Hull axis (the
+// PHYSICAL hull's own heading, independent of which tip is currently
+// labeled bow — same formula as R11-1/R11-2's `fwd`/amaWorldPos) sits
+// fixed at the ribbon's center by construction (it IS the reference
+// angle); course-over-ground is plotted relative to it, so a clean
+// shunt visibly sweeps the COG marker across while the hull-axis marker
+// never moves at all.
+function drawCompassRibbon(state) {
+  const physicalHeading = state.heading + (state.end === 1 ? 0 : Math.PI);
+  const boatWx = state.u * Math.cos(state.heading) - state.v * Math.sin(state.heading);
+  const boatWy = state.u * Math.sin(state.heading) + state.v * Math.cos(state.heading);
+  const speed = Math.hypot(boatWx, boatWy);
+  const cogHeading = speed > 0.05 ? Math.atan2(boatWy, boatWx) : physicalHeading;
+  const relDeg = normalizeAngle(cogHeading - physicalHeading) / DEG; // -180..180, hull axis at 0
+
+  const cx = canvas.width / 2, y = 66, w = 180;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(159,180,200,0.3)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(cx - w / 2, y); ctx.lineTo(cx + w / 2, y); ctx.stroke();
+  ctx.fillStyle = '#7a5a3a';
+  ctx.beginPath(); ctx.moveTo(cx, y - 7); ctx.lineTo(cx - 5, y + 5); ctx.lineTo(cx + 5, y + 5); ctx.closePath(); ctx.fill();
+  const cogX = cx + clamp(relDeg / 180, -1, 1) * (w / 2);
+  ctx.fillStyle = '#7fd0ff';
+  ctx.beginPath(); ctx.arc(cogX, y, 4, 0, Math.PI * 2); ctx.fill();
+  ctx.font = '9px system-ui, sans-serif'; ctx.fillStyle = '#9fb4c8'; ctx.textAlign = 'center';
+  ctx.fillText(t('compass.hullAxis'), cx, y + 18);
+  ctx.fillText(t('compass.cog'), cogX, y - 10);
+  ctx.textAlign = 'start';
+  ctx.restore();
+}
+
+function drawBowCallout(state, cam, now) {
+  if (now >= bowCalloutUntil) return;
+  const halfL = dims.hull.length / 2;
+  const wx = state.x + halfL * Math.cos(state.heading), wy = state.y + halfL * Math.sin(state.heading);
+  const p = worldToScreen(wx, wy, cam);
+  ctx.save();
+  ctx.globalAlpha = clamp((bowCalloutUntil - now) / 400, 0, 1); // fade out over the last 400ms
+  ctx.font = 'bold 13px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#ff8a3d';
+  ctx.fillText(t('tag.newBow'), p.x, p.y - 20);
+  ctx.textAlign = 'start';
+  ctx.restore();
+}
+
+function drawShuntNarrative(state, cam, now) {
+  drawShuntPhaseStrip(state);
+  drawCompassRibbon(state);
+  drawBowCallout(state, cam, now);
+}
+
+// R11-4 (round 11, ROUND11_proa_identity_graphics.md): balance cross-
+// section widget — a schematic transverse (bow-on) view: hull, ama,
+// crew, and the two moments actually fighting each other every frame
+// (breakdown.roll.Msail, the sail's own heeling contribution, vs
+// breakdown.roll.Mrestore, the ama's righting response — both already
+// computed every step by core/integrator.js, no new physics needed).
+// Local +x = toward the ama (a fixed physical direction, matches the
+// side inset's own convention); the whole group rotates by phi
+// (ctx.rotate(-phi): canvas y is down, so this is the rotation sense
+// that lifts +x/the ama as phi increases, matching state.js's own
+// "positive phi = the ama side rising" convention).
+const BAL_W = 210, BAL_H = 130, BAL_MARGIN = 10;
+function drawBalanceWidget(state, forces) {
+  const ox = BAL_MARGIN, oy = canvas.height - BAL_H - BAL_MARGIN;
+  const skin = getSkin();
+  ctx.save();
+  ctx.beginPath(); ctx.rect(ox, oy, BAL_W, BAL_H); ctx.clip();
+
+  // Warning tint synced to the SAME states the banner/heel-bar already
+  // use (heelBarWrap's own warn/danger toggle, updateAlarms) — read, not
+  // duplicated: amaLoadDisplay>0.75 for warn, >1.0 or a live abackTimer
+  // for danger.
+  const amaLoad = forces.amaLoadDisplay ?? 0;
+  const danger = amaLoad > 1.0 || state.abackTimer > 0;
+  const warn = !danger && amaLoad > 0.75;
+  ctx.fillStyle = 'rgba(6,18,31,0.82)'; ctx.fillRect(ox, oy, BAL_W, BAL_H);
+  if (danger) { ctx.fillStyle = 'rgba(216,79,79,0.18)'; ctx.fillRect(ox, oy, BAL_W, BAL_H); }
+  else if (warn) { ctx.fillStyle = 'rgba(216,165,42,0.15)'; ctx.fillRect(ox, oy, BAL_W, BAL_H); }
+
+  const cx = ox + BAL_W / 2, cy = oy + BAL_H * 0.66;
+  ctx.strokeStyle = 'rgba(120,180,220,0.5)'; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.moveTo(ox, cy); ctx.lineTo(ox + BAL_W, cy); ctx.stroke();
+
+  const halfBeamPx = 55, ceHeightPx = 60;
+  ctx.save();
+  // The assembly is strongly asymmetric (hull at 0, platform and ama out to
+  // +halfBeamPx), so nudge it left to keep the drawn boat centred in the
+  // panel rather than crowding the right edge.
+  ctx.translate(cx - halfBeamPx * 0.42, cy);
+  ctx.rotate(-state.phi);
+
+  // Transverse proportions are DERIVED from the config rather than eyeballed:
+  // halfBeamPx stands for ama.spacing, so one px-per-metre scale sets
+  // everything else and the picture follows the boat-design panel instead of
+  // drifting from it. This matters because a Pjoa's vaka is genuinely
+  // extreme — 5.5 m long on a 0.45 m beam, and only ~1/5.5 of the outrigger
+  // gap — so a hull drawn anywhere near as wide as the platform misreads the
+  // boat completely (reference: Pjoa Puch, Kowalski/Ostrowski 2018).
+  const pxPerM = halfBeamPx / (dims.ama.spacing || 2.5);
+  const hullHalfW = Math.max(4, ((dims.hull.beam || 0.45) * pxPerM) / 2);
+  const deckY = -16, keelY = 7;
+
+  // The platform: a flat, straight slatted deck spanning hull to ama and
+  // overhanging both — on the real boat it is the widest thing in the
+  // transverse view by far, and it is what the crew actually stands on.
+  const platX0 = -hullHalfW - 12, platX1 = halfBeamPx + 11;
+  ctx.fillStyle = state.capsized ? skin.hullCapsized : skin.hull;
+  ctx.fillRect(platX0, deckY - 2, platX1 - platX0, 4);
+  ctx.strokeStyle = skin.lashing ?? 'rgba(90,74,56,0.55)';
+  ctx.lineWidth = 0.8;
+  for (let sx = platX0 + 4; sx < platX1; sx += 5) {
+    ctx.beginPath(); ctx.moveTo(sx, deckY - 2); ctx.lineTo(sx, deckY + 2); ctx.stroke();
+  }
+  // The ama hangs off the platform on short X-braced wooden trestles — the
+  // most distinctive piece of structure in the FOLK render, and quite unlike
+  // the single swept beam a Pacific va'a uses. Drawn as one crossed pair
+  // (there are two, spaced fore-and-aft, but at this size they would overlap
+  // into mush).
+  ctx.strokeStyle = skin.lashing ?? '#7a5a3a'; ctx.lineWidth = 1.6; ctx.lineCap = 'round';
+  const trHalf = 6, trTop = deckY + 2, trBot = -6; // trBot tracks amaTopY below
+  ctx.beginPath();
+  ctx.moveTo(halfBeamPx - trHalf, trTop); ctx.lineTo(halfBeamPx + trHalf, trBot);
+  ctx.moveTo(halfBeamPx + trHalf, trTop); ctx.lineTo(halfBeamPx - trHalf, trBot);
+  ctx.stroke();
+
+  // Main hull: a narrow HARD-CHINE section — flared straight topsides meeting
+  // a narrow flat bottom. That is what the plan sheet's sections show, and it
+  // follows from the build: stitch-and-glue plywood panels, not a carved
+  // round bilge (PJOA_FOLK plany, "Widoki i przekroje").
+  ctx.fillStyle = state.capsized ? skin.hullCapsized : skin.hull;
+  ctx.beginPath();
+  ctx.moveTo(-hullHalfW, deckY);
+  ctx.lineTo(-hullHalfW * 0.42, keelY);
+  ctx.lineTo(hullHalfW * 0.42, keelY);
+  ctx.lineTo(hullHalfW, deckY);
+  ctx.closePath();
+  ctx.fill();
+
+  // Ama: FLOATS, it does not swim. core/hydro.js's amaDrag sets
+  // restingImmersion = 0.3, so roughly a third of its section sits below the
+  // waterline (local y = 0) at rest; heel then lifts or buries it bodily via
+  // the phi rotation this whole group is drawn under.
+  // The ama is a SHALLOW crescent float, not a deep pointed hull — wide and
+  // flat in section, riding on the surface rather than knifing into it.
+  const amaTopY = -6, amaBotY = 3; // ~3/9 of the depth wet, matching restingImmersion
+  ctx.fillStyle = skin.ama;
+  ctx.beginPath();
+  ctx.moveTo(halfBeamPx - 9, amaTopY);
+  ctx.lineTo(halfBeamPx - 5, amaBotY);
+  ctx.lineTo(halfBeamPx + 5, amaBotY);
+  ctx.lineTo(halfBeamPx + 9, amaTopY);
+  ctx.closePath();
+  ctx.fill();
+
+  // Mast (CE height marker), raked toward the ama as on a shunting proa,
+  // with the crab claw seen nearly edge-on: a narrow foreshortened sliver
+  // leaning to leeward. Bow-on is the one view where the rig reads as a
+  // thin blade rather than a claw, so it is drawn as such deliberately.
+  const mastHeadX = 5, mastHeadY = -ceHeightPx;
+  ctx.strokeStyle = skin.lashing ?? '#5a4a38'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(-1, deckY); ctx.lineTo(mastHeadX, mastHeadY); ctx.stroke();
+  const yardTipBX = -16, yardTipBY = mastHeadY + 7;
+  ctx.beginPath();
+  ctx.moveTo(-2, deckY + 1);
+  ctx.quadraticCurveTo(-13, -36, yardTipBX, yardTipBY);
+  ctx.quadraticCurveTo(-3, -37, -2, -14);
+  ctx.closePath();
+  ctx.fillStyle = skin.sail;
+  ctx.fill();
+  ctx.strokeStyle = skin.sailStroke; ctx.lineWidth = 0.8;
+  ctx.stroke();
+  // The yard itself along the sail's leading edge, so the rig reads as
+  // spar-and-cloth rather than a bare leaf shape.
+  ctx.strokeStyle = skin.lashing ?? '#5a4a38'; ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.moveTo(-2, deckY + 1); ctx.quadraticCurveTo(-16, -38, yardTipBX, yardTipBY);
+  ctx.stroke();
+
+  // Sail-force arrow at CE height: Msail>0 drives phi positive (ama
+  // rising), which is a push AWAY from the ama (-x) at the CE — the
+  // arrow direction is the opposite sign of Msail; magnitude log-
+  // softened, same soften() shape drawBoat() already uses for the main
+  // force-vector overlay, independently re-derived here (a display-only
+  // helper, not worth threading through as a shared export for one use).
+  const Msail = forces.breakdown?.roll?.Msail ?? 0;
+  const Mrestore = forces.breakdown?.roll?.Mrestore ?? 0;
+  const softenMoment = (n) => Math.sign(n) * Math.log10(1 + Math.abs(n)) * 5;
+  const sailArrowLen = -Math.sign(Msail) * softenMoment(Msail);
+  drawArrow(0, -ceHeightPx, sailArrowLen, -ceHeightPx, '#ffd23f', 2.5);
+
+  // Righting arrow at the ama: Mrestore uses the SAME sign convention as
+  // Msail (a positive contribution drives phi positive/+x, same as the
+  // roll ODE's own Mroll = Msail+Mrestore+... sum, core/integrator.js) —
+  // so, unlike the sail arrow above, no extra sign flip is needed here,
+  // it's drawn exactly as computed.
+  const restoreArrowLen = softenMoment(Mrestore);
+  drawArrow(halfBeamPx, -2, halfBeamPx + restoreArrowLen, -2, '#7fe3a3', 2.5);
+
+  // Crew figure at crewPos (lateral, toward the ama — matches this
+  // widget's own +x convention directly, no end factor: crewPos is
+  // already a physical-frame quantity, see core/state.js Conventions).
+  const crewX = clamp(controls.crewPos, dims.crew.posMin, dims.crew.posMax) * halfBeamPx * 0.9;
+  ctx.fillStyle = '#ffe08a'; ctx.strokeStyle = '#3a2f22'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(crewX, deckY - 2); ctx.lineTo(crewX, deckY - 17); ctx.stroke();
+  ctx.beginPath(); ctx.arc(crewX, deckY - 21, 4, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+
+  ctx.restore();
+
+  ctx.font = '10px system-ui, sans-serif';
+  ctx.fillStyle = '#9fb4c8';
+  ctx.fillText(t('balance.label'), ox + 6, oy + 12);
+  ctx.restore();
+}
+
 // Sail shape: an arc from the tack (near centerline) to the clew (swept to
 // leeward by the ACTUAL yard angle, state.delta — P4.1: this is a real,
 // dynamic piece of state now, not the commanded sheet), curvature/fill
@@ -421,7 +1275,7 @@ function drawTrueWindArrow() {
 // always -y (FIX_REQUEST_round3_worldframe.md R3-1 — this is drawn in the
 // same active-bow frame core/aero.js's chord angle lives in, so it has to
 // mirror the same way aero.js now does).
-function sailPath(yardLen, deltaAbs, brailLee, brailWind, end, alphaSign) {
+function sailPath(yardLen, deltaAbs, brailLee, brailWind, end, sailFx, sailFy) {
   const tackX = 0.35 * yardLen; // slightly forward of the mast step, anchored regardless of brail
   const furled = brailLee > 0.97 && brailWind > 0.97;
   if (furled) return { tackX, clewX: tackX + 0.15, clewY: -0.15 * end, furled: true };
@@ -446,12 +1300,24 @@ function sailPath(yardLen, deltaAbs, brailLee, brailWind, end, alphaSign) {
   // but a raw (-dy,dx) rotation doesn't), so the belly bulged toward the
   // ama/windward after a shunt. Multiplying by `end` mirrors it the same
   // way the chord itself mirrors.
-  // P4.3 (ROUND5_CONSOLIDATED_work_order.md): the belly follows the ACTUAL
-  // pressure side, sign of alpha — alphaSign flips this to the OPPOSITE
-  // (toward the ama) in exactly the backwinded case (regime c, alpha<0),
-  // where the wind presses the sail from the other face. Normal, driving
-  // trims (alpha>=0) are unaffected (alphaSign=+1, same as before).
-  const nx = -clewY * end * alphaSign, ny = (clewX - tackX) * end * alphaSign;
+  // Round 8.1 fix: the belly must follow the ACTUAL sail force (sailFx/
+  // sailFy, the same values the force-vector overlay already draws), not
+  // aero.js's raw signed `alpha`. `alpha`'s SIGN is entangled with `end`
+  // (chordAngle = end*delta, mirrored at every shunt for bookkeeping
+  // reasons unrelated to which face the wind presses on — see aero.js's
+  // header comment), so an earlier version that flipped the belly on
+  // `alpha<0` got the right answer only by coincidence when `end` was
+  // unchanged (e.g. a genuine backwind slam) and the WRONG answer whenever
+  // a shunt flipped `end` on an otherwise perfectly ordinary, driving
+  // trim (reported: "po zwrocie żagiel jest wizualizowany w złą stronę") —
+  // verified against both a real post-shunt trim and scenarioBackwindSlam.
+  // Fix: compute the default "away from the ama" normal, then flip it only
+  // if that guess actually opposes the real force vector (dot product
+  // negative) — physically, the sail bellies in the direction its own net
+  // aerodynamic force pushes it, which is exactly what Fx/Fy already say.
+  const baseNx = -clewY * end, baseNy = (clewX - tackX) * end;
+  const forceSign = (baseNx * sailFx + baseNy * sailFy) >= 0 ? 1 : -1;
+  const nx = baseNx * forceSign, ny = baseNy * forceSign;
   const nlen = Math.hypot(nx, ny) || 1;
   const bulge = camber * chordLen;
   const ctrlX = midX + (nx / nlen) * bulge;
@@ -471,6 +1337,7 @@ function drawBoat(state, forces, cam) {
   const beam = dims.hull.beam;
   const spacing = dims.ama.spacing, amaLen = dims.ama.length;
   const capsized = state.capsized;
+  const skin = getSkin(); // R11-8: palette + fill styles only, geometry below is identical either way
 
   // Physical hull (crossbeams, ama, hull outline, crew): drawn in the
   // PHYSICAL frame, which differs from the active-bow frame above by
@@ -488,6 +1355,16 @@ function drawBoat(state, forces, cam) {
   ctx.lineWidth = 0.05;
   [-halfL * 0.35, halfL * 0.35].forEach((bx) => {
     ctx.beginPath(); ctx.moveTo(bx, 0); ctx.lineTo(bx, spacing); ctx.stroke();
+    // R11-8 Micronesia skin: visible beam lashings — a few short cross-
+    // ticks wound around each crossbeam, absent on the Pjoa skin
+    // (skin.lashing is null there; geometry is otherwise identical).
+    if (skin.lashing) {
+      ctx.strokeStyle = skin.lashing; ctx.lineWidth = 0.03;
+      for (let s = 0.15; s < spacing; s += spacing / 4) {
+        ctx.beginPath(); ctx.moveTo(bx - 0.06, s); ctx.lineTo(bx + 0.06, s + 0.03); ctx.stroke();
+      }
+      ctx.strokeStyle = capsized ? '#5a4030' : '#7a5a3a'; ctx.lineWidth = 0.05;
+    }
   });
 
   // Ama — physical, fixed to the hull structure, always at physical +y.
@@ -498,14 +1375,16 @@ function drawBoat(state, forces, cam) {
   const amaLoad = forces?.amaLoadDisplay ?? 0;
   const flying = state.phi >= 0;
   const loadFrac = clamp(amaLoad, 0, 1.5) / 1.5;
+  const amaRgb = hexToRgb(skin.ama);
   ctx.save();
   if (flying) {
     ctx.globalAlpha = capsized ? 0.5 : 1 - 0.6 * loadFrac; // thins out as it lifts clear
-    ctx.fillStyle = capsized ? '#4a3a2a' : '#c9a35a';
+    ctx.fillStyle = capsized ? skin.hullCapsized : skin.ama;
   } else {
     ctx.globalAlpha = capsized ? 0.5 : 1;
     // Darkens toward a wet/pressed tone as it's forced under.
-    ctx.fillStyle = capsized ? '#4a3a2a' : `rgb(${201 - 90 * loadFrac}, ${163 - 90 * loadFrac}, ${90 - 30 * loadFrac})`;
+    ctx.fillStyle = capsized ? skin.hullCapsized
+      : `rgb(${amaRgb.r - 90 * loadFrac}, ${amaRgb.g - 90 * loadFrac}, ${amaRgb.b - 30 * loadFrac})`;
   }
   if (!flying && !capsized && loadFrac > 0.15) {
     // Wake ring around a pressed ama.
@@ -524,7 +1403,7 @@ function drawBoat(state, forces, cam) {
   // 2.2) — a proa's hull has no fixed bow/stern, both physical tips are
   // identical; direction is communicated only by the active-bow marker
   // and the active steering oar below, not by hull shape.
-  ctx.fillStyle = capsized ? '#3a3a3a' : '#d8c9a8';
+  ctx.fillStyle = capsized ? skin.hullCapsized : skin.hull;
   ctx.beginPath();
   ctx.moveTo(halfL, 0);
   ctx.quadraticCurveTo(halfL * 0.5, beam / 2, 0, beam / 2);
@@ -534,26 +1413,66 @@ function drawBoat(state, forces, cam) {
   ctx.closePath();
   ctx.fill();
 
-  // Steering oars at both physical tips (2.2 bonus): the ACTIVE one (at
-  // the physical stern, opposite the active bow — physical x = -halfL*end,
-  // matching the rudder force vector below) drawn in use; the IDLE one (at
-  // the physical bow, +halfL*end) raised/greyed. Both swap ends at a shunt
-  // together with the active-bow marker, with no hull rotation.
-  const activeOarX = -halfL * state.end, idleOarX = halfL * state.end;
-  const drawOar = (x, active) => {
+  // Steering oars at both physical tips (2.2 bonus, upgraded R11-7 round
+  // 11 ROUND11_proa_identity_graphics.md). Fixed physical positions
+  // (tipA=-halfL, tipB=+halfL) — which one is currently "active" (the
+  // steering end, opposite the active bow) depends on state.end, matching
+  // the rudder force vector below. During the 'swap' sub-phase state.end
+  // itself is still the OLD value throughout (core/shunt.js only flips it
+  // the instant progress reaches 1) — activeFracTipA/B crossfade smoothly
+  // across that same ~0.4s window by predicting the post-swap role
+  // directly, rather than animating a value that only ever jumps.
+  const tipA = -halfL, tipB = halfL;
+  const activeIsA = state.end === 1;
+  let activeFracA;
+  if (state.shunt.phase === 'swap') {
+    const p = state.shunt.progress;
+    activeFracA = activeIsA ? 1 - p : p;
+  } else {
+    activeFracA = activeIsA ? 1 : 0;
+  }
+  const activeFracB = 1 - activeFracA;
+
+  const drawOar = (x, activeFrac) => {
+    const isActiveRole = activeFrac >= 0.5;
+    const dir = x < 0 ? -1 : 1;
     ctx.save();
-    ctx.globalAlpha = active ? 1 : 0.35;
-    ctx.strokeStyle = active ? '#3a2f22' : '#7a7368';
-    ctx.lineWidth = 0.05;
-    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x + (x < 0 ? -0.5 : 0.5), 0); ctx.stroke();
-    ctx.fillStyle = active ? '#5a4a38' : '#9a9488';
-    ctx.beginPath();
-    ctx.ellipse(x + (x < 0 ? -0.6 : 0.6), 0, 0.22, 0.09, 0, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.globalAlpha = 0.35 + 0.65 * activeFrac;
+    if (isActiveRole && !controls.rudderUp) {
+      // Deployed: blade in the water, shaft rotated by the ACTUAL
+      // deflection (core/rudder.js's own mapping, maxDeflectionDeg*rudder,
+      // read from CONFIG, not re-derived), plus a small force-scaled
+      // swirl at the blade.
+      const deflRad = clamp(controls.rudder, -1, 1) * (dims.rudder.maxDeflectionDeg * DEG);
+      ctx.translate(x, 0);
+      ctx.rotate(dir * deflRad);
+      ctx.strokeStyle = '#3a2f22'; ctx.lineWidth = 0.05;
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(dir * 0.5, 0); ctx.stroke();
+      ctx.fillStyle = '#5a4a38';
+      ctx.beginPath(); ctx.ellipse(dir * 0.6, 0, 0.22, 0.09, 0, 0, Math.PI * 2); ctx.fill();
+      const rudderFy = Math.abs(forces?.breakdown?.rudder?.Fy ?? 0);
+      if (rudderFy > 5) {
+        const swirl = clamp(Math.log10(1 + rudderFy) * 0.12, 0.05, 0.4);
+        ctx.strokeStyle = 'rgba(150,210,255,0.6)'; ctx.lineWidth = 0.03;
+        const spin = performance.now() / 220;
+        ctx.beginPath();
+        ctx.arc(dir * 0.6, 0, swirl, spin, spin + Math.PI * 1.4);
+        ctx.stroke();
+      }
+    } else {
+      // Shipped/idle: stowed flush along the deck, out of the water —
+      // rudderUp on the active end reads exactly the same as the
+      // permanently-idle end, matching "produces no force while shipped"
+      // (core/rudder.js).
+      ctx.strokeStyle = '#7a7368'; ctx.lineWidth = 0.05;
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x + dir * 0.42, dir === -1 ? 0.08 : -0.08); ctx.stroke();
+      ctx.fillStyle = '#9a9488';
+      ctx.beginPath(); ctx.ellipse(x + dir * 0.5, dir === -1 ? 0.1 : -0.1, 0.18, 0.07, 0, 0, Math.PI * 2); ctx.fill();
+    }
     ctx.restore();
   };
-  drawOar(idleOarX, false);
-  drawOar(activeOarX, true);
+  drawOar(tipA, activeFracA);
+  drawOar(tipB, activeFracB);
 
   // Crew dot: lateral (crewPos, toward the ama, full spacing per
   // FIX_REQUEST_round3_worldframe.md R3-2) and fore-aft (crewPosX, per
@@ -595,12 +1514,22 @@ function drawBoat(state, forces, cam) {
     // toward the far end, along the leeward side, per B3's shunt-animation
     // spec — the actual bow/stern role swap itself happens instantaneously
     // in the core at the 'swap' sub-phase.
+    // R11-3: upgraded from a single moving tick into an actual HAULED LINE
+    // — the tack line grows from its starting point along the leeward
+    // gunwale as it's hauled, with a small fairlead ring at the moving,
+    // leading end, so the "the sail travels to the other end" story reads
+    // as a rope actually being pulled, not a blip jumping across the deck.
     const fromX = 0.35 * yardLen, toX = -halfL * 0.75;
     const tx = fromX + (toX - fromX) * state.shunt.progress;
+    const gunwaleY = -0.42 * state.end; // leeward gunwale line, physical frame
     ctx.save();
-    ctx.globalAlpha = 0.5;
-    ctx.strokeStyle = '#8a8060'; ctx.lineWidth = 0.12;
-    ctx.beginPath(); ctx.moveTo(tx, 0); ctx.lineTo(tx + 0.6, -0.35 * state.end); ctx.stroke();
+    ctx.globalAlpha = 0.6;
+    ctx.strokeStyle = '#c9b878'; ctx.lineWidth = 0.05;
+    ctx.beginPath(); ctx.moveTo(fromX, 0); ctx.lineTo(fromX, gunwaleY); ctx.lineTo(tx, gunwaleY); ctx.stroke();
+    ctx.fillStyle = '#e8d9a0';
+    ctx.beginPath(); ctx.arc(tx, gunwaleY, 0.14, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#8a8060'; ctx.lineWidth = 0.1;
+    ctx.beginPath(); ctx.moveTo(tx, gunwaleY); ctx.lineTo(tx + 0.6, -0.35 * state.end); ctx.stroke();
     ctx.restore();
   } else {
     // Foreshorten the drawn chord by cos(phi) (2.3, optional): subtle at
@@ -610,10 +1539,10 @@ function drawBoat(state, forces, cam) {
     // P4.1/P4.3: the drawn yard angle is the ACTUAL state.delta (a real,
     // dynamic piece of state now — may differ from the commanded sheet
     // during a swing or while luffing), and the belly's bulge direction
-    // follows the sign of alpha (aero.js's raw, signed AoA), not a fixed
-    // rule — see sailPath's header comment.
-    const alphaSign = (forces?.alpha ?? 0) >= 0 ? 1 : -1;
-    const sp = sailPath(heelYardLen, Math.abs(state.delta ?? 0), controls.brailLee, controls.brailWind, state.end, alphaSign);
+    // follows the ACTUAL sail force (round 8.1 — see sailPath's header
+    // comment), not a fixed rule.
+    const sailFx = forces?.breakdown?.sail?.Fx ?? 0, sailFy = forces?.breakdown?.sail?.Fy ?? 0;
+    const sp = sailPath(heelYardLen, Math.abs(state.delta ?? 0), controls.brailLee, controls.brailWind, state.end, sailFx, sailFy);
     // The dashed/fluttering visual is gated on the AERODYNAMIC condition
     // (near-zero angle of attack — genuine regime b weathervaning, ~zero
     // force), not forces.luffing's mechanical "delta < deltaMax-2deg"
@@ -627,12 +1556,12 @@ function drawBoat(state, forces, cam) {
     if (fade > 0.02) {
       ctx.save();
       ctx.globalAlpha = 0.35 + 0.65 * fade;
-      ctx.strokeStyle = '#e8e3d0';
+      ctx.strokeStyle = skin.sailStroke;
       ctx.lineWidth = 0.08;
       ctx.beginPath();
       if (sp.furled) {
         ctx.moveTo(sp.tackX, 0); ctx.lineTo(sp.clewX, sp.clewY);
-        ctx.lineWidth = 0.22; ctx.strokeStyle = '#8a8060';
+        ctx.lineWidth = 0.22; ctx.strokeStyle = skin.lashing ?? '#8a8060';
         ctx.stroke();
       } else if (flogging) {
         // P4.2 flogging visual: an unfilled, fluttering dashed outline —
@@ -652,13 +1581,59 @@ function drawBoat(state, forces, cam) {
         ctx.moveTo(sp.tackX, 0);
         ctx.quadraticCurveTo(sp.ctrlX, sp.ctrlY, sp.clewX, sp.clewY);
         ctx.lineTo(sp.tackX, 0);
-        ctx.fillStyle = 'rgba(232,227,208,0.5)';
+        const sailPathRef = new Path2D();
+        sailPathRef.moveTo(sp.tackX, 0);
+        sailPathRef.quadraticCurveTo(sp.ctrlX, sp.ctrlY, sp.clewX, sp.clewY);
+        sailPathRef.lineTo(sp.tackX, 0);
+        ctx.fillStyle = skin.sail;
         ctx.fill();
         ctx.stroke();
+        // R11-8 Micronesia skin: simple pandanus-mat weave hatching,
+        // clipped to the sail's own path — Pjoa's plain sailcloth fill
+        // (skin.lashing null) skips this, geometry stays identical.
+        if (skin.lashing) {
+          ctx.save();
+          ctx.clip(sailPathRef);
+          ctx.strokeStyle = 'rgba(0,0,0,0.18)'; ctx.lineWidth = 0.025;
+          const minX = Math.min(sp.tackX, sp.clewX, sp.ctrlX) - 0.2;
+          const maxX = Math.max(sp.tackX, sp.clewX, sp.ctrlX) + 0.2;
+          for (let hx = minX; hx < maxX; hx += 0.22) {
+            ctx.beginPath(); ctx.moveTo(hx, -3); ctx.lineTo(hx + 1.2, 3); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(hx, 3); ctx.lineTo(hx + 1.2, -3); ctx.stroke();
+          }
+          ctx.restore();
+        }
       }
       // Yard spar
       ctx.strokeStyle = '#3a2f22'; ctx.lineWidth = 0.06;
       ctx.beginPath(); ctx.moveTo(sp.tackX, 0); ctx.lineTo(sp.clewX, sp.clewY); ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  // R11-6 (round 11, ROUND11_proa_identity_graphics.md): two animated
+  // ribbon telltales near the tack, one per face, driven directly from
+  // the same alphaSailor/luffing/stalled readouts the HUD tags already
+  // use (forces.alphaSailor, forces.luffing, the module-level
+  // stalledTimer) — streaming (attached flow) at normal AoA, fluttering
+  // while luffing, drooping/reversed once genuinely stalled. Small
+  // time-based noise so they read as alive, not a static state icon.
+  if (forces && state.shunt.phase !== 'transfer') {
+    const luffing = forces.luffing;
+    const stalled = stalledTimer > STALLED_HOLD_SECONDS;
+    const baseX = 0.35 * yardLen;
+    const noise = Math.sin(performance.now() / 140) * 0.15 + Math.sin(performance.now() / 310 + 1.7) * 0.08;
+    for (const side of [1, -1]) {
+      const tx = baseX, ty = side * 0.18;
+      let ang; // telltale direction, radians, 0 = streaming straight aft (-x, local frame)
+      let color;
+      if (luffing) { ang = Math.PI + noise * 1.4 + side * 0.3; color = 'rgba(255,210,90,0.85)'; }
+      else if (stalled) { ang = Math.PI * 0.5 * -state.end + noise * 0.5; color = 'rgba(255,120,90,0.85)'; }
+      else { ang = Math.PI + noise * 0.35; color = 'rgba(200,225,255,0.75)'; }
+      const len = 0.55;
+      ctx.save();
+      ctx.strokeStyle = color; ctx.lineWidth = 0.03; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(tx + Math.cos(ang) * len, ty + Math.sin(ang) * len); ctx.stroke();
       ctx.restore();
     }
   }
@@ -672,6 +1647,38 @@ function drawBoat(state, forces, cam) {
     const ax = forces.aw.vx * s, ay = forces.aw.vy * s;
     ctx.save(); ctx.lineWidth = 0.05;
     drawVectorLocal(0, spacing * 0.6 * state.end, ax, ay, '#7fd0ff');
+    ctx.restore();
+  }
+
+  // R11-5 (round 11, ROUND11_proa_identity_graphics.md): apparent-wind
+  // safety sector (anti-aback). deltaAlign(state, controls) — imported
+  // straight from core/sheet.js, not duplicated — is the boat's own real
+  // "how far from the wind crossing to leeward" number: deltaAlign<=0 is
+  // exactly the physical instant the yard clamps to the mast (sheet.js
+  // regime c), the through-gybe corner H2 (ROUND10d_helm_balance.md)
+  // diagnosed. That's a strictly EARLIER signal than stability.js's own
+  // aback timer, which only starts once the ama is actually pressed
+  // underwater (a later consequence, see updateAback) — so this glows
+  // before that alarm can fire, by construction, not by a tuned lead
+  // time. WARN_MARGIN is a UI-only rendering choice (how wide the amber
+  // ramp is), not a re-derivation of any core threshold.
+  if (forces && forces.aw && forces.aw.speed > 0.05) {
+    const align = deltaAlign(state, controls);
+    const WARN_MARGIN = 20 * DEG;
+    let sectorColor = 'rgba(127,199,255,0.35)';
+    if (align <= 0) {
+      sectorColor = 'rgba(216,60,60,0.95)';
+    } else if (align < WARN_MARGIN) {
+      const frac = 1 - align / WARN_MARGIN;
+      sectorColor = `rgba(216,${Math.round(165 - 105 * frac)},${Math.round(42 - 22 * frac)},${(0.5 + 0.4 * frac).toFixed(2)})`;
+    }
+    const R = 3.2;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(159,180,200,0.15)'; ctx.lineWidth = 0.05;
+    ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.stroke();
+    const awAngle = forces.aw.angleToBoat;
+    ctx.strokeStyle = sectorColor; ctx.lineWidth = 0.14;
+    ctx.beginPath(); ctx.arc(0, 0, R, awAngle - 0.15, awAngle + 0.15); ctx.stroke();
     ctx.restore();
   }
 
@@ -751,6 +1758,7 @@ const hud = {
   sheet: document.getElementById('hudSheet'),
   yard: document.getElementById('hudYard'),
   luffing: document.getElementById('hudLuffing'),
+  stalled: document.getElementById('hudStalled'),
 };
 
 function normalizeAngle(a) { return Math.atan2(Math.sin(a), Math.cos(a)); }
@@ -786,6 +1794,7 @@ function updateHud(state, forces) {
   hud.sheet.textContent = `${Math.round(controls.sheet / DEG)}`;
   hud.yard.textContent = `${Math.round((state.delta ?? 0) / DEG)}`;
   hud.luffing.textContent = forces.luffing ? t('hud.luffing') : '';
+  hud.stalled.textContent = stalledTimer > STALLED_HOLD_SECONDS ? t('hud.stalled') : '';
 
   const loadFrac = clamp(forces.amaLoadDisplay, 0, 3) / 3;
   amaBar.style.width = `${clamp(forces.amaLoadDisplay, 0, 1) * 100}%`;
@@ -811,7 +1820,20 @@ function updateHud(state, forces) {
     : t('shunt.holdHint');
 }
 
-function updateAlarms(state) {
+// Round 8 (R8-1/R8-2, ROUND8_physical_capsize.md): the phi>=0 side is no
+// longer a countdown — amaLoad>1 ("ama flying") is a WARNING condition,
+// not a timer toward an automatic capsize, so the banner just shows the
+// tag while it's true, with no "capsize in Xs" text (there's nothing
+// counting down anymore). The aback (phi<0) side keeps its real timer
+// with a real countdown once it starts (abackTimer>0, gated on full ama
+// submersion — stability.js updateAback), but round 10d (H2) adds a
+// lighter WARNING below it, same on-the-fly-derived pattern as "AMA
+// FLYING": phi<0 while the sail's own roll moment is still actively
+// pressing it (forces.breakdown.roll.Msail<0) is genuine aback in the
+// nautical sense well before full submersion — see stability.js
+// updateAback's own abackWarning comment for the through-gybe diagnosis
+// this closes.
+function updateAlarms(state, forces) {
   banner.className = '';
   if (state.capsized) {
     // handled by overlay below
@@ -819,15 +1841,17 @@ function updateAlarms(state) {
     banner.className = 'aback';
     const remain = Math.max(0, dims.stability.abackCapsizeTime - state.abackTimer);
     banner.textContent = t('alarm.aback', remain.toFixed(1));
-  } else if (state.overloadTimer > 0) {
+  } else if (state.phi >= 0 && forces.amaLoad > 1.0) {
     banner.className = 'overload';
-    const remain = Math.max(0, dims.stability.overloadCapsizeTime - state.overloadTimer);
-    banner.textContent = t('alarm.overload', remain.toFixed(1));
+    banner.textContent = t('alarm.amaFlying');
+  } else if (state.phi < 0 && forces.breakdown.roll.Msail < 0) {
+    banner.className = 'pressed';
+    banner.textContent = t('alarm.abackWarning');
   }
 
   if (state.capsized && !capsizeOverlay.classList.contains('show')) {
     capsizeOverlay.classList.add('show');
-    capsizeCause.textContent = state.abackTimer > dims.stability.abackCapsizeTime - 0.05
+    capsizeCause.textContent = state.phi < 0
       ? t('capsize.causeAback')
       : t('capsize.causeOverload');
   }
@@ -857,32 +1881,146 @@ let wakeX = [];
 let wakeY = [];
 let wakeLastSampleT = -Infinity;
 
+// R11-2 (round 11, ROUND11_proa_identity_graphics.md): a SECOND trail
+// sampled from the ama's own world position, same ring/growth discipline
+// as the hull trail above — same sample cadence (one wakeSample() call
+// samples both), same "no cap, reset clears it" lifetime. NaN is pushed
+// as an explicit gap marker for every sample taken while the ama is
+// clear of the water (amaLoad>=1, i.e. AT/PAST full liftoff — the same
+// threshold stability.js's own phi-liftoff saturation and the "AMA
+// FLYING" warning use), so a flying episode reads as a literal break in
+// the ama thread rather than an interpolated line jumping across it.
+let wakeAmaX = [];
+let wakeAmaY = [];
+
+// STALLED HUD cue (round 7, R7-3) — symmetric to LUFFING: the sail is
+// actively driving (not luffing) but at an angle of attack past its
+// useful range (alphaSailor > STALLED_ALPHA_DEG), sustained for more than
+// STALLED_HOLD_SECONDS. A UI-layer timer, same pattern as the recorder's
+// own timers — the core only exposes the instantaneous alphaSailor/
+// luffing readouts, not a stall duration.
+const STALLED_ALPHA_DEG = 50;
+const STALLED_HOLD_SECONDS = 1;
+let stalledTimer = 0;
+
 function wakeReset() {
   wakeX = [];
   wakeY = [];
+  wakeAmaX = [];
+  wakeAmaY = [];
   wakeLastSampleT = -Infinity;
 }
 
-function wakeSample(state) {
+// amaWorldPos(state) -> {x,y} — the ama's own world-space position, same
+// physical-frame geometry drawBoat() already uses for the ama ellipse
+// (bolted to one physical side, physical local offset (0, ama.spacing),
+// rotated by the physical hull heading = state.heading + (end==1?0:PI) —
+// see core/state.js's Conventions comment / the shunt world-frame-
+// continuity check in harness/asserts.js for the same formula).
+function amaWorldPos(state) {
+  const physicalHeading = state.heading + (state.end === 1 ? 0 : Math.PI);
+  return {
+    x: state.x - dims.ama.spacing * Math.sin(physicalHeading),
+    y: state.y + dims.ama.spacing * Math.cos(physicalHeading),
+  };
+}
+
+function wakeSample(state, forces) {
   if (state.t - wakeLastSampleT < WAKE_SAMPLE_INTERVAL) return;
   wakeLastSampleT = state.t;
   wakeX.push(state.x);
   wakeY.push(state.y);
+  const flying = (forces?.amaLoadDisplay ?? 0) >= 1.0 && state.phi >= 0;
+  if (flying) {
+    wakeAmaX.push(NaN);
+    wakeAmaY.push(NaN);
+  } else {
+    const ama = amaWorldPos(state);
+    wakeAmaX.push(ama.x);
+    wakeAmaY.push(ama.y);
+  }
 }
 
-function drawWakeTrail(cam) {
-  if (!wakeTrailCheckbox.checked || wakeX.length < 2) return;
+// drawTrail — shared polyline drawer for both wake threads; a NaN entry
+// breaks the path (drawn as a gap, per R11-2's "flying episodes read as
+// gaps"), not a scripted skip — the JS Number NaN comparisons below all
+// evaluate false, cheaply falling through to "start a new subpath".
+function drawTrail(xs, ys, cam, color) {
+  if (xs.length < 2) return;
   ctx.save();
   ctx.lineWidth = Math.max(1, 1.4 * dpr);
   ctx.lineCap = 'round';
-  ctx.strokeStyle = 'rgba(170,225,215,0.35)';
+  ctx.strokeStyle = color;
   ctx.beginPath();
-  for (let i = 0; i < wakeX.length; i++) {
-    const p = worldToScreen(wakeX[i], wakeY[i], cam);
-    if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
+  let penDown = false;
+  for (let i = 0; i < xs.length; i++) {
+    if (Number.isNaN(xs[i])) { penDown = false; continue; }
+    const p = worldToScreen(xs[i], ys[i], cam);
+    if (!penDown) { ctx.moveTo(p.x, p.y); penDown = true; } else { ctx.lineTo(p.x, p.y); }
   }
   ctx.stroke();
   ctx.restore();
+}
+
+// drawFadingWake — a real wake dissipates within a short distance of
+// whatever's making it, not a persistent route line. Only the most
+// recent maxSamples samples are drawn; each short segment gets its own
+// width/color/alpha interpolated by how far back (in samples) it sits —
+// near the source: already as wide as the actual hull/ama beam (in
+// world meters, scaled the same way every other on-screen length is —
+// `scale*dpr` — so it visually continues the real waterline instead of
+// tapering from a point; per feedback, "every point of the hull that
+// touches the water generates wake", not just its center track), and its
+// `base` color at close to full strength; fading away: wider still, and
+// its color drifts toward the water's own skin color (getSkin().water,
+// so it blends seamlessly into the background instead of just fading to
+// a fixed pale tone) while its alpha drops toward 0. (Approximates
+// "blurred" via the width/alpha/color ramp rather than a real per-
+// segment canvas blur filter — a literal `ctx.filter` blur would need
+// its own compositing pass per segment, dozens of times a frame, which
+// isn't worth it for what's already a soft, low-contrast trail at this
+// sample count.)
+function drawFadingWake(xs, ys, cam, maxSamples, base, beamStartM, beamEndM, alphaStart) {
+  const n = xs.length;
+  if (n < 2) return;
+  const bg = hexToRgb(getSkin().water);
+  const start = Math.max(0, n - maxSamples);
+  const px = scale * dpr;
+  ctx.save();
+  ctx.lineCap = 'round';
+  for (let i = start + 1; i < n; i++) {
+    if (Number.isNaN(xs[i]) || Number.isNaN(xs[i - 1])) continue; // flying gap
+    const age = (n - 1 - i) / Math.max(1, n - 1 - start); // 0 = newest (at the source), 1 = oldest kept
+    const p0 = worldToScreen(xs[i - 1], ys[i - 1], cam);
+    const p1 = worldToScreen(xs[i], ys[i], cam);
+    const r = Math.round(base.r + (bg.r - base.r) * age), g = Math.round(base.g + (bg.g - base.g) * age), b = Math.round(base.b + (bg.b - base.b) * age);
+    const alpha = alphaStart * (1 - age);
+    ctx.strokeStyle = `rgba(${r},${g},${b},${alpha.toFixed(3)})`;
+    ctx.lineWidth = Math.max(1, (beamStartM + (beamEndM - beamStartM) * age) * px);
+    ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+const WAKE_FADE_MAX_SAMPLES = 36; // ~5.4s of trailing wake at WAKE_SAMPLE_INTERVAL=0.15s — "not too long a stretch"
+const AMA_WAKE_BASE = { r: 90, g: 170, b: 230 }; // saturated blue near the ama
+const HULL_WAKE_BASE = { r: 90, g: 170, b: 230 }; // same blue, same dissipating treatment as the ama's
+
+function drawWakeTrail(cam) {
+  if (!wakeTrailCheckbox.checked) return;
+  // Thin blue line for the WHOLE session, unbounded — per feedback, kept
+  // deliberately separate from the dissipating wake effect below so the
+  // full course sailed stays traceable even long after the "real" wake
+  // near the hull has faded out.
+  drawTrail(wakeX, wakeY, cam, 'rgba(90,170,230,0.35)');
+  // Dissipating wake effect, both threads: starts as wide as the actual
+  // waterline (hull.beam / the ama's own ~1.2*hull.beam cross-section,
+  // matching the ellipse radius drawBoat() already uses for it) and
+  // widens further while fading toward the water's own background color
+  // over the last ~5.4s, per feedback.
+  const hullBeamM = dims.hull.beam, amaBeamM = dims.hull.beam * 1.2;
+  drawFadingWake(wakeX, wakeY, cam, WAKE_FADE_MAX_SAMPLES, HULL_WAKE_BASE, hullBeamM, hullBeamM * 6, 0.30);
+  drawFadingWake(wakeAmaX, wakeAmaY, cam, WAKE_FADE_MAX_SAMPLES, AMA_WAKE_BASE, amaBeamM, amaBeamM * 6, 0.36);
 }
 
 // ---------------------------------------------------------------------
@@ -1062,12 +2200,13 @@ let lastT = performance.now();
 let camera = { x: 0, y: 0 };
 let prevShuntHeld = false;
 let shuntFlashUntil = 0;
+let bowCalloutUntil = 0; // R11-3: "BOW/DZIOB" tag, pops for ~2s right as the swap completes
 
 function frame(now) {
   const dtFrame = Math.min(0.1, Math.max(0, (now - lastT) / 1000)); // clamp 100ms, tab-switch protection
   lastT = now;
 
-  if (!polarMode) {
+  if (!polarMode && !boatMode) {
     applyContinuousKeys(dtFrame);
     controls.shuntRequest = shuntHeld;
     const attemptEdge = shuntHeld && !prevShuntHeld;
@@ -1091,7 +2230,18 @@ function frame(now) {
     // Wake trail sampling (P4.4): pause suspends it (tied to `stepped`,
     // same condition the sim itself advances under) and capsize stops it;
     // shunts are NOT excluded — the zigzag through them is the point.
-    if (stepped && !state.capsized) wakeSample(state);
+    if (stepped && !state.capsized) wakeSample(state, forces);
+
+    // STALLED cue timer (round 7, R7-3): accumulates only while actively
+    // driving (not luffing, not capsized) at alphaSailor past the
+    // threshold; resets the instant either condition lapses.
+    if (stepped) {
+      if (!state.capsized && !forces.luffing && forces.alphaSailor > STALLED_ALPHA_DEG * DEG) {
+        stalledTimer += usedDt;
+      } else {
+        stalledTimer = 0;
+      }
+    }
 
     // Session recorder (round 6): called unconditionally whenever a step
     // actually happened (pause -> no call -> "pause frames are simply
@@ -1117,13 +2267,24 @@ function frame(now) {
     }
     prevShuntHeld = shuntHeld;
 
+    // R11-3: the 'swap' sub-phase is where the core actually flips
+    // state.end/heading (core/shunt.js) — the instant it completes
+    // (phase moves on to 'sheet') is exactly "the newly active end",
+    // so that's the edge the BOW/DZIOB callout pops on.
+    if (phaseBefore === 'swap' && state.shunt.phase === 'sheet') {
+      bowCalloutUntil = now + 2000;
+    }
+
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     drawWaterGrid(camera);
     drawWakeTrail(camera);
     drawBoat(state, forces, camera);
     drawTrueWindArrow();
+    drawSideViewInset(state, forces);
+    drawShuntNarrative(state, camera, now);
+    drawBalanceWidget(state, forces);
     updateHud(state, forces);
-    updateAlarms(state);
+    updateAlarms(state, forces);
 
     const flashing = now < shuntFlashUntil;
     hud.speed.classList.toggle('flash-warn', flashing);
@@ -1138,44 +2299,139 @@ requestAnimationFrame(frame);
 // Polar mode
 // ---------------------------------------------------------------------
 const polarPanel = document.getElementById('polarPanel');
+const boatPanel = document.getElementById('boatPanel');
 const livePanel = document.getElementById('livePanel');
 const btnPolar = document.getElementById('btnPolar');
+const btnBoat = document.getElementById('btnBoat');
 const btnRunPolar = document.getElementById('btnRunPolar');
 const btnExportPolar = document.getElementById('btnExportPolar');
 const btnClosePolar = document.getElementById('btnClosePolar');
 const polarProgress = document.getElementById('polarProgress');
 
 let lastPolarRows = null;
+let lastPolarKey = null;   // validity key the rows in lastPolarRows were computed under
 
-function togglePolar() {
-  polarMode = !polarMode;
+// setActivePanel('live'|'polar'|'boat') — the panel area shows exactly one
+// of livePanel/polarPanel/boatPanel at a time; switching to one forces the
+// other two off, rather than each mode independently toggling itself (which
+// would let two panels show at once if opened back to back).
+function setActivePanel(mode) {
+  // Leaving the polar panel abandons any sweep in flight — see
+  // cancelPolarRun. Re-entering starts fresh rather than resuming.
+  if (polarMode && mode !== 'polar') cancelPolarRun();
+  polarMode = mode === 'polar';
+  boatMode = mode === 'boat';
   btnPolar.classList.toggle('active', polarMode);
+  btnBoat.classList.toggle('active', boatMode);
   polarPanel.classList.toggle('show', polarMode);
-  livePanel.style.display = polarMode ? 'none' : '';
-  if (polarMode) drawPolarView(lastPolarRows);
+  boatPanel.classList.toggle('show', boatMode);
+  livePanel.style.display = (polarMode || boatMode) ? 'none' : '';
+  if (polarMode) {
+    // Applying a boat design between panel visits invalidates any polar
+    // still in hand, so re-check on the way in rather than trusting
+    // whatever happened to be drawn last.
+    if (lastPolarRows && lastPolarKey !== polarValidityKey()) {
+      lastPolarRows = null;
+      lastPolarKey = null;
+      polarProgress.textContent = t('polar.stale');
+    }
+    drawPolarView(lastPolarRows);
+  }
+  if (boatMode) buildBoatPanel();
 }
+function togglePolar() { setActivePanel(polarMode ? 'live' : 'polar'); }
+function toggleBoat() { setActivePanel(boatMode ? 'live' : 'boat'); }
 btnPolar.addEventListener('click', togglePolar);
 btnClosePolar.addEventListener('click', togglePolar);
+btnBoat.addEventListener('click', toggleBoat);
+
+// --- Polar caching -------------------------------------------------------
+// The sweep is a PURE function of the boat plus the grid: it builds its own
+// initial state, has no RNG, and is dt-converged (1/240 vs 1/480 agreed to
+// six decimals when measured). So recomputing it for an unchanged boat is
+// pure waste — 283s of it, and until now every page reload threw the result
+// away because it lived only in `lastPolarRows`.
+//
+// The validity key deliberately hashes only the PHYSICS fields. BOAT_FIELDS
+// already tags each field physics/graphics, and the graphics ones genuinely
+// cannot move a polar — `hull.beam`, for instance, does not appear anywhere
+// in core/ (verified: +5% beam reproduced the polar byte-for-byte). Keying
+// on the whole config would throw away a valid result every time someone
+// nudged the drawing.
+//
+// CODE_VERSION covers the physics code AND polar.js's own search/settle
+// constants, since both are bundled together. CAVEAT: in the served dev
+// build it is the literal 'dev' and never changes, so while editing core/
+// or polar.js locally the cache will happily serve a stale polar — hit Run
+// to force a recompute.
+const POLAR_SWEEP = SWEEP_FULL;
+
+function polarValidityKey() {
+  const physics = {};
+  for (const f of BOAT_FIELDS) {
+    if (f.kind === 'physics') physics[f.path] = getPath(dims, f.path);
+  }
+  return hashState({ physics, code: CODE_VERSION, cfg: CONFIG_VERSION, sweep: POLAR_SWEEP });
+}
+
+// adoptStoredPolar — take a polar that travelled with a saved boat, but only
+// if it still describes the boat we just applied. A stale one is reported,
+// not silently drawn: a polar for the wrong hull is worse than none, because
+// it looks authoritative.
+function adoptStoredPolar(polar, boatName) {
+  const key = polarValidityKey();
+  if (polar && polar.key === key && Array.isArray(polar.rows) && polar.rows.length) {
+    lastPolarRows = polar.rows;
+    lastPolarKey = key;
+    polarProgress.textContent = t('polar.fromBoat', boatName);
+  } else {
+    lastPolarRows = null;
+    lastPolarKey = null;
+    polarProgress.textContent = polar ? t('polar.stale') : t('polar.placeholder');
+  }
+  if (polarMode) drawPolarView(lastPolarRows);
+}
+
+// Sweep cancellation: a run is a long-lived async loop, so leaving the panel
+// (or starting a second run) has to be able to stop it. Without this the
+// sweep kept grinding after the user switched back to sailing — the boat was
+// live again but the main thread was still being eaten for minutes, which
+// reads as the whole browser hanging.
+let polarRunToken = 0;
+function cancelPolarRun() { polarRunToken += 1; }
 
 btnRunPolar.addEventListener('click', async () => {
+  const myToken = ++polarRunToken;
   btnRunPolar.disabled = true;
   btnExportPolar.disabled = true;
-  const twsList = [4, 6, 8, 10];
   const rows = [];
   polarProgress.textContent = t('polar.running');
-  // Run heading-by-heading so the tab can repaint between chunks instead of
-  // blocking the main thread for the whole (slow) sweep in one go.
-  for (const tws of twsList) {
-    for (let twa = 40; twa <= 170; twa += 10) {
-      const part = computePolar(dims, { twsList: [tws], twaFrom: twa, twaTo: twa, step: 10 });
-      rows.push(...part);
-      polarProgress.textContent = t('polar.progress', tws, twa);
+
+  // Drive the sweep one TRIAL at a time and hand the thread back whenever
+  // this frame's budget is spent. The previous version chunked by HEADING,
+  // which sounds fine but is a 3-12.5s synchronous call each — 56 of them,
+  // so the tab froze in multi-second blocks despite the yield between them.
+  const FRAME_BUDGET_MS = 12;
+  const runKey = polarValidityKey();
+  const steps = computePolarSteps(dims, POLAR_SWEEP);
+  let sliceStart = performance.now();
+  for (const row of steps) {
+    if (polarRunToken !== myToken) return; // superseded or cancelled
+    if (row) {
+      rows.push(row);
+      polarProgress.textContent = t('polar.progress', row.tws, row.twa);
+    }
+    if (performance.now() - sliceStart >= FRAME_BUDGET_MS) {
       // eslint-disable-next-line no-await-in-loop
-      await new Promise((r) => setTimeout(r, 0));
+      await new Promise((r) => requestAnimationFrame(() => r()));
+      if (polarRunToken !== myToken) return;
+      sliceStart = performance.now();
     }
   }
+
   polarProgress.textContent = t('polar.done', rows.length);
   lastPolarRows = rows;
+  lastPolarKey = runKey;
   btnRunPolar.disabled = false;
   btnExportPolar.disabled = false;
   drawPolarView(rows);
@@ -1183,8 +2439,12 @@ btnRunPolar.addEventListener('click', async () => {
 
 btnExportPolar.addEventListener('click', () => {
   if (!lastPolarRows) return;
-  const header = 'twa,tws,bestSpeed,bestSheetAngle,deltaAngle,bestCamberUse';
-  const lines = [header, ...lastPolarRows.map((r) => `${r.twa},${r.tws},${r.bestSpeed.toFixed(4)},${r.bestSheetAngle},${r.deltaAngle.toFixed(2)},${r.bestCamberUse}`)];
+  // bestBrailWind column added round 10c (computePolar's own row shape) —
+  // this export string was never updated to match; caught by round 11's
+  // bundle-fidelity spot-check (ROUND11_proa_identity_graphics.md) against
+  // run_tests.js's out/polar.csv, which already carries it.
+  const header = 'twa,tws,bestSpeed,bestSheetAngle,deltaAngle,bestCamberUse,bestBrailWind';
+  const lines = [header, ...lastPolarRows.map((r) => `${r.twa},${r.tws},${r.bestSpeed.toFixed(4)},${r.bestSheetAngle},${r.deltaAngle.toFixed(2)},${r.bestCamberUse},${r.bestBrailWind}`)];
   const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -1261,3 +2521,310 @@ function drawPolarView(rows) {
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5 * dpr; ctx.stroke();
   }
 }
+
+// ---------------------------------------------------------------------
+// Boat design panel — edit core/config.js's CONFIG fields at runtime.
+//
+// Every field here is a physical design/tuning constant that a real Pjoa's
+// specific construction would otherwise fix (hull dimensions, sail area,
+// ITTC-style coefficients standing in for what that construction would
+// determine). Two fields are marked 'graphics' (drawing/UI only, no
+// physics effect at all — confirmed by grep across core/*.js):
+// sail.tackXFraction (mast-drawing position only, round 7 D-6 moved the
+// real CE geometry to hull.lead) and stability.amaLoadDisplayCap (a
+// display-only ceiling on the HUD readout; the aback-timer physics reads
+// the raw, uncapped amaLoad). Everything else genuinely feeds core/*.js's
+// force/moment calculations. crew.posMin/posMax/posXMin/posXMax are
+// deliberately NOT exposed here — they're slider-range UI config, not a
+// boat characteristic, and the HTML sliders' own hardcoded min/max already
+// bound player input independent of them.
+//
+// Applying a change: builds a full patch (every field below, not just the
+// edited ones) and calls createConfig(patch) to both validate and produce
+// a complete new config in one step (deepMerge starts from fresh defaults,
+// so every schema field must be explicit or its edit would be lost on a
+// later Apply) — see core/config.js's createConfig/deepMerge. On success,
+// replaces `dims` (this module's drawing/limits copy) and calls
+// sim.setConfig(patch) + sim.reset() (the same reset core/simulator.js's
+// facade already exposes but app.js never called before this feature).
+const BOAT_FIELDS = [
+  { path: 'hull.length', kind: 'physics', unit: 'm', step: 0.1, labelEn: 'Hull length', labelPl: 'Długość kadłuba' },
+  { path: 'hull.beam', kind: 'graphics', unit: 'm', step: 0.01, labelEn: 'Hull beam', labelPl: 'Szerokość kadłuba' },
+  { path: 'hull.displacement', kind: 'physics', unit: 'kg', step: 1, labelEn: 'Displacement', labelPl: 'Wyporność' },
+  { path: 'hull.wettedSurface', kind: 'physics', unit: 'm²', step: 0.1, labelEn: 'Hull wetted surface', labelPl: 'Pow. zwilżona kadłuba' },
+  { path: 'hull.residuaryPeakCr', kind: 'physics', unit: '', step: 0.0005, labelEn: 'Wave-resistance peak (Cr)', labelPl: 'Szczyt oporu falowego (Cr)' },
+  { path: 'hull.residuaryFrPeak', kind: 'physics', unit: '', step: 0.01, labelEn: 'Peak Froude number', labelPl: 'Liczba Froude’a szczytu oporu' },
+  { path: 'hull.residuaryFrWidth', kind: 'physics', unit: '', step: 0.01, labelEn: 'Resistance hump width', labelPl: 'Szerokość garbu oporu' },
+  { path: 'hull.csV2A', kind: 'physics', unit: '', step: 0.0001, labelEn: 'Side-force coeff. (V2 fit, linear)', labelPl: 'Współcz. siły bocznej (V2, liniowy)' },
+  { path: 'hull.csV2B', kind: 'physics', unit: '', step: 0.0001, labelEn: 'Side-force coeff. (V2 fit, quadratic)', labelPl: 'Współcz. siły bocznej (V2, kwadratowy)' },
+  { path: 'hull.csV1A', kind: 'physics', unit: '', step: 0.0001, labelEn: 'Side-force coeff. (V1 blend, linear)', labelPl: 'Współcz. siły bocznej (V1, liniowy)' },
+  { path: 'hull.csV1B', kind: 'physics', unit: '', step: 0.0001, labelEn: 'Side-force coeff. (V1 blend, quadratic)', labelPl: 'Współcz. siły bocznej (V1, kwadratowy)' },
+  { path: 'hull.csBlendStartDeg', kind: 'physics', unit: '°', step: 1, labelEn: 'CS blend start angle', labelPl: 'Kąt startu mieszania CS' },
+  { path: 'hull.csBlendEndDeg', kind: 'physics', unit: '°', step: 1, labelEn: 'CS blend end angle (flat beyond)', labelPl: 'Kąt końca mieszania CS (dalej płasko)' },
+  { path: 'hull.lowSpeedSideDamping', kind: 'physics', unit: '', step: 5, labelEn: 'Low-speed side damping', labelPl: 'Tłumienie boczne przy małej prędk.' },
+  { path: 'hull.sailingFreeReliefPeak', kind: 'physics', unit: '', step: 0.05, labelEn: '"Sailing free" relief magnitude', labelPl: 'Wielkość ulgi "żeglowania swobodnego"' },
+  { path: 'hull.sailingFreeReliefPlateauStartDeg', kind: 'physics', unit: '°', step: 1, labelEn: '"Sailing free" plateau start', labelPl: 'Początek plateau "żeglowania swobodnego"' },
+  { path: 'hull.sailingFreeReliefPlateauEndDeg', kind: 'physics', unit: '°', step: 1, labelEn: '"Sailing free" plateau end', labelPl: 'Koniec plateau "żeglowania swobodnego"' },
+  { path: 'hull.sailingFreeReliefFadeEndDeg', kind: 'physics', unit: '°', step: 1, labelEn: '"Sailing free" fade-out angle', labelPl: 'Kąt zaniku "żeglowania swobodnego"' },
+  { path: 'hull.crossFlowDragCoeff', kind: 'physics', unit: '', step: 0.05, labelEn: 'Cross-flow (broadside) drag coeff.', labelPl: 'Współcz. oporu poprzecznego (na boku)' },
+  { path: 'hull.lateralArea', kind: 'physics', unit: 'm²', step: 0.1, labelEn: 'Hull lateral (projected side) area', labelPl: 'Pow. boczna kadłuba (rzut)' },
+  { path: 'hull.yawDampingCoeff', kind: 'physics', unit: '', step: 10, labelEn: 'Yaw damping coeff.', labelPl: 'Tłumienie odchylenia (yaw)' },
+  { path: 'hull.clrXFraction', kind: 'physics', unit: '', step: 0.01, labelEn: 'CLR offset (fraction)', labelPl: 'Przesunięcie CLR (ułamek)' },
+  { path: 'hull.crewForeAftTrimCoeff', kind: 'physics', unit: '', step: 0.01, labelEn: 'Crew fore-aft CLR trim coeff.', labelPl: 'Współcz. przesuwu CLR przez załogę' },
+  { path: 'hull.crewTrimSign', kind: 'physics', unit: '±1', step: 2, labelEn: 'Crew-trim coupling sign', labelPl: 'Znak sprzężenia załoga→CLR' },
+  { path: 'hull.yawHeelSign', kind: 'physics', unit: '±1', step: 2, labelEn: 'Heel→yaw coupling sign', labelPl: 'Znak sprzężenia przechył→odchylenie' },
+  { path: 'hull.ceLeverSign', kind: 'physics', unit: '±1', step: 2, labelEn: 'CE-lever sign', labelPl: 'Znak dźwigni CE' },
+  { path: 'hull.lead', kind: 'physics', unit: 'm', step: 0.01, labelEn: 'CE-CLR lead', labelPl: 'Wyprzedzenie CE przed CLR (lead)' },
+
+  { path: 'ama.length', kind: 'physics', unit: 'm', step: 0.1, labelEn: 'Ama length', labelPl: 'Długość amy' },
+  { path: 'ama.maxBuoyancy', kind: 'physics', unit: 'kg', step: 1, labelEn: 'Ama max buoyancy', labelPl: 'Maks. wyporność amy' },
+  { path: 'ama.mass', kind: 'physics', unit: 'kg', step: 1, labelEn: 'Ama mass', labelPl: 'Masa amy' },
+  { path: 'ama.spacing', kind: 'physics', unit: 'm', step: 0.1, labelEn: 'Hull-ama spacing', labelPl: 'Rozstaw kadłub–ama' },
+  { path: 'ama.wettedSurface', kind: 'physics', unit: 'm²', step: 0.05, labelEn: 'Ama wetted surface', labelPl: 'Pow. zwilżona amy' },
+  { path: 'ama.formFactor', kind: 'physics', unit: '', step: 0.05, labelEn: 'Ama form factor (1+k)', labelPl: 'Współcz. kształtu amy (1+k)' },
+  { path: 'ama.crewImmersionCoeff', kind: 'physics', unit: '', step: 0.01, labelEn: 'Crew-immersion coeff.', labelPl: 'Współcz. zanurzania przez załogę' },
+
+  { path: 'sail.area', kind: 'physics', unit: 'm²', step: 0.1, labelEn: 'Sail area', labelPl: 'Powierzchnia żagla' },
+  { path: 'sail.apexAngleDeg', kind: 'physics', unit: '°', step: 1, labelEn: 'Sail apex angle', labelPl: 'Kąt wierzchołkowy żagla' },
+  { path: 'sail.CEheight', kind: 'physics', unit: 'm', step: 0.05, labelEn: 'CE height (mast)', labelPl: 'Wysokość CE (masztu)' },
+  { path: 'sail.camber', kind: 'physics', unit: '', step: 0.01, labelEn: 'Sail camber', labelPl: 'Wybrzuszenie żagla (camber)' },
+  { path: 'sail.CD0', kind: 'physics', unit: '', step: 0.005, labelEn: 'Parasitic drag (CD0)', labelPl: 'Opór szkodliwy (CD0)' },
+  { path: 'sail.s', kind: 'physics', unit: '', step: 0.05, labelEn: 'Partial-suction factor (s)', labelPl: 'Współcz. częściowej ssącej (s)' },
+  { path: 'sail.yardSwingRateDegPerSec', kind: 'physics', unit: '°/s', step: 5, labelEn: 'Yard swing rate', labelPl: 'Prędkość wychylania rei' },
+  { path: 'sail.deltaMaxReleaseDeg', kind: 'physics', unit: '°', step: 1, labelEn: 'Shunt release angle', labelPl: 'Kąt zwolnienia przy zwrocie' },
+  { path: 'sail.floggingCDFactor', kind: 'physics', unit: '', step: 0.01, labelEn: 'Flogging drag factor', labelPl: 'Dodatkowy opór łopotania' },
+  { path: 'sail.tackXFraction', kind: 'graphics', unit: '', step: 0.01, labelEn: 'Mast position (drawing)', labelPl: 'Pozycja masztu (rysunek)' },
+  { path: 'sail.ceBrailShift', kind: 'physics', unit: '', step: 0.01, labelEn: 'CE shift from windward brail', labelPl: 'Przesunięcie CE przez gejtawę nawietrzną' },
+  { path: 'sail.ceSwingFraction', kind: 'physics', unit: '', step: 0.01, labelEn: 'CE swing fraction', labelPl: 'Ułamek wychylenia CE z reją' },
+  { path: 'sail.verticalLiftFraction', kind: 'physics', unit: '', step: 0.01, labelEn: 'Vertical lift fraction', labelPl: 'Ułamek pionowej siły nośnej' },
+
+  { path: 'crew.mass', kind: 'physics', unit: 'kg', step: 1, labelEn: 'Crew mass', labelPl: 'Masa załogi' },
+
+  { path: 'rudder.maxDeflectionDeg', kind: 'physics', unit: '°', step: 1, labelEn: 'Max rudder deflection', labelPl: 'Maks. wychylenie steru' },
+  { path: 'rudder.area', kind: 'physics', unit: 'm²', step: 0.01, labelEn: 'Rudder blade area', labelPl: 'Powierzchnia pióra steru' },
+  { path: 'rudder.coeff', kind: 'physics', unit: '', step: 0.05, labelEn: 'Rudder force coeff.', labelPl: 'Współcz. siły steru' },
+
+  { path: 'stability.abackCapsizeTime', kind: 'physics', unit: 's', step: 0.5, labelEn: 'Aback capsize time', labelPl: 'Czas do wywrotki (aback)' },
+  { path: 'stability.amaLoadDisplayCap', kind: 'graphics', unit: '', step: 0.5, labelEn: 'Ama-load display cap (UI)', labelPl: 'Limit wskazania obc. amy (UI)' },
+  { path: 'stability.I_roll', kind: 'physics', unit: 'kg·m²', step: 50, labelEn: 'Roll moment of inertia', labelPl: 'Moment bezwładności przechyłu' },
+  { path: 'stability.phiLiftoffDeg', kind: 'physics', unit: '°', step: 1, labelEn: 'Ama liftoff angle', labelPl: 'Kąt oderwania amy' },
+  { path: 'stability.phiSubmergeDeg', kind: 'physics', unit: '°', step: 1, labelEn: 'Ama submerge angle', labelPl: 'Kąt zanurzenia amy' },
+  { path: 'stability.rollDampingCoeff', kind: 'physics', unit: '', step: 10, labelEn: 'Roll damping coeff.', labelPl: 'Tłumienie przechyłu' },
+  { path: 'stability.phiCapsizeDeg', kind: 'physics', unit: '°', step: 1, labelEn: 'Capsize angle', labelPl: 'Kąt wywrotki' },
+  { path: 'stability.capsizeTriggerMarginDeg', kind: 'physics', unit: '°', step: 1, labelEn: 'Capsize trigger margin', labelPl: 'Margines wyzwolenia wywrotki' },
+
+  { path: 'shunt.speedLockout', kind: 'physics', unit: 'm/s', step: 0.5, labelEn: 'Shunt speed lockout', labelPl: 'Blokada zwrotu (prędkość)' },
+  { path: 'shunt.easeDuration', kind: 'physics', unit: 's', step: 0.1, labelEn: 'Ease duration', labelPl: 'Czas luzowania' },
+  { path: 'shunt.transferDuration', kind: 'physics', unit: 's', step: 0.1, labelEn: 'Transfer duration', labelPl: 'Czas przenoszenia' },
+  { path: 'shunt.swapDuration', kind: 'physics', unit: 's', step: 0.1, labelEn: 'Bow/stern swap duration', labelPl: 'Czas zamiany dziób/rufa' },
+  { path: 'shunt.sheetDuration', kind: 'physics', unit: 's', step: 0.1, labelEn: 'Sheeting duration', labelPl: 'Czas wybierania szotu' },
+];
+const BOAT_CATEGORIES = ['hull', 'ama', 'sail', 'crew', 'rudder', 'stability', 'shunt'];
+
+function getPath(obj, path) { return path.split('.').reduce((o, k) => o?.[k], obj); }
+function setPath(obj, path, value) {
+  const keys = path.split('.');
+  let node = obj;
+  for (let i = 0; i < keys.length - 1; i++) node = (node[keys[i]] ??= {});
+  node[keys[keys.length - 1]] = value;
+}
+
+const boatFieldsEl = document.getElementById('boatFields');
+const boatErrorEl = document.getElementById('boatError');
+const boatPresetNameInput = document.getElementById('boatPresetName');
+const boatPresetSelect = document.getElementById('boatPresetSelect');
+const boatImportFile = document.getElementById('boatImportFile');
+const BOAT_PRESETS_KEY = 'simpjoaBoatPresets';
+
+// A saved boat is { config, polar? }. Presets written before the polar was
+// attached are a BARE patch object, so every read normalises — a polar is a
+// property OF a boat (it is derived from nothing else), which is why it
+// lives in here rather than in a cache keyed separately from the design.
+function normalisePreset(entry) {
+  if (!entry || typeof entry !== 'object') return { config: {} };
+  return ('config' in entry) ? { config: entry.config, polar: entry.polar } : { config: entry };
+}
+function loadBoatPresets() {
+  let raw;
+  try { raw = JSON.parse(localStorage.getItem(BOAT_PRESETS_KEY) || '{}'); } catch { return {}; }
+  const out = {};
+  for (const [name, entry] of Object.entries(raw)) out[name] = normalisePreset(entry);
+  return out;
+}
+function saveBoatPresets(presets) { localStorage.setItem(BOAT_PRESETS_KEY, JSON.stringify(presets)); }
+
+function refreshBoatPresetSelect() {
+  const presets = loadBoatPresets();
+  const names = Object.keys(presets).sort((a, b) => a.localeCompare(b));
+  boatPresetSelect.innerHTML = `<option value="">${t('opt.boatPresetNone')}</option>`;
+  for (const name of names) {
+    const opt = document.createElement('option');
+    opt.value = name; opt.textContent = name;
+    boatPresetSelect.appendChild(opt);
+  }
+}
+
+// Builds/rebuilds just the field rows from BOAT_FIELDS, pre-filled from
+// the current `dims` config — deliberately separate from the preset
+// <select> (see buildBoatPanel below): rebuilding the select wipes its
+// current selection, which would break "pick a preset, then Delete it"
+// if loading a preset also rebuilt the select it fired from.
+function buildBoatFieldRows() {
+  boatFieldsEl.innerHTML = '';
+  boatErrorEl.textContent = '';
+  for (const cat of BOAT_CATEGORIES) {
+    const h = document.createElement('div');
+    h.className = 'boatCategory';
+    h.textContent = t(`cat.${cat}`);
+    boatFieldsEl.appendChild(h);
+    for (const field of BOAT_FIELDS.filter((f) => f.path.startsWith(cat + '.'))) {
+      const row = document.createElement('div');
+      row.className = 'boatRow';
+      const label = document.createElement('label');
+      label.textContent = (currentLang === 'pl' ? field.labelPl : field.labelEn) + (field.unit ? ` (${field.unit})` : '');
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.step = field.step;
+      input.value = getPath(dims, field.path);
+      input.dataset.path = field.path;
+      const tag = document.createElement('span');
+      tag.className = `tag ${field.kind === 'physics' ? 'tagPhysics' : 'tagGraphics'}`;
+      tag.textContent = t(`tag.${field.kind}`);
+      row.append(label, input, tag);
+      boatFieldsEl.appendChild(row);
+    }
+  }
+}
+
+// Full panel (re)build — first open, language switch, reset-to-defaults:
+// cases where the preset list's own selection has no reason to survive.
+function buildBoatPanel() {
+  buildBoatFieldRows();
+  refreshBoatPresetSelect();
+}
+
+// Reads every BOAT_FIELDS input back into a full nested patch object — see
+// the "Applying a change" note above for why this is always the COMPLETE
+// field set, not just whatever the user touched this time.
+function collectBoatPatch() {
+  const patch = {};
+  for (const field of BOAT_FIELDS) {
+    const input = boatFieldsEl.querySelector(`input[data-path="${field.path}"]`);
+    setPath(patch, field.path, Number(input.value));
+  }
+  return patch;
+}
+
+function applyBoatPatch(patch) {
+  let validated;
+  try {
+    validated = createConfig(patch);
+  } catch (err) {
+    boatErrorEl.textContent = t('boat.invalid', err.message);
+    return false;
+  }
+  dims = validated;
+  updateBrailZoneUI();
+  renderCrewPad(); // hull/ama/spacing/crew-range may all have changed
+  sim.setConfig(patch);
+  sim.reset();
+  boatErrorEl.style.color = '#7fe3a3';
+  boatErrorEl.textContent = t('boat.applied');
+  return true;
+}
+
+document.getElementById('btnApplyBoat').addEventListener('click', () => {
+  boatErrorEl.style.color = '#ff8a8a';
+  applyBoatPatch(collectBoatPatch());
+});
+
+document.getElementById('btnResetBoatDefaults').addEventListener('click', () => {
+  dims = createConfig();
+  updateBrailZoneUI();
+  renderCrewPad();
+  buildBoatPanel();
+});
+
+document.getElementById('btnCloseBoat').addEventListener('click', toggleBoat);
+
+document.getElementById('btnSaveBoatPreset').addEventListener('click', () => {
+  const name = boatPresetNameInput.value.trim();
+  boatErrorEl.style.color = '#ff8a8a';
+  if (!name) { boatErrorEl.textContent = t('boat.needName'); return; }
+  const presets = loadBoatPresets();
+  // Carry the polar along IF it was computed for this exact boat+build; a
+  // mismatched one is dropped rather than saved as a lie.
+  const key = polarValidityKey();
+  const polar = (lastPolarRows && lastPolarKey === key) ? { key, rows: lastPolarRows } : undefined;
+  presets[name] = { config: collectBoatPatch(), ...(polar ? { polar } : {}) };
+  saveBoatPresets(presets);
+  refreshBoatPresetSelect();
+  boatPresetSelect.value = name;
+  boatErrorEl.style.color = '#7fe3a3';
+  boatErrorEl.textContent = polar ? t('polar.attached', name) : t('boat.saved', name);
+});
+
+document.getElementById('btnDeleteBoatPreset').addEventListener('click', () => {
+  const name = boatPresetSelect.value;
+  if (!name) return;
+  const presets = loadBoatPresets();
+  delete presets[name];
+  saveBoatPresets(presets);
+  refreshBoatPresetSelect();
+  boatErrorEl.style.color = '#7fe3a3';
+  boatErrorEl.textContent = t('boat.deleted', name);
+});
+
+// Selecting a saved boat loads AND applies it immediately — "choosing from
+// the list of saved ones" is meant to actually sail that boat, not just
+// stage its values for a separate Apply click.
+boatPresetSelect.addEventListener('change', () => {
+  const name = boatPresetSelect.value;
+  if (!name) return;
+  const presets = loadBoatPresets();
+  const entry = presets[name];
+  if (!entry) return;
+  boatPresetNameInput.value = name;
+  boatErrorEl.style.color = '#ff8a8a';
+  if (applyBoatPatch(entry.config)) {
+    buildBoatFieldRows();
+    adoptStoredPolar(entry.polar, name);
+  }
+});
+
+document.getElementById('btnExportBoat').addEventListener('click', () => {
+  const name = boatPresetNameInput.value.trim() || 'boat';
+  const patch = collectBoatPatch();
+  // Ship the polar with the design when it belongs to it, so a boat handed
+  // to someone else arrives with its performance already measured.
+  const key = polarValidityKey();
+  const polar = (lastPolarRows && lastPolarKey === key) ? { key, rows: lastPolarRows } : undefined;
+  const blob = new Blob([JSON.stringify({ name, config: patch, ...(polar ? { polar } : {}) }, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${name}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+document.getElementById('btnImportBoat').addEventListener('click', () => boatImportFile.click());
+boatImportFile.addEventListener('change', async () => {
+  const file = boatImportFile.files?.[0];
+  boatImportFile.value = '';
+  if (!file) return;
+  boatErrorEl.style.color = '#ff8a8a';
+  try {
+    const data = JSON.parse(await file.text());
+    const patch = data.config ?? data; // accept either {name,config} or a bare patch
+    if (applyBoatPatch(patch)) {
+      buildBoatPanel();
+      const name = data.name || file.name.replace(/\.json$/i, '');
+      boatPresetNameInput.value = name;
+      adoptStoredPolar(data.polar, name);
+      boatErrorEl.style.color = '#7fe3a3';
+      boatErrorEl.textContent = t('boat.imported', name);
+    }
+  } catch {
+    boatErrorEl.textContent = t('boat.importFailed');
+  }
+});

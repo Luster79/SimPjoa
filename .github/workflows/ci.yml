@@ -1,0 +1,105 @@
+name: CI
+
+# Replaces the Playwright scaffold workflow, which ran `npx playwright test`
+# against tests/example.spec.js — an untouched generator sample that loaded
+# playwright.dev and asserted THEIR page title. It tested nothing here, and
+# could fail on somebody else's site being down, so a green tick meant
+# neither "this project works" nor "the network was fine".
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  # fast-tests (R7, docs/work-order-2026-07-22.md): the computePolar-backed
+  # checks and the CSV/polar export (below, in `tests`) are the dominant
+  # cost of the full suite (~6min) — this job runs everything else
+  # (`npm test`, harness/asserts.js's `slow: false` path) for quick
+  # feedback, in parallel with the full job rather than instead of it.
+  fast-tests:
+    name: Fast acceptance suite (no polar sweep)
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      - name: Run the fast acceptance suite
+        run: npm test
+
+  tests:
+    name: Physics + acceptance suite (full)
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      # No `npm ci`: core/ and harness/ are dependency-free ES modules, and
+      # the only devDependencies are Playwright + @types/node, neither of
+      # which this job needs. Skipping the install keeps it quick and stops
+      # the suite failing over an unrelated dependency problem.
+      - name: Run the full acceptance suite
+        run: npm run test:full
+
+      # out/polar.csv is a committed reference snapshot, and the only one
+      # that has actually caught a regression the assertions missed: removing
+      # crewPos=1.0 from the search grid cut speeds 6-9% at 10 m/s, which no
+      # assertion reads (the acceptance bands are anchored at 4/6, and the
+      # deep-course tests do not sweep the crew grid) and which was noticed
+      # purely from the diff. Until this step existed, that tripwire depended
+      # on somebody eyeballing `git status` — the exact manual-vigilance
+      # failure the 2026-07-22 review is about.
+      #
+      # The sweep is deterministic (pure function of config + grid, no RNG,
+      # dt-converged), so byte equality is the right test: any difference is
+      # a real change in the model or the search. A legitimate physics change
+      # is expected to fail this step once and be committed with the
+      # regenerated file, same contract as the bundle job below.
+      #
+      # Scoped to polar.csv on purpose. The scenario CSVs in out/ are ~12 MB
+      # of per-step diagnostic dump whose behaviour the assertions already
+      # cover directly; gating on those would force a 12 MB diff into every
+      # physics PR to re-verify what the suite just checked.
+      - name: Committed polar reference is unchanged
+        run: |
+          if ! git diff --quiet -- out/polar.csv; then
+            echo "::error::out/polar.csv changed — the model or the search moved. Review the diff; if intended, commit the regenerated file."
+            git diff -- out/polar.csv
+            exit 1
+          fi
+          echo "Polar reference unchanged."
+
+  bundle:
+    name: dist/ matches its sources
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      # dist/simulator_standalone.html is a committed build artifact that
+      # nothing verified: it was already out of sync in the working tree
+      # during the 2026-07-22 review, and had been committed at ab4eb27
+      # while HEAD was 3ad08a1. Rebuild and require the result to match.
+      #
+      # CODE_VERSION/BUILD_TIME are stripped from the comparison on purpose.
+      # They record which commit the sources came from, so a bundle
+      # committed alongside its own sources necessarily carries the parent's
+      # hash (see tools/bundle.js) — that is expected, and is not drift.
+      # What must not differ is the CODE.
+      - name: Rebuild the standalone bundle
+        run: |
+          cp dist/simulator_standalone.html /tmp/committed.html
+          node tools/bundle.js
+          strip() { sed -E 's/const (CODE_VERSION|BUILD_TIME) = "[^"]*"/const \1 = "X"/' "$1"; }
+          if ! diff -q <(strip /tmp/committed.html) <(strip dist/simulator_standalone.html) >/dev/null; then
+            echo "::error::dist/simulator_standalone.html is stale — run 'node tools/bundle.js' and commit the result."
+            diff <(strip /tmp/committed.html) <(strip dist/simulator_standalone.html) | head -40
+            exit 1
+          fi
+          echo "Bundle matches its sources."

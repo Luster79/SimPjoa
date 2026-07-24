@@ -11,13 +11,13 @@ const HEADING0 = Math.PI / 2;
 function initialState() {
   return {
     t: 0, x: 0, y: 0, heading: HEADING0, u: 1.0, v: 0, r: 0, phi: 0, p: 0, delta: 0, end: 1,
-    amaLoad: 0, abackTimer: 0, overloadTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 },
+    amaLoad: 0, abackTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 },
   };
 }
 
 function annotate(state, controls, config) {
   const f = computeForces(state, controls, config);
-  return { ...state, controls, alpha: f.alpha, CL: f.CL, CD: f.CD, aw: f.aw, deltaMax: f.deltaMax };
+  return { ...state, controls, alpha: f.alpha, CL: f.CL, CD: f.CD, aw: f.aw, deltaMax: f.deltaMax, Msail: f.breakdown.roll.Msail };
 }
 
 function run(config, seconds, controlsFn) {
@@ -204,6 +204,40 @@ export function scenarioBackwindSlam(config) {
     windSpeed: tws, sheet: sheetDeg * DEG,
     rudder: 0, // no corrective steering: isolate the sail-driven mechanism
     brailLee: 0, brailWind: 0, crewPos: 0.2, crewPosX: 0, shuntRequest: false,
+  }));
+}
+
+// scenarioThroughGybeAback (round 10d, H2, ROUND10d_helm_balance.md): same
+// settle-then-cross pattern as scenarioBackwindSlam above (open-loop,
+// rudder=0 throughout — no autopilot correction, isolating the sail-driven
+// through-gybe mechanism the field report's uncommanded bear-away exposed),
+// tuned to a more severe crossing (tws=10, crewPos=0.35 — crewPos toward
+// the ama WORSENS the pressed side, see stability.js crewRollMoment's own
+// comment) so the ama genuinely, fully submerges (amaLoad>1) within a few
+// seconds of the crossing — this is the "if unrelieved, capsizes via the
+// EXISTING pressed-side path" half of H2's acceptance criterion, and it
+// works via the UNCHANGED abackTimer/capsized mechanism (stability.js
+// updateAback): no code change was needed for a crossing this severe. The
+// milder crossings a real accidental bear-away more often produces (see
+// ROUND10d_helm_balance_findings.md for the swept parameter table) settle
+// into a genuine, non-capsizing sub-1.0 amaLoad equilibrium instead — that
+// milder case is what abackWarning (the new signal) closes: it fires
+// almost immediately at the crossing regardless of how severe the press
+// turns out to be, so this same scenario also exercises the "warning
+// within 3s" half of the acceptance criterion.
+export function scenarioThroughGybeAback(config) {
+  const twaDeg = 60;
+  const tws = 10;
+  const sheetDeg = 45;
+  const windDirFromNormal = HEADING0 + twaDeg * DEG;
+  const windDirFromAback = HEADING0 - 100 * DEG; // crosses to the leeward (-end) side
+  const SETTLE_SECONDS = 10;
+
+  return run(config, SETTLE_SECONDS + 30, (state, t) => ({
+    windDirFrom: t < SETTLE_SECONDS ? windDirFromNormal : windDirFromAback,
+    windSpeed: tws, sheet: sheetDeg * DEG,
+    rudder: 0, // driven open-loop: no corrective steering
+    brailLee: 0, brailWind: 0, crewPos: 0.35, crewPosX: 0, shuntRequest: false,
   }));
 }
 

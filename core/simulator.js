@@ -5,13 +5,20 @@ import { createConfig, validateConfig, deepMerge } from './config.js';
 import { createInitialState } from './state.js';
 import { integrate, computeForces } from './integrator.js';
 
+// Neutral controls used to seed lastForces for a state nothing has
+// stepped yet — both at creation and after reset() (R14, docs/work-order-
+// 2026-07-22.md: reset() used to leave lastForces holding the PREVIOUS
+// run's forces until the next step(), a real facade inconsistency even
+// though the live UI never observes it, since it steps every frame).
+const NEUTRAL_CONTROLS = {
+  windDirFrom: 0, windSpeed: 0, sheet: 0, rudder: 0,
+  brailLee: 0, brailWind: 0, crewPos: 0, crewPosX: 0, shuntRequest: false,
+};
+
 export function createSimulator(userConfig) {
   let config = createConfig(userConfig);
   let state = createInitialState(config);
-  let lastForces = computeForces(state, {
-    windDirFrom: 0, windSpeed: 0, sheet: 0, rudder: 0,
-    brailLee: 0, brailWind: 0, crewPos: 0, crewPosX: 0, shuntRequest: false,
-  }, config);
+  let lastForces = computeForces(state, NEUTRAL_CONTROLS, config);
   let lastShuntRequest = false;
 
   function step(controls, dtFrame) {
@@ -39,6 +46,7 @@ export function createSimulator(userConfig) {
 
   function reset() {
     state = createInitialState(config);
+    lastForces = computeForces(state, NEUTRAL_CONTROLS, config);
     lastShuntRequest = false;
   }
 

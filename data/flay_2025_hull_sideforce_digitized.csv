@@ -1,0 +1,18 @@
+# Digitized from Flay, Irwin, Viola 2025 (JST 10(1), Fig 18), 200 DPI raster.
+# CS referenced to PROJECTED SIDE AREA (A=0.0488 m2 model / 4.88 m2 full scale, 12 m hull).
+# Coefficients ~independent of speed, Fr 0.12-0.47. NO saturation observed in tested range.
+# Uncertainty +-0.01. V2 = narrow Vee 70 deg keel (proa-like); V1 = 100 deg; U = rounded.
+hull,leeway_deg,CS
+V2,4,0.030
+V2,8,0.070
+V2,12,0.130
+V2,16,0.197
+V1,4,0.025
+V1,8,0.055
+V1,16,0.150
+V1,24,0.250
+U,8,0.033
+U,16,0.075
+U,24,0.130
+# resistance note (Fig 15): CR DECREASES with leeway for V hulls (lift forward component);
+# drag CD at 16 deg similar for V1/V2; validity ceiling Fr<=0.48, leeway<=16 (V2) / 24 (V1).

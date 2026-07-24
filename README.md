@@ -18,6 +18,17 @@ and (re)writes scenario + polar CSVs to `/out`. Exit code is non-zero on
 any failure. `/core` and `/harness` are frozen as of the Step 1 sign-off
 — Step 2 only reads from them.
 
+Round 7 added a "KNOWN MODEL LIMITATIONS" section to the output: a small
+set of diagnosed, evidenced regressions (tagged `xfail:STEERING` /
+`xfail:STABILITY` in `harness/asserts.js`) that are EXPECTED to keep
+failing — they still run every time, are excluded from the main pass
+count, and are reported separately with a one-line diagnosis pointing at
+`ROUND7_steering_regression_findings.md`. If one of these ever starts
+passing, the run fails loudly as a "promotion candidate" instead of
+silently going green — that's deliberate: an xfail flipping to green
+means the model changed and needs a human decision to lift the mark, not
+an automatic pass.
+
 ## Step 2 — browser UI
 
 Two ways to run it, both driving the exact same unmodified core:
@@ -70,6 +81,7 @@ otherwise. Documentation (this file, code comments) stays English-only.
 | Leeward brail | `Q` sheets in, `Z` eases |
 | Windward brail | `W` sheets in, `X` eases |
 | Rudder | `A` / `D` (auto-centers on release), or slider |
+| Rudder up (shipped) | checkbox — a steering oar, not a fixed rudder; produces no force while checked |
 | Crew position | `J` toward leeward, `L` toward the ama, or slider |
 | Shunt | `Space` (held or click), respects the speed lockout |
 | Reset (after capsize, or any time) | `R` |
@@ -77,6 +89,8 @@ otherwise. Documentation (this file, code comments) stays English-only.
 | Toggle force-vector overlay | `F` |
 | Polar mode | `O` |
 | Wake trail (kilwater) | checkbox in the Display panel |
+| Side-view inset (round 11, R11-1) | checkbox in the Display panel |
+| Skin — Pjoa / Micronesia (round 11, R11-8) | dropdown in the Display panel |
 
 The yard's ACTUAL angle (`state.delta`) is real, dynamic state now (round
 5) — the sheet only ever limits how far it can swing; the HUD shows both
@@ -89,11 +103,63 @@ hull side force, blue = rudder force — drawn at their application
 points, log-scaled for legibility. Apparent wind arrow is the cyan
 vector at the boat; true wind is the fixed arrow, top-left.
 
-Polar mode runs `harness/polar.js`'s `computePolar` in-browser against
-the live config (TWS 4/6/8/10 m/s) with a progress readout — it's the
-same expensive grid-search sweep `run_tests.js` runs, so it takes on
-the order of a minute or two. "Export CSV" downloads the result in the
-same column layout as `out/polar.csv`.
+Polar mode runs `harness/polar.js`'s search in-browser against the live
+config with a progress readout. It is the same grid-search, but not the
+same grid: the demo uses `SWEEP_FULL` (TWS 4/6/8/10), while
+`run_tests.js` uses `SWEEP_CI` (4/6/10) — both named in `harness/polar.js`,
+which explains why. So expect 56 rows here against `out/polar.csv`'s 41,
+and a run on the order of four to five minutes.
+
+The sweep yields between individual trials rather than between headings,
+so the tab stays responsive throughout, and leaving the panel cancels it.
+A completed polar is stored with the boat design that produced it (see
+the boat panel), keyed on the physics fields, so reopening a saved boat
+brings its polar back instead of recomputing it. "Export CSV" downloads
+the result in the same column layout as `out/polar.csv`.
+
+### Proa identity graphics (round 11, `ROUND11_proa_identity_graphics.md`)
+
+UI-only additions (no `/core` or `/harness` changes; nothing added to
+`forcesBreakdown()`) making it visually unmistakable that this is a
+proa, not a generic dinghy with a float:
+
+- **Side-view inset** (top-right, `R11-1`) — a small, collapsible
+  profile view from leeward: crab-claw shape/rake, brail/furl state,
+  heel, the ama lifting clear or pressing in, crew position, a bobbing
+  waterline. Mirrors correctly across a shunt.
+- **Twin wake** (`R11-2`) — the existing hull wake trail gets a second,
+  differently-tinted thread sampled from the ama's own position, with a
+  literal gap in it for every stretch the ama flies clear of the water.
+- **Shunt narrative** (`R11-3`) — a 4-icon phase strip (ease / haul tack
+  / swap ends / sheet in) synced to `state.shunt.phase`; the tack line
+  during 'transfer' is an actual hauled line with a moving fairlead
+  point; a brief BOW/DZIOB tag pops at the newly active end the instant
+  'swap' completes; a hull-axis-vs-course-over-ground compass ribbon
+  (always visible) shows the hull axis holding still while COG sweeps
+  ~180deg through a clean shunt.
+- **Balance cross-section widget** (bottom-left, `R11-4`) — a schematic
+  bow-on view: hull, ama, crew, and the sail's heeling moment vs the
+  ama's righting response as two live arrows, tinted amber/red synced to
+  the existing heel-bar/aback warning thresholds. (`R11-4` also
+  reordered the main HUD bar to proa priorities; reverted per later
+  feedback back to its original order — speed/TWA/AWA/AoA/VMG/leeway
+  first, ama load/heel and the rest after.)
+- **Apparent-wind safety sector** (`R11-5`) — an arc around the boat
+  whose highlighted segment glows amber then red as `core/sheet.js`'s
+  own `deltaAlign()` (imported, not re-derived) shrinks toward the real
+  physical threshold where the yard clamps to the mast — earlier than
+  the aback alarm itself, which only fires once the ama is already
+  pressed underwater.
+- **Telltales** (`R11-6`) — two ribbon telltales near the tack, driven
+  from `alphaSailor`/luffing/stalled: streaming, fluttering, or drooping.
+- **Steering oar** (`R11-7`) — the shaft rotates by the actual
+  deflection with a force-scaled swirl at the blade when deployed;
+  drawn stowed flush along the deck when shipped (`rudderUp`); the
+  active/idle role crossfades between the two physical tips over the
+  ~0.4s 'swap' sub-phase instead of jumping.
+- **Skins** (`R11-8`) — "Pjoa" (default) and "Micronesia" in the
+  Display panel; palette/fill-style only, every reading above stays
+  equally legible on both.
 
 ## Session recorder & replay (round 6)
 
@@ -191,20 +257,30 @@ Step 2, since the UI doesn't change them):
   round 2 to close a ballast exploit — see
   `FIX_REQUEST_step1_round2.md` R2-1); this is a straight-line fraction
   of crew mass vs. ama buoyancy, not a hull-shape-aware immersion curve.
-- **No waves or current.** Water is a still reference frame; wave
-  resistance is a Froude-number penalty term on the hull only, not a
-  simulated sea state.
+- **No waves or current.** Water is a still reference frame; residuary
+  (wave-making) resistance is a bounded Froude-number-dependent term on
+  the hull only (round 9, `ROUND9_physics_fidelity_work_order.md` R9-1 —
+  a slender-hull hump, not a simulated sea state). Consequence (P5,
+  docs/work-order-2026-07-22.md): a followed sea is the main real-world
+  cause of yaw-hunting on offwind courses, so the model's stable,
+  rudder-free deep-course equilibria are optimistic — they should not be
+  read as "this boat holds a dead run hands-off on the water."
 
 Carried forward from the round-2 sign-off (`STEP1_SIGNOFF_and_STEP2_instructions.md`
 Part A) as calibration watch items, not bugs:
 
-- The polar is globally on the low side of the tuning that fixed the
-  round-2 upwind-pointing finding: `speed(TWS 6, TWA 90)` sits near the
-  bottom of the prompt's `[2.0, 3.6] m/s` acceptance band, and the
-  speed peak sits further aft (~TWA 140) than a typical reaching boat.
-  Both pass the acceptance criteria as written; final numbers await
-  calibration against real-boat reference data (Dierking designs, Di
-  Piazza wind-tunnel tables) mentioned in `data/README_input_data_EN.md`.
+- Round 7 (`ROUND7_drag_calibration.md`/`ROUND7_DECISION.md`) flipped this
+  item to the OTHER edge: fixing the ama-drag bug legitimately raised
+  achievable speed everywhere, but the hull's wave-resistance wall (a
+  displacement-monohull "hull speed" model, wrong for this slender
+  L/B=10:1 hull) then capped top-end speed regardless of sail power — two
+  acceptance checks reported as best-achievable rather than pass. **Round 9
+  resolved this** (`ROUND9_physics_fidelity_work_order.md` R9-1/R9-2,
+  `docs/adr/0001`): replaced the wave wall with a bounded, ITTC-order
+  residuary model and undid the sail detune that had been compensating for
+  it. Both acceptance bands were re-derived against the new, physically
+  faster polar and now genuinely pass — see
+  `ROUND9_physics_fidelity_findings.md` for the full before/after.
 - `bestSheetAngle` jitters at TWA 160 in the polar (a flat downwind
   optimum where several trims give near-identical speed) — cosmetic,
   the speed curve itself is smooth there.
@@ -227,6 +303,12 @@ harness/               Step 1 test harness (asserts.js, scenarios.js, polar.js, 
                        plus round-6 checksum.js (shared state hash) and replay.js (offline CLI)
 run_tests.js           Step 1 entry point
 out/                    Step 1 scenario/polar CSV output
+recordings/             Committed session recordings used as regression-test
+                        fixtures (round 7, R7-4b) — replayed by
+                        harness/asserts.js against the live core, no
+                        checksum verification (see "Session recorder &
+                        replay" above for why cross-engine verify isn't
+                        meaningful)
 ui/
   index.html            Step 2 dev entry point (ESM, needs an HTTP server)
   app.js                All UI logic: rendering, controls, HUD, alarms, polar mode

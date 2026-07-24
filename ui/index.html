@@ -17,12 +17,14 @@
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; background: #0b1420; color: #dbe7f2; font: 13px/1.4 system-ui, sans-serif; }
-  #app { display: grid; grid-template-columns: 1fr 336px; grid-template-rows: auto 1fr; height: 100%; }
+  #app { display: grid; grid-template-columns: 1fr 400px; grid-template-rows: auto 1fr; height: 100%; }
   #hud { grid-column: 1 / 3; display: flex; flex-wrap: wrap; gap: 4px 18px; padding: 6px 12px; background: #101c2c; border-bottom: 1px solid #23364a; align-items: center; }
   #hud .stat { white-space: nowrap; }
   #hud .stat b { color: #7fd0ff; }
   .luffing-tag { color: #ffd23f !important; font-size: 11px; letter-spacing: .03em; }
   .luffing-tag:empty { display: none; }
+  .stalled-tag { color: #ff9f1c !important; font-size: 11px; letter-spacing: .03em; }
+  .stalled-tag:empty { display: none; }
   .checkboxRow { display: flex; align-items: center; gap: 6px; margin: 6px 0; color: #9fb4c8; }
   .checkboxRow input { margin: 0; }
   .rec-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #555; margin-right: 5px; vertical-align: middle; }
@@ -34,6 +36,7 @@
   #banner { position: absolute; top: 0; left: 0; right: 0; text-align: center; padding: 10px; font-weight: 700; font-size: 16px; letter-spacing: 0.03em; display: none; }
   #banner.aback { display: block; background: rgba(200,40,40,0.85); animation: pulse 1s infinite; }
   #banner.overload { display: block; background: rgba(200,140,20,0.85); }
+  #banner.pressed { display: block; background: rgba(180,110,30,0.85); }
   #capsizeOverlay { position: absolute; inset: 0; background: rgba(5,8,12,0.86); display: none; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; }
   #capsizeOverlay.show { display: flex; }
   #capsizeOverlay h1 { margin: 0; font-size: 28px; color: #ff6b6b; }
@@ -48,6 +51,38 @@
   .row label { flex: 0 0 108px; color: #9fb4c8; }
   .row input[type=range] { flex: 1; }
   .row output { flex: 0 0 46px; text-align: right; font-variant-numeric: tabular-nums; }
+  .row .stepBtn { flex: 0 0 auto; padding: 2px 8px; font-size: 12px; line-height: 1.4; }
+  /* Brail (wind) two-tone TRIM/SURVIVAL track (round 10d, C-B): the
+     boundary position (--trim-pct) is set from CONFIG.sail.brailTrimRange
+     by app.js, not hardcoded here — see updateBrailZoneUI(). */
+  .sliderWrap { position: relative; flex: 1; display: flex; align-items: center; }
+  .sliderWrap input[type=range] { flex: 1; }
+  #brailWind { -webkit-appearance: none; appearance: none; height: 6px; border-radius: 3px; background: linear-gradient(to right, #2fae6a var(--trim-pct, 60%), #d8a52a var(--trim-pct, 60%)); }
+  #brailWind::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: #dbe7f2; border: 2px solid #2b4460; margin-top: 0; cursor: pointer; }
+  #brailWind::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: #dbe7f2; border: 2px solid #2b4460; cursor: pointer; }
+  #brailWind::-moz-range-track { height: 6px; border-radius: 3px; background: linear-gradient(to right, #2fae6a var(--trim-pct, 60%), #d8a52a var(--trim-pct, 60%)); }
+  .brailTick { position: absolute; top: 50%; width: 2px; height: 12px; background: #dbe7f2; transform: translate(-1px, -50%); pointer-events: none; }
+  .pad2DWrap { flex: 1; }
+  /* Stage = the drawing viewport. The boat backdrop fills it and is allowed
+     to bleed past the interactive pad (the long hull runs off top/bottom),
+     clipped here. aspect-ratio is set inline by renderCrewPad() to the
+     drawing window. */
+  .padStage { position: relative; width: 100%; max-width: 210px; aspect-ratio: 1 / 1; background: #0a1420; border: 1px solid #23364a; border-radius: 6px; overflow: hidden; touch-action: none; }
+  .padArt { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; }
+  /* Pad = the region the crew can actually move over (leeward..ama laterally,
+     bow..stern fore-aft). Overlaid on the backdrop; its box (left/top/width/
+     height) is set inline by renderCrewPad(). This is the pointer target. */
+  .pad2D { position: absolute; background: rgba(127,199,255,0.06); border: 1px solid rgba(127,199,255,0.55); border-radius: 4px; cursor: crosshair; touch-action: none; user-select: none; }
+  .padLabel { position: absolute; font-size: 10px; color: #6f8399; pointer-events: none; text-shadow: 0 0 3px #0a1420, 0 0 3px #0a1420; }
+  .padLabelTop { top: 3px; left: 50%; transform: translateX(-50%); }
+  .padLabelBottom { bottom: 3px; left: 50%; transform: translateX(-50%); }
+  .padLabelLeft { left: 4px; top: 50%; transform: translateY(-50%); }
+  .padLabelRight { right: 4px; top: 50%; transform: translateY(-50%); }
+  .padLabelQuadrant { font-size: 9px; font-style: italic; color: #6f93b4; transform: translate(-50%, -50%); text-align: center; white-space: nowrap; }
+  .padLabelQuadrantTL { top: 15%; left: 34%; }
+  .padLabelQuadrantBR { top: 85%; left: 34%; }
+  .padDot { position: absolute; width: 14px; height: 14px; border-radius: 50%; background: #7fc7ff; border: 2px solid #dbe7f2; transform: translate(-50%, -50%); pointer-events: none; box-shadow: 0 0 6px rgba(127,199,255,0.6); }
+  .padReadout { font-size: 11px; color: #9fb4c8; margin-top: 4px; text-align: center; font-variant-numeric: tabular-nums; }
   .buttons { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
   button { background: #17293d; color: #dbe7f2; border: 1px solid #2b4460; border-radius: 4px; padding: 5px 10px; cursor: pointer; font: inherit; }
   button:hover { background: #1f3650; }
@@ -65,8 +100,22 @@
   .hint { color: #6f8399; font-size: 11px; margin: 2px 0 8px; }
   #polarPanel { display: none; }
   #polarPanel.show { display: block; }
+  #boatPanel { display: none; }
+  #boatPanel.show { display: block; }
+  .boatLegend { display: flex; gap: 10px; margin: 4px 0 10px; font-size: 11px; color: #9fb4c8; align-items: center; }
+  .boatCategory { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: #7fa8cc; margin: 14px 0 4px; border-bottom: 1px solid #1e2f42; padding-bottom: 3px; }
+  .boatRow { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
+  .boatRow label { flex: 1 1 auto; color: #9fb4c8; font-size: 12px; }
+  .boatRow input[type=number] { width: 92px; flex: 0 0 auto; background: #0e1927; color: #dbe7f2; border: 1px solid #2b4460; border-radius: 4px; padding: 3px 5px; font: inherit; }
+  .tag { font-size: 10px; padding: 1px 6px; border-radius: 3px; flex: 0 0 auto; white-space: nowrap; }
+  .tag.tagPhysics { background: #1f3f2a; color: #7fe3a3; border: 1px solid #2c5c3c; }
+  .tag.tagGraphics { background: #3a2f1f; color: #e3b87f; border: 1px solid #5c4a2c; }
+  #boatError { color: #ff8a8a; min-height: 1em; white-space: pre-line; }
+  #boatPresetSelect, #skinSelect { flex: 1 1 auto; background: #0e1927; color: #dbe7f2; border: 1px solid #2b4460; border-radius: 4px; padding: 4px; font: inherit; }
   #legend { position: absolute; right: 8px; bottom: 8px; background: rgba(10,18,28,0.75); border: 1px solid #23364a; border-radius: 4px; padding: 6px 8px; font-size: 11px; line-height: 1.7; }
   #legend .sw { display: inline-block; width: 14px; height: 3px; margin-right: 5px; vertical-align: middle; }
+  #versionInfo { color: #6f8399; font-size: 11px; font-variant-numeric: tabular-nums; }
+  #versionInfo:empty { display: none; }
 </style>
 </head>
 <body>
@@ -75,7 +124,7 @@
     <span class="stat"><span data-i18n="hud.speed">Speed</span> <b id="hudSpeed">0.0</b> <span data-i18n="unit.kn">kn</span></span>
     <span class="stat">TWA <b id="hudTwa">0</b>&deg;</span>
     <span class="stat">AWA <b id="hudAwa">0</b>&deg;</span>
-    <span class="stat">AoA <b id="hudAlpha">0</b>&deg;</span>
+    <span class="stat">AoA <b id="hudAlpha">0</b>&deg; <b id="hudStalled" class="stalled-tag"></b></span>
     <span class="stat">VMG&uarr; <b id="hudVmg">0.0</b> <span data-i18n="unit.kn">kn</span></span>
     <span class="stat"><span data-i18n="hud.leeway">Leeway</span> <b id="hudLeeway">0</b>&deg;</span>
     <span class="stat"><span data-i18n="hud.amaLoad">Ama load</span> <b id="hudAmaLoad">0</b>%</span>
@@ -94,7 +143,9 @@
       <button id="btnStep"><span data-i18n="btn.step">Step (.)</span></button>
       <button id="btnForces" class="active"><span data-i18n="btn.forces">Forces (F)</span></button>
       <button id="btnPolar"><span data-i18n="btn.polar">Polar (O)</span></button>
+      <button id="btnBoat"><span data-i18n="btn.boat">Boat (B)</span></button>
     </span>
+    <span class="stat" id="versionInfo"></span>
   </div>
   <div id="stage">
     <canvas id="scene"></canvas>
@@ -122,16 +173,38 @@
       <div class="hint" data-i18n="hint.yard">&larr;/&rarr; arrow keys ease/sheet</div>
       <div class="row"><label for="brailLee" data-i18n="lbl.brailLee">Brail (lee)</label><input id="brailLee" type="range" min="0" max="100" step="1" value="0"><output id="brailLeeOut">0%</output></div>
       <div class="hint" data-i18n="hint.brailLee">Q sheets in, Z eases</div>
-      <div class="row"><label for="brailWind" data-i18n="lbl.brailWind">Brail (wind)</label><input id="brailWind" type="range" min="0" max="100" step="1" value="0"><output id="brailWindOut">0%</output></div>
+      <div class="row"><label for="brailWind" data-i18n="lbl.brailWind">Brail (wind)</label><div class="sliderWrap"><input id="brailWind" type="range" min="0" max="100" step="1" value="0"><div id="brailWindTick" class="brailTick"></div></div><output id="brailWindOut">0%</output></div>
       <div class="hint" data-i18n="hint.brailWind">W sheets in, X eases</div>
 
       <h2 data-i18n="h.steering">Steering &amp; trim</h2>
       <div class="row"><label for="rudder" data-i18n="lbl.rudder">Rudder</label><input id="rudder" type="range" min="-1" max="1" step="0.02" value="0"><output id="rudderOut">0.00</output></div>
       <div class="hint" data-i18n="hint.rudder">A/D deflect, auto-centers on release</div>
-      <div class="row"><label for="crewPos" data-i18n="lbl.crewPos">Crew pos.</label><input id="crewPos" type="range" min="-0.3" max="1.0" step="0.02" value="0.3"><output id="crewPosOut">0.30</output></div>
-      <div class="hint" data-i18n="hint.crewPos">J moves to leeward, L moves to the ama</div>
-      <div class="row"><label for="crewPosX" data-i18n="lbl.crewPosX">Crew fore-aft</label><input id="crewPosX" type="range" min="-1" max="1" step="0.02" value="0"><output id="crewPosXOut">0.00</output></div>
-      <div class="hint" data-i18n="hint.crewPosX">I moves forward, K moves aft</div>
+      <div class="checkboxRow"><input type="checkbox" id="rudderUp"><label for="rudderUp" data-i18n="lbl.rudderUp">Rudder up (shipped)</label></div>
+      <div class="hint" data-i18n="hint.rudderUp">A steering oar, not a fixed rudder — usually out of the water; produces no force while shipped</div>
+      <div class="row" style="align-items: flex-start">
+        <label data-i18n="lbl.crewPos">Crew position</label>
+        <div class="pad2DWrap">
+          <!-- Stage holds the to-scale boat backdrop (hull, ama, platform),
+               drawn by renderCrewPad() in app.js and free to bleed past the
+               pad. The pad itself is the crew's reachable region overlaid on
+               it. Axes: bow (dziob) top, stern (rufa) bottom, ama left,
+               leeward (zawietrzna) right. -->
+          <div id="crewPadStage" class="padStage">
+            <svg id="crewPadArt" class="padArt" aria-hidden="true"></svg>
+            <div id="crewPad" class="pad2D">
+              <span class="padLabel padLabelTop" data-i18n="pad.fwd">fwd</span>
+              <span class="padLabel padLabelBottom" data-i18n="pad.aft">aft</span>
+              <span class="padLabel padLabelLeft" data-i18n="pad.ama">ama</span>
+              <span class="padLabel padLabelRight" data-i18n="pad.leeward">leeward</span>
+              <span class="padLabel padLabelQuadrant padLabelQuadrantTL" data-i18n="pad.headUp">Heading up</span>
+              <span class="padLabel padLabelQuadrant padLabelQuadrantBR" data-i18n="pad.bearAway">Bearing away</span>
+              <div id="crewDot" class="padDot"></div>
+            </div>
+          </div>
+          <div class="padReadout"><output id="crewPosOut">0.30</output> / <output id="crewPosXOut">0.00</output></div>
+        </div>
+      </div>
+      <div class="hint" data-i18n="hint.crewPos">Drag the dot, or J/L (lateral), I/K (fore-aft)</div>
 
       <h2 data-i18n="h.shunt">Shunt</h2>
       <div class="buttons"><button id="btnShunt"><span data-i18n="btn.shunt">SHUNT (space)</span></button></div>
@@ -144,6 +217,13 @@
 
       <h2 data-i18n="h.display">Display</h2>
       <div class="checkboxRow"><input type="checkbox" id="wakeTrail"><label for="wakeTrail" data-i18n="lbl.wakeTrail">Wake trail (kilwater)</label></div>
+      <div class="checkboxRow"><input type="checkbox" id="insetShow" checked><label for="insetShow" data-i18n="lbl.insetShow">Side-view inset</label></div>
+      <div class="row"><label for="skinSelect" data-i18n="lbl.skin">Skin</label>
+        <select id="skinSelect">
+          <option value="pjoa" data-i18n="opt.skinPjoa">Pjoa</option>
+          <option value="micronesia" data-i18n="opt.skinMicronesia">Micronesia</option>
+        </select>
+      </div>
 
       <h2 data-i18n="h.reset">Reset</h2>
       <div class="buttons"><button id="btnReset"><span data-i18n="btn.reset">Reset (R)</span></button></div>
@@ -157,6 +237,36 @@
         <button id="btnClosePolar"><span data-i18n="btn.backToSailing">Back to sailing</span></button>
       </div>
       <div id="polarProgress" class="hint"></div>
+    </div>
+    <div id="boatPanel">
+      <h2 data-i18n="h.boatDesign">Boat design</h2>
+      <div class="hint" data-i18n="hint.boatDesign">Physical design parameters — hull, ama, sail, rudder, stability. Changes apply on "Apply" and reset the boat's motion state.</div>
+      <div class="boatLegend">
+        <span class="tag tagPhysics" data-i18n="tag.physics">affects physics</span>
+        <span class="tag tagGraphics" data-i18n="tag.graphics">drawing/UI only</span>
+      </div>
+      <div id="boatFields"></div>
+      <div id="boatError" class="hint"></div>
+      <div class="buttons">
+        <button id="btnApplyBoat"><span data-i18n="btn.applyBoat">Apply</span></button>
+        <button id="btnResetBoatDefaults"><span data-i18n="btn.resetBoatDefaults">Reset to defaults</span></button>
+      </div>
+
+      <h2 data-i18n="h.boatPresets">Saved boats</h2>
+      <div class="row"><label for="boatPresetName" data-i18n="lbl.boatName">Name</label><input id="boatPresetName" type="text"></div>
+      <div class="buttons">
+        <button id="btnSaveBoatPreset"><span data-i18n="btn.saveBoat">Save</span></button>
+        <button id="btnExportBoat"><span data-i18n="btn.exportBoat">Export file</span></button>
+        <button id="btnImportBoat"><span data-i18n="btn.importBoat">Import file</span></button>
+        <input id="boatImportFile" type="file" accept="application/json" style="display:none">
+      </div>
+      <div class="row">
+        <label for="boatPresetSelect" data-i18n="lbl.boatPresetList">Saved</label>
+        <select id="boatPresetSelect"><option value="" data-i18n="opt.boatPresetNone">— select —</option></select>
+        <button id="btnDeleteBoatPreset"><span data-i18n="btn.deleteBoat">Delete</span></button>
+      </div>
+
+      <div class="buttons"><button id="btnCloseBoat"><span data-i18n="btn.backToSailing">Back to sailing</span></button></div>
     </div>
   </div>
 </div>
