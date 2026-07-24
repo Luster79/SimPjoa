@@ -299,7 +299,10 @@ const skinSelect = document.getElementById('skinSelect');
 // createConfig() patches, would be a category error), so it persists the
 // same simple way the language toggle already does: localStorage.
 skinSelect.value = localStorage.getItem('proaSkin') || 'pjoa';
-skinSelect.addEventListener('change', () => localStorage.setItem('proaSkin', skinSelect.value));
+skinSelect.addEventListener('change', () => {
+  localStorage.setItem('proaSkin', skinSelect.value);
+  renderCrewPad(); // the SVG backdrop is static — the live canvas repaints itself, this doesn't
+});
 const rudderUpCheckbox = document.getElementById('rudderUp');
 const btnRec = document.getElementById('btnRec');
 const btnMark = document.getElementById('btnMark');
@@ -370,29 +373,37 @@ sliders.brailLee.addEventListener('input', () => { controls.brailLee = Number(sl
 sliders.brailWind.addEventListener('input', () => { controls.brailWind = Number(sliders.brailWind.value) / 100; refreshOutputs(); });
 sliders.rudder.addEventListener('input', () => { autoRudder = false; controls.rudder = Number(sliders.rudder.value); refreshOutputs(); });
 
-// Crew position 2D pad: combines the old crewPos (lateral, toward the
-// ama) and crewPosX (fore-aft) sliders into a single draggable dot, per
-// the user's request — one point in a 2D space instead of two 1D
-// sliders. Top of the pad = crew.posMax (toward the ama), bottom =
-// crew.posMin (leeward); left = crew.posXMin (aft), right =
-// crew.posXMax (forward) — matches the existing J/L (lateral) and I/K
-// (fore-aft) keyboard convention (L/I increase, J/K decrease).
+// Crew position 2D pad: one draggable dot standing in for the old crewPos
+// (lateral, toward the ama) and crewPosX (fore-aft) sliders. Two layers:
+//  - the STAGE (#crewPadStage) shows a to-scale, bow-up plan view of the
+//    boat as a BACKDROP — the long hull deliberately bleeds off the top and
+//    bottom, clipped by the stage;
+//  - the PAD (#crewPad) is the region the crew can actually move over,
+//    overlaid on that backdrop. Its box is the reachable area — leeward..ama
+//    laterally (the hull->ama distance, which dominates), bow..stern fore-
+//    aft — so it comes out landscape (lateral > fore-aft), its very shape
+//    telling you where the crew can go. The dot lives in the pad.
+// Axes: vertical = fore-aft (crewPosX, bow top, stern bottom), horizontal =
+// lateral (crewPos, ama left, leeward right) — matching the J/L (lateral)
+// and I/K (fore-aft) keyboard convention (L/I increase, J/K decrease).
+// renderCrewPad() draws the backdrop and sizes/places the pad box from the
+// SAME metre frame, so the pad sits exactly over the reachable part of the
+// drawn boat (crewPos=1 lands on the ama, crewPosX=+1 at the bow).
+const crewPadStage = document.getElementById('crewPadStage');
 const crewPad = document.getElementById('crewPad');
+const crewPadArt = document.getElementById('crewPadArt');
 const crewDot = document.getElementById('crewDot');
 
 // Local clamp (not the module-level one below — that's declared after
 // this point, and syncSlidersFromControls() already runs before it).
 const clampLocal = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
-// Pad axes (per user request): vertical = fore-aft (crewPosX, bow/dziób
-// at top, stern/rufa at bottom); horizontal = lateral (crewPos, ama at
-// left, leeward/zawietrzna at right). Both axes keep the same
-// "high/forward-toward-ama value at the low-fraction edge" convention
-// the pad always used, just swapped onto the other screen axis.
+// The pad box spans exactly the crew's range, so the dot is a plain fraction
+// of it: ama/bow (posMax/posXMax) at the low-fraction edge (left/top).
 function updateCrewDot() {
   const { posMin, posMax, posXMin, posXMax } = dims.crew;
-  const fracLateral = (posMax - clampLocal(controls.crewPos, posMin, posMax)) / (posMax - posMin); // 0=ama(left), 1=leeward(right)
-  const fracFwdAft = (posXMax - clampLocal(controls.crewPosX, posXMin, posXMax)) / (posXMax - posXMin); // 0=bow(top), 1=stern(bottom)
+  const fracLateral = (posMax - clampLocal(controls.crewPos, posMin, posMax)) / (posMax - posMin);
+  const fracFwdAft = (posXMax - clampLocal(controls.crewPosX, posXMin, posXMax)) / (posXMax - posXMin);
   crewDot.style.left = `${fracLateral * 100}%`;
   crewDot.style.top = `${fracFwdAft * 100}%`;
 }
@@ -400,12 +411,89 @@ function updateCrewDot() {
 function setCrewFromPad(clientX, clientY) {
   const rect = crewPad.getBoundingClientRect();
   const { posMin, posMax, posXMin, posXMax } = dims.crew;
-  const fracLateral = clampLocal((clientX - rect.left) / rect.width, 0, 1); // 0=ama(left), 1=leeward(right)
-  const fracFwdAft = clampLocal((clientY - rect.top) / rect.height, 0, 1); // 0=bow(top), 1=stern(bottom)
+  const fracLateral = clampLocal((clientX - rect.left) / rect.width, 0, 1);
+  const fracFwdAft = clampLocal((clientY - rect.top) / rect.height, 0, 1);
   controls.crewPos = posMax - fracLateral * (posMax - posMin);
   controls.crewPosX = posXMax - fracFwdAft * (posXMax - posXMin);
   updateCrewDot();
   refreshOutputs();
+}
+
+// renderCrewPad — (re)draw the boat backdrop, size the stage, and place the
+// pad box over the reachable region. Run once at startup and whenever `dims`
+// or the skin changes (boat-design Apply/reset, skin switch), same
+// discipline as updateBrailZoneUI. Mirrors the main scene's own plan
+// geometry (see drawBoat): a narrow double-ender hull, a slimmer/shorter ama
+// bolted out to windward, and the platform + two crossbeams between them.
+function renderCrewPad() {
+  const halfL = dims.hull.length / 2;
+  const beam = dims.hull.beam;
+  const spacing = dims.ama.spacing, amaLen = dims.ama.length;
+  const { posMin, posMax, posXMin, posXMax } = dims.crew;
+  const amaHalfW = beam * 0.38;      // ama lateral half-width in plan — a pjoa float is slimmer than the vaka
+  const foreAftReach = halfL * 0.42; // metres a crewPosX of 1 stands from mid-hull; < the lateral reach so the pad is landscape
+
+  // The reachable region (the pad box), in metres. +y = ama (drawn LEFT),
+  // +x = active bow (drawn UP).
+  const padYama = posMax * spacing, padYlee = posMin * spacing;     // lateral edges
+  const padXbow = posXMax * foreAftReach, padXstern = posXMin * foreAftReach; // fore-aft edges
+
+  // The drawing window (the stage), larger so the boat reads as a backdrop:
+  // the ama shows fully to windward, the long hull runs off the top and
+  // bottom to be clipped by the stage.
+  const amaMargin = 0.4, leeMargin = 0.4, foreBleed = 0.9;
+  const yL = padYama + amaHalfW + amaMargin;  // stage left edge (ama side)
+  const yR = padYlee - leeMargin;             // stage right edge (leeward)
+  const xT = padXbow + foreBleed;             // stage top edge (bow)
+  const xB = padXstern - foreBleed;           // stage bottom edge (stern)
+  const Wm = yL - yR, Hm = xT - xB;
+
+  crewPadStage.style.aspectRatio = `${Wm} / ${Hm}`;
+  const vx = (yf) => yL - yf; // +y (ama) -> left
+  const vy = (xf) => xT - xf; // +x (bow) -> top
+
+  // Pad box as % of the stage — same metre frame, so it lands exactly over
+  // the reachable slice of the drawn boat.
+  const pct = (v, span) => `${(v / span) * 100}%`;
+  crewPad.style.left = pct(vx(padYama), Wm);
+  crewPad.style.top = pct(vy(padXbow), Hm);
+  crewPad.style.width = pct(vx(padYlee) - vx(padYama), Wm);
+  crewPad.style.height = pct(vy(padXstern) - vy(padXbow), Hm);
+
+  const skin = getSkin();
+  const beamCol = skin.lashing ?? '#6b563b';
+  const vxHull = vx(0), vxAma = vx(spacing), midVy = vy(0), hw = beam / 2;
+  const platHalf = foreAftReach + 0.25; // platform fore-aft half-span (crew reach + a little overhang)
+  const platX0 = vxAma, platW = vxHull - vxAma;
+  const f = (n) => n.toFixed(3);
+
+  // Deck planks (fore-aft) and the two crossbeams (aka, hull->ama) that give
+  // the platform its "you stand on this" texture. The plank count is derived
+  // so each board stays clearly NARROWER than the ama's beam (a real pjoa's
+  // deck slats are), holding regardless of the config's spacing.
+  const boardW = 2 * amaHalfW * 0.7;
+  const nBoards = Math.max(4, Math.round(platW / boardW));
+  let planks = '';
+  for (let i = 1; i < nBoards; i++) {
+    const px = platX0 + (platW * i) / nBoards;
+    planks += `<line x1="${f(px)}" y1="${f(vy(platHalf))}" x2="${f(px)}" y2="${f(vy(-platHalf))}" stroke="${beamCol}" stroke-width="0.03" opacity="0.55"/>`;
+  }
+  const beamLine = (xf) => `<line x1="${f(vxAma)}" y1="${f(vy(xf))}" x2="${f(vxHull)}" y2="${f(vy(xf))}" stroke="${beamCol}" stroke-width="0.09"/>`;
+
+  crewPadArt.setAttribute('viewBox', `0 0 ${f(Wm)} ${f(Hm)}`);
+  crewPadArt.innerHTML = `
+    <rect x="0" y="0" width="${f(Wm)}" height="${f(Hm)}" fill="#0a1420"/>
+    <rect x="${f(platX0)}" y="${f(vy(platHalf))}" width="${f(platW)}" height="${f(2 * platHalf)}" fill="${beamCol}" opacity="0.28"/>
+    ${planks}
+    ${beamLine(halfL * 0.35)}${beamLine(-halfL * 0.35)}
+    <ellipse cx="${f(vxAma)}" cy="${f(midVy)}" rx="${f(amaHalfW)}" ry="${f(amaLen / 2)}" fill="${skin.ama}" stroke="rgba(0,0,0,0.35)" stroke-width="0.03"/>
+    <path d="M ${f(vxHull)} ${f(vy(halfL))}
+             Q ${f(vxHull - hw)} ${f(vy(halfL * 0.5))} ${f(vxHull - hw)} ${f(midVy)}
+             Q ${f(vxHull - hw)} ${f(vy(-halfL * 0.5))} ${f(vxHull)} ${f(vy(-halfL))}
+             Q ${f(vxHull + hw)} ${f(vy(-halfL * 0.5))} ${f(vxHull + hw)} ${f(midVy)}
+             Q ${f(vxHull + hw)} ${f(vy(halfL * 0.5))} ${f(vxHull)} ${f(vy(halfL))} Z"
+          fill="${skin.hull}" stroke="rgba(0,0,0,0.3)" stroke-width="0.03"/>`;
+  updateCrewDot();
 }
 
 let draggingCrewPad = false;
@@ -652,6 +740,12 @@ const SKINS = {
   },
 };
 function getSkin() { return SKINS[skinSelect.value] ?? SKINS.pjoa; }
+
+// Initial crew-pad backdrop: deferred to here (rather than beside the pad's
+// own setup above) because renderCrewPad() reads the skin palette, and
+// SKINS/getSkin are only defined at this point in module evaluation.
+renderCrewPad();
+
 function hexToRgb(hex) {
   const n = parseInt(hex.slice(1), 16);
   return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
@@ -2631,6 +2725,7 @@ function applyBoatPatch(patch) {
   }
   dims = validated;
   updateBrailZoneUI();
+  renderCrewPad(); // hull/ama/spacing/crew-range may all have changed
   sim.setConfig(patch);
   sim.reset();
   boatErrorEl.style.color = '#7fe3a3';
@@ -2646,6 +2741,7 @@ document.getElementById('btnApplyBoat').addEventListener('click', () => {
 document.getElementById('btnResetBoatDefaults').addEventListener('click', () => {
   dims = createConfig();
   updateBrailZoneUI();
+  renderCrewPad();
   buildBoatPanel();
 });
 

@@ -63,18 +63,24 @@
   #brailWind::-moz-range-track { height: 6px; border-radius: 3px; background: linear-gradient(to right, #2fae6a var(--trim-pct, 60%), #d8a52a var(--trim-pct, 60%)); }
   .brailTick { position: absolute; top: 50%; width: 2px; height: 12px; background: #dbe7f2; transform: translate(-1px, -50%); pointer-events: none; }
   .pad2DWrap { flex: 1; }
-  .pad2D { position: relative; width: 100%; max-width: 220px; height: 140px; background: #0e1927; border: 1px solid #2b4460; border-radius: 6px; cursor: crosshair; touch-action: none; user-select: none; }
-  .padAxis { position: absolute; background: #1e2f42; }
-  .padAxisV { left: 50%; top: 0; bottom: 0; width: 1px; }
-  .padAxisH { top: 50%; left: 0; right: 0; height: 1px; }
-  .padLabel { position: absolute; font-size: 10px; color: #6f8399; pointer-events: none; }
+  /* Stage = the drawing viewport. The boat backdrop fills it and is allowed
+     to bleed past the interactive pad (the long hull runs off top/bottom),
+     clipped here. aspect-ratio is set inline by renderCrewPad() to the
+     drawing window. */
+  .padStage { position: relative; width: 100%; max-width: 210px; aspect-ratio: 1 / 1; background: #0a1420; border: 1px solid #23364a; border-radius: 6px; overflow: hidden; touch-action: none; }
+  .padArt { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; }
+  /* Pad = the region the crew can actually move over (leeward..ama laterally,
+     bow..stern fore-aft). Overlaid on the backdrop; its box (left/top/width/
+     height) is set inline by renderCrewPad(). This is the pointer target. */
+  .pad2D { position: absolute; background: rgba(127,199,255,0.06); border: 1px solid rgba(127,199,255,0.55); border-radius: 4px; cursor: crosshair; touch-action: none; user-select: none; }
+  .padLabel { position: absolute; font-size: 10px; color: #6f8399; pointer-events: none; text-shadow: 0 0 3px #0a1420, 0 0 3px #0a1420; }
   .padLabelTop { top: 3px; left: 50%; transform: translateX(-50%); }
   .padLabelBottom { bottom: 3px; left: 50%; transform: translateX(-50%); }
   .padLabelLeft { left: 4px; top: 50%; transform: translateY(-50%); }
   .padLabelRight { right: 4px; top: 50%; transform: translateY(-50%); }
-  .padLabelQuadrant { font-size: 10px; font-style: italic; color: #4a6480; transform: translate(-50%, -50%); text-align: center; }
-  .padLabelQuadrantTL { top: 27%; left: 30%; }
-  .padLabelQuadrantBR { top: 73%; left: 70%; }
+  .padLabelQuadrant { font-size: 9px; font-style: italic; color: #6f93b4; transform: translate(-50%, -50%); text-align: center; white-space: nowrap; }
+  .padLabelQuadrantTL { top: 15%; left: 34%; }
+  .padLabelQuadrantBR { top: 85%; left: 34%; }
   .padDot { position: absolute; width: 14px; height: 14px; border-radius: 50%; background: #7fc7ff; border: 2px solid #dbe7f2; transform: translate(-50%, -50%); pointer-events: none; box-shadow: 0 0 6px rgba(127,199,255,0.6); }
   .padReadout { font-size: 11px; color: #9fb4c8; margin-top: 4px; text-align: center; font-variant-numeric: tabular-nums; }
   .buttons { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
@@ -178,18 +184,22 @@
       <div class="row" style="align-items: flex-start">
         <label data-i18n="lbl.crewPos">Crew position</label>
         <div class="pad2DWrap">
-          <div id="crewPad" class="pad2D">
-            <div class="padAxis padAxisV"></div>
-            <div class="padAxis padAxisH"></div>
-            <!-- Axes per user request: bow (dziób) top, stern (rufa)
-                 bottom, ama left, leeward (zawietrzna) right. -->
-            <span class="padLabel padLabelTop" data-i18n="pad.fwd">fwd</span>
-            <span class="padLabel padLabelBottom" data-i18n="pad.aft">aft</span>
-            <span class="padLabel padLabelLeft" data-i18n="pad.ama">ama</span>
-            <span class="padLabel padLabelRight" data-i18n="pad.leeward">leeward</span>
-            <span class="padLabel padLabelQuadrant padLabelQuadrantTL" data-i18n="pad.headUp">Heading up</span>
-            <span class="padLabel padLabelQuadrant padLabelQuadrantBR" data-i18n="pad.bearAway">Bearing away</span>
-            <div id="crewDot" class="padDot"></div>
+          <!-- Stage holds the to-scale boat backdrop (hull, ama, platform),
+               drawn by renderCrewPad() in app.js and free to bleed past the
+               pad. The pad itself is the crew's reachable region overlaid on
+               it. Axes: bow (dziob) top, stern (rufa) bottom, ama left,
+               leeward (zawietrzna) right. -->
+          <div id="crewPadStage" class="padStage">
+            <svg id="crewPadArt" class="padArt" aria-hidden="true"></svg>
+            <div id="crewPad" class="pad2D">
+              <span class="padLabel padLabelTop" data-i18n="pad.fwd">fwd</span>
+              <span class="padLabel padLabelBottom" data-i18n="pad.aft">aft</span>
+              <span class="padLabel padLabelLeft" data-i18n="pad.ama">ama</span>
+              <span class="padLabel padLabelRight" data-i18n="pad.leeward">leeward</span>
+              <span class="padLabel padLabelQuadrant padLabelQuadrantTL" data-i18n="pad.headUp">Heading up</span>
+              <span class="padLabel padLabelQuadrant padLabelQuadrantBR" data-i18n="pad.bearAway">Bearing away</span>
+              <div id="crewDot" class="padDot"></div>
+            </div>
           </div>
           <div class="padReadout"><output id="crewPosOut">0.30</output> / <output id="crewPosXOut">0.00</output></div>
         </div>
