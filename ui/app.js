@@ -463,7 +463,7 @@ function renderCrewPad() {
   const skin = getSkin();
   const beamCol = skin.lashing ?? '#6b563b';
   const vxHull = vx(0), vxAma = vx(spacing), midVy = vy(0), hw = beam / 2;
-  const platHalf = foreAftReach + 0.25; // platform fore-aft half-span (crew reach + a little overhang)
+  const platHalf = (foreAftReach + 0.25) * 0.5; // platform fore-aft half-span — a compact deck amidships, not the full hull length
   const platX0 = vxAma, platW = vxHull - vxAma;
   const f = (n) => n.toFixed(3);
 
@@ -485,7 +485,7 @@ function renderCrewPad() {
     <rect x="0" y="0" width="${f(Wm)}" height="${f(Hm)}" fill="#0a1420"/>
     <rect x="${f(platX0)}" y="${f(vy(platHalf))}" width="${f(platW)}" height="${f(2 * platHalf)}" fill="${beamCol}" opacity="0.28"/>
     ${planks}
-    ${beamLine(halfL * 0.35)}${beamLine(-halfL * 0.35)}
+    ${beamLine(platHalf * 0.7)}${beamLine(-platHalf * 0.7)}
     <ellipse cx="${f(vxAma)}" cy="${f(midVy)}" rx="${f(amaHalfW)}" ry="${f(amaLen / 2)}" fill="${skin.ama}" stroke="rgba(0,0,0,0.35)" stroke-width="0.03"/>
     <path d="M ${f(vxHull)} ${f(vy(halfL))}
              Q ${f(vxHull - hw)} ${f(vy(halfL * 0.5))} ${f(vxHull - hw)} ${f(midVy)}
