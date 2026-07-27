@@ -25,6 +25,7 @@
 
 import { createSimulator } from '../core/simulator.js';
 import { createConfig, CONFIG_VERSION } from '../core/config.js';
+import { clrXPosition } from '../core/hydro.js';
 import { createDefaultControls } from '../core/state.js';
 import { deltaAlign } from '../core/sheet.js';
 import { computePolar, computePolarSteps, SWEEP_FULL } from '../harness/polar.js';
@@ -900,6 +901,27 @@ function drawSideViewInset(state, forces) {
   ctx.beginPath(); ctx.moveTo(-halfLpx, -stemRise); ctx.lineTo(-halfLpx - 2, -stemRise - 5); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(halfLpx, -stemRise); ctx.lineTo(halfLpx + 2, -stemRise - 5); ctx.stroke();
 
+  // Centre of lateral resistance (CLR): the fore-aft point the hull's leeway
+  // side force acts through — the pivot core/hydro.js takes its yaw moment
+  // about (clrXPosition, the SAME function the physics uses). Drawn on the
+  // underwater body at mid-draft, same green as the plan view's hull side-
+  // force vector. It slides fore/aft with the crew's fore-aft position
+  // (clrXPosition's crew-trim term) — that shift IS the rudderless steering
+  // lever, and the side view already shows the crew moving fore/aft, so the
+  // two read together. +x is the active bow, so `fwd` maps the physics x
+  // onto the correct screen side, exactly like the mast/crew above.
+  const clrMetres = clrXPosition(controls.crewPosX, dims);
+  const clrPxX = fwd * (clrMetres / (dims.hull.length / 2)) * halfLpx;
+  const clrPxY = (ORIGIN_ABOVE_WATER + hullDepth) / 2;
+  ctx.strokeStyle = '#7fe3a3'; ctx.fillStyle = 'rgba(127,227,163,0.30)'; ctx.lineWidth = 1.4;
+  ctx.beginPath(); ctx.arc(clrPxX, clrPxY, 3.6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(clrPxX - 3.6, clrPxY); ctx.lineTo(clrPxX + 3.6, clrPxY);
+  ctx.moveTo(clrPxX, clrPxY - 3.6); ctx.lineTo(clrPxX, clrPxY + 3.6);
+  ctx.stroke();
+  ctx.font = '8px system-ui, sans-serif'; ctx.fillStyle = '#7fe3a3'; ctx.textBaseline = 'alphabetic';
+  ctx.fillText('CLR', clrPxX + 5, clrPxY - 4);
+
   // Crab-claw sail, geometry per the ethnographic description of the
   // Oceanic lateen (Wikipedia / HandWiki "crab claw sail"): the spars are
   // CURVED, so the two edges running along them are CONVEX, while the free
@@ -1699,7 +1721,10 @@ function drawBoat(state, forces, cam) {
     const halfChordEffX = halfChord * (1 - ceBrailShift * (controls.brailWind ?? 0));
     const ceX = tackX - halfChordEffX * Math.cos(state.delta ?? 0);
     const ceY = -state.end * halfChord * Math.sin(state.delta ?? 0);
-    const clrX = -(dims.hull.clrXFraction ?? 0.05) * halfL;
+    // Same effective CLR the side-view marker and the physics use, so the
+    // green side-force vector originates from the true pivot (incl. the crew
+    // fore-aft trim shift), not a fixed hull point.
+    const clrX = clrXPosition(controls.crewPosX, dims);
     const rudderX = -halfL * state.end; // physical stern, opposite the active bow
 
     // Decompose the sail's resultant into lift/drag using the flow basis —
