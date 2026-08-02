@@ -901,6 +901,19 @@ function drawSideViewInset(state, forces) {
   ctx.beginPath(); ctx.moveTo(-halfLpx, -stemRise); ctx.lineTo(-halfLpx - 2, -stemRise - 5); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(halfLpx, -stemRise); ctx.lineTo(halfLpx + 2, -stemRise - 5); ctx.stroke();
 
+  // Longitudinal axis: the boat's fore-aft centreline (a double-ender is
+  // symmetric about it), the reference the CLR and crew read against. Drawn
+  // in the same heeled frame as the hull, dashed and faint. Kept to the deep
+  // mid-body and just below the sheer so it stays inside the silhouette
+  // rather than poking past the rising stems at the ends.
+  const axHalf = halfLpx * 1.02, axY = 0;
+  ctx.save();
+  ctx.setLineDash([5, 2, 1, 2]); // dash-dot: the technical-drawing centreline convention
+  ctx.strokeStyle = 'rgba(150,180,215,0.9)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(-axHalf, axY); ctx.lineTo(axHalf, axY); ctx.stroke();
+  ctx.restore();
+
   // Centre of lateral resistance (CLR): the fore-aft point the hull's leeway
   // side force acts through — the pivot core/hydro.js takes its yaw moment
   // about (clrXPosition, the SAME function the physics uses). Drawn on the
@@ -1005,6 +1018,16 @@ function drawSideViewInset(state, forces) {
     ctx.beginPath();
     ctx.moveTo(tackX, tackY); ctx.quadraticCurveTo(boomCtrlX, boomCtrlY, boomTipX, boomTipY); ctx.stroke();
   }
+
+  // Centre of effort (CE): the sail's own force centre, taken as the drawn
+  // claw's area centroid (cgX/cgY above). A red dot to the CLR's green — its
+  // fore-aft offset from the CLR is the rig's "lead". Drawn after the cloth
+  // so it reads on top; it rides down toward the mast as the brails gather
+  // the sail, since cgX/cgY are built from the (brail-shrunk) spar tips.
+  ctx.fillStyle = '#ff5a5a'; ctx.strokeStyle = 'rgba(60,12,12,0.75)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(cgX, cgY, 3.4, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.font = '8px system-ui, sans-serif'; ctx.fillStyle = '#ff9a9a'; ctx.textBaseline = 'alphabetic';
+  ctx.fillText('CE', cgX + 5, cgY - 4);
 
   // Crew figures at (crewPos, crewPosX): fore-aft position along the deck
   // from crewPosX (flipped by `fwd`, matching the mast above); crewPos
