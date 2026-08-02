@@ -24,6 +24,7 @@
   .luffing-tag { color: #ffd23f !important; font-size: 11px; letter-spacing: .03em; }
   .luffing-tag:empty { display: none; }
   .stalled-tag { color: #ff9f1c !important; font-size: 11px; letter-spacing: .03em; }
+  .cardinal-tag { color: #9fb4c8 !important; font-size: 11px; letter-spacing: .03em; }
   .stalled-tag:empty { display: none; }
   .checkboxRow { display: flex; align-items: center; gap: 6px; margin: 6px 0; color: #9fb4c8; }
   .checkboxRow input { margin: 0; }
@@ -122,6 +123,7 @@
 <div id="app">
   <div id="hud">
     <span class="stat"><span data-i18n="hud.speed">Speed</span> <b id="hudSpeed">0.0</b> <span data-i18n="unit.kn">kn</span></span>
+    <span class="stat"><span data-i18n="hud.course">Course</span> <b id="hudCourse">0</b>&deg; <b id="hudCourseCard" class="cardinal-tag"></b></span>
     <span class="stat">TWA <b id="hudTwa">0</b>&deg;</span>
     <span class="stat">AWA <b id="hudAwa">0</b>&deg;</span>
     <span class="stat">AoA <b id="hudAlpha">0</b>&deg; <b id="hudStalled" class="stalled-tag"></b></span>

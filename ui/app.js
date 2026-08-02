@@ -56,7 +56,7 @@ const BUILD_TIME = 'dev';
 // ---------------------------------------------------------------------
 const TRANSLATIONS = {
   en: {
-    'hud.speed': 'Speed', 'unit.kn': 'kn', 'hud.leeway': 'Leeway', 'hud.amaLoad': 'Ama load', 'hud.shunt': 'Shunt',
+    'hud.speed': 'Speed', 'hud.course': 'Course', 'unit.kn': 'kn', 'hud.leeway': 'Leeway', 'hud.amaLoad': 'Ama load', 'hud.shunt': 'Shunt',
     'hud.sheet': 'Sheet', 'hud.yard': 'Yard',
     'btn.rec': 'REC (F9)', 'btn.mark': 'Mark (F10)', 'btn.downloadRec': 'Download rec.',
     'btn.pause': 'Pause (P)', 'btn.step': 'Step (.)', 'btn.forces': 'Forces (F)', 'btn.polar': 'Polar (O)', 'btn.boat': 'Boat (B)',
@@ -81,6 +81,7 @@ const TRANSLATIONS = {
     'lbl.insetShow': 'Side-view inset', 'lbl.skin': 'Skin', 'opt.skinPjoa': 'Pjoa', 'opt.skinMicronesia': 'Micronesia',
     'tag.newBow': 'BOW', 'inset.label': 'side view (leeward)',
     'compass.hullAxis': 'hull', 'compass.cog': 'COG',
+    'card.N': 'N', 'card.NE': 'NE', 'card.E': 'E', 'card.SE': 'SE', 'card.S': 'S', 'card.SW': 'SW', 'card.W': 'W', 'card.NW': 'NW',
     'balance.label': 'balance (bow-on)',
     'h.polarDiagram': 'Polar diagram',
     'hint.polar': "Runs the headless polar sweep against the current config (TWS 4/6/8/10 m/s) and plots it. The boat's live (TWA, speed) point is overlaid once you return to sailing.",
@@ -125,7 +126,7 @@ const TRANSLATIONS = {
     'cat.rudder': 'Rudder', 'cat.stability': 'Stability', 'cat.shunt': 'Shunt',
   },
   pl: {
-    'hud.speed': 'Prędkość', 'unit.kn': 'w', 'hud.leeway': 'Znos', 'hud.amaLoad': 'Obc. amy', 'hud.shunt': 'Zwrot',
+    'hud.speed': 'Prędkość', 'hud.course': 'Kurs', 'unit.kn': 'w', 'hud.leeway': 'Znos', 'hud.amaLoad': 'Obc. amy', 'hud.shunt': 'Zwrot',
     'hud.sheet': 'Szot', 'hud.yard': 'Reja',
     'btn.rec': 'NAGR (F9)', 'btn.mark': 'Znacznik (F10)', 'btn.downloadRec': 'Pobierz nagranie',
     'btn.pause': 'Pauza (P)', 'btn.step': 'Krok (.)', 'btn.forces': 'Siły (F)', 'btn.polar': 'Polara (O)', 'btn.boat': 'Łódź (B)',
@@ -147,6 +148,7 @@ const TRANSLATIONS = {
     'lbl.insetShow': 'Widok z boku', 'lbl.skin': 'Skórka', 'opt.skinPjoa': 'Pjoa', 'opt.skinMicronesia': 'Mikronezja',
     'tag.newBow': 'DZIÓB', 'inset.label': 'widok z boku (zawietrzna)',
     'compass.hullAxis': 'kadłub', 'compass.cog': 'KNG',
+    'card.N': 'N', 'card.NE': 'NE', 'card.E': 'E', 'card.SE': 'SE', 'card.S': 'S', 'card.SW': 'SW', 'card.W': 'W', 'card.NW': 'NW',
     'balance.label': 'wyważenie (od dziobu)',
     'h.polarDiagram': 'Diagram polarny',
     'hint.polar': 'Uruchamia pomiar polary (bezekranowy silnik fizyki) dla bieżącej konfiguracji (TWS 4/6/8/10 m/s) i rysuje wykres. Po powrocie do żeglugi na wykresie pojawia się bieżący punkt (TWA, prędkość) łódki.',
@@ -1792,8 +1794,14 @@ function drawVectorLocal(x0, y0, dx, dy, color) {
 // ---------------------------------------------------------------------
 // HUD + alarms
 // ---------------------------------------------------------------------
+// Compass sectors, 45deg apart starting at north — indexed by
+// round(bearing/45) % 8 in the HUD update below.
+const CARDINALS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+
 const hud = {
   speed: document.getElementById('hudSpeed'),
+  course: document.getElementById('hudCourse'),
+  courseCard: document.getElementById('hudCourseCard'),
   twa: document.getElementById('hudTwa'),
   awa: document.getElementById('hudAwa'),
   alpha: document.getElementById('hudAlpha'),
@@ -1827,6 +1835,17 @@ function updateHud(state, forces) {
   const leewayDeg = Math.atan2(state.v, Math.abs(state.u) + 0.05) / DEG;
 
   hud.speed.textContent = speedKn.toFixed(1);
+  // Course over the ground, as a compass bearing from north. The world frame
+  // is X east / Y north with angles measured CCW from +X (see the header
+  // comment and core/state.js), so a compass bearing — clockwise from north —
+  // is 90 - heading. state.heading points at the ACTIVE bow, so this flips by
+  // 180deg at a shunt, which is correct: the boat then travels the other way.
+  const courseDeg = (450 - state.heading / DEG) % 360;
+  // Round BEFORE the final wrap: a bearing of 359.5 would otherwise display as
+  // "360" rather than "000".
+  const courseShown = Math.round(courseDeg) % 360;
+  hud.course.textContent = String(courseShown).padStart(3, '0');
+  hud.courseCard.textContent = t(`card.${CARDINALS[Math.round(courseDeg / 45) % 8]}`);
   hud.twa.textContent = twaDeg.toFixed(0);
   hud.awa.textContent = awaDeg.toFixed(0);
   hud.alpha.textContent = (forces.alphaSailor / DEG).toFixed(0);
