@@ -15,6 +15,7 @@
   .luffing-tag { color: #ffd23f !important; font-size: 11px; letter-spacing: .03em; }
   .luffing-tag:empty { display: none; }
   .stalled-tag { color: #ff9f1c !important; font-size: 11px; letter-spacing: .03em; }
+  .cardinal-tag { color: #9fb4c8 !important; font-size: 11px; letter-spacing: .03em; }
   .stalled-tag:empty { display: none; }
   .checkboxRow { display: flex; align-items: center; gap: 6px; margin: 6px 0; color: #9fb4c8; }
   .checkboxRow input { margin: 0; }
@@ -113,6 +114,7 @@
 <div id="app">
   <div id="hud">
     <span class="stat"><span data-i18n="hud.speed">Speed</span> <b id="hudSpeed">0.0</b> <span data-i18n="unit.kn">kn</span></span>
+    <span class="stat"><span data-i18n="hud.course">Course</span> <b id="hudCourse">0</b>&deg; <b id="hudCourseCard" class="cardinal-tag"></b></span>
     <span class="stat">TWA <b id="hudTwa">0</b>&deg;</span>
     <span class="stat">AWA <b id="hudAwa">0</b>&deg;</span>
     <span class="stat">AoA <b id="hudAlpha">0</b>&deg; <b id="hudStalled" class="stalled-tag"></b></span>
@@ -2992,14 +2994,14 @@ const MS_TO_KN = 1.9438;
 // recording's codeVersion is meaningful (harness/replay.js warns on
 // mismatch) for a downloaded bundle without requiring a build step for
 // plain `python3 -m http.server` development.
-const CODE_VERSION = "79350ea";
+const CODE_VERSION = "a30cb82";
 // BUILD_TIME: same pattern as CODE_VERSION above — tools/bundle.js
 // replaces this with the COMMIT's timestamp (not wall-clock build time),
 // so it stays stable across re-bundling the same commit and always
 // matches CODE_VERSION's hash. Shown in the bottom-right version footer
 // so a bug report/recording can be tied to an exact, dated build without
 // having to separately ask "which commit was this."
-const BUILD_TIME = "2026-08-02T17:01:47+02:00";
+const BUILD_TIME = "2026-08-02T17:10:54+02:00";
 
 // ---------------------------------------------------------------------
 // i18n — EN/PL. Static labels are marked with data-i18n="key" in
@@ -3009,7 +3011,7 @@ const BUILD_TIME = "2026-08-02T17:01:47+02:00";
 // ---------------------------------------------------------------------
 const TRANSLATIONS = {
   en: {
-    'hud.speed': 'Speed', 'unit.kn': 'kn', 'hud.leeway': 'Leeway', 'hud.amaLoad': 'Ama load', 'hud.shunt': 'Shunt',
+    'hud.speed': 'Speed', 'hud.course': 'Course', 'unit.kn': 'kn', 'hud.leeway': 'Leeway', 'hud.amaLoad': 'Ama load', 'hud.shunt': 'Shunt',
     'hud.sheet': 'Sheet', 'hud.yard': 'Yard',
     'btn.rec': 'REC (F9)', 'btn.mark': 'Mark (F10)', 'btn.downloadRec': 'Download rec.',
     'btn.pause': 'Pause (P)', 'btn.step': 'Step (.)', 'btn.forces': 'Forces (F)', 'btn.polar': 'Polar (O)', 'btn.boat': 'Boat (B)',
@@ -3034,6 +3036,7 @@ const TRANSLATIONS = {
     'lbl.insetShow': 'Side-view inset', 'lbl.skin': 'Skin', 'opt.skinPjoa': 'Pjoa', 'opt.skinMicronesia': 'Micronesia',
     'tag.newBow': 'BOW', 'inset.label': 'side view (leeward)',
     'compass.hullAxis': 'hull', 'compass.cog': 'COG',
+    'card.N': 'N', 'card.NE': 'NE', 'card.E': 'E', 'card.SE': 'SE', 'card.S': 'S', 'card.SW': 'SW', 'card.W': 'W', 'card.NW': 'NW',
     'balance.label': 'balance (bow-on)',
     'h.polarDiagram': 'Polar diagram',
     'hint.polar': "Runs the headless polar sweep against the current config (TWS 4/6/8/10 m/s) and plots it. The boat's live (TWA, speed) point is overlaid once you return to sailing.",
@@ -3078,7 +3081,7 @@ const TRANSLATIONS = {
     'cat.rudder': 'Rudder', 'cat.stability': 'Stability', 'cat.shunt': 'Shunt',
   },
   pl: {
-    'hud.speed': 'Prędkość', 'unit.kn': 'w', 'hud.leeway': 'Znos', 'hud.amaLoad': 'Obc. amy', 'hud.shunt': 'Zwrot',
+    'hud.speed': 'Prędkość', 'hud.course': 'Kurs', 'unit.kn': 'w', 'hud.leeway': 'Znos', 'hud.amaLoad': 'Obc. amy', 'hud.shunt': 'Zwrot',
     'hud.sheet': 'Szot', 'hud.yard': 'Reja',
     'btn.rec': 'NAGR (F9)', 'btn.mark': 'Znacznik (F10)', 'btn.downloadRec': 'Pobierz nagranie',
     'btn.pause': 'Pauza (P)', 'btn.step': 'Krok (.)', 'btn.forces': 'Siły (F)', 'btn.polar': 'Polara (O)', 'btn.boat': 'Łódź (B)',
@@ -3100,6 +3103,7 @@ const TRANSLATIONS = {
     'lbl.insetShow': 'Widok z boku', 'lbl.skin': 'Skórka', 'opt.skinPjoa': 'Pjoa', 'opt.skinMicronesia': 'Mikronezja',
     'tag.newBow': 'DZIÓB', 'inset.label': 'widok z boku (zawietrzna)',
     'compass.hullAxis': 'kadłub', 'compass.cog': 'KNG',
+    'card.N': 'N', 'card.NE': 'NE', 'card.E': 'E', 'card.SE': 'SE', 'card.S': 'S', 'card.SW': 'SW', 'card.W': 'W', 'card.NW': 'NW',
     'balance.label': 'wyważenie (od dziobu)',
     'h.polarDiagram': 'Diagram polarny',
     'hint.polar': 'Uruchamia pomiar polary (bezekranowy silnik fizyki) dla bieżącej konfiguracji (TWS 4/6/8/10 m/s) i rysuje wykres. Po powrocie do żeglugi na wykresie pojawia się bieżący punkt (TWA, prędkość) łódki.',
@@ -4745,8 +4749,14 @@ function drawVectorLocal(x0, y0, dx, dy, color) {
 // ---------------------------------------------------------------------
 // HUD + alarms
 // ---------------------------------------------------------------------
+// Compass sectors, 45deg apart starting at north — indexed by
+// round(bearing/45) % 8 in the HUD update below.
+const CARDINALS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+
 const hud = {
   speed: document.getElementById('hudSpeed'),
+  course: document.getElementById('hudCourse'),
+  courseCard: document.getElementById('hudCourseCard'),
   twa: document.getElementById('hudTwa'),
   awa: document.getElementById('hudAwa'),
   alpha: document.getElementById('hudAlpha'),
@@ -4780,6 +4790,17 @@ function updateHud(state, forces) {
   const leewayDeg = Math.atan2(state.v, Math.abs(state.u) + 0.05) / DEG__b12;
 
   hud.speed.textContent = speedKn.toFixed(1);
+  // Course over the ground, as a compass bearing from north. The world frame
+  // is X east / Y north with angles measured CCW from +X (see the header
+  // comment and core/state.js), so a compass bearing — clockwise from north —
+  // is 90 - heading. state.heading points at the ACTIVE bow, so this flips by
+  // 180deg at a shunt, which is correct: the boat then travels the other way.
+  const courseDeg = (450 - state.heading / DEG__b12) % 360;
+  // Round BEFORE the final wrap: a bearing of 359.5 would otherwise display as
+  // "360" rather than "000".
+  const courseShown = Math.round(courseDeg) % 360;
+  hud.course.textContent = String(courseShown).padStart(3, '0');
+  hud.courseCard.textContent = t(`card.${CARDINALS[Math.round(courseDeg / 45) % 8]}`);
   hud.twa.textContent = twaDeg.toFixed(0);
   hud.awa.textContent = awaDeg.toFixed(0);
   hud.alpha.textContent = (forces.alphaSailor / DEG__b12).toFixed(0);
