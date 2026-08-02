@@ -58,7 +58,7 @@ export function computeForces(state, controls, config) {
     heelMoment: aero.heelMoment, alpha: aero.alpha, alphaSailor: aero.alphaSailor,
     aw: aero.aw, CL: aero.CL, CD: aero.CD, deltaMax, luffing,
     breakdown: {
-      sail: { Fx: aero.Fx, Fy: aero.Fy, yawMoment: aero.yawMoment, heelMoment: aero.heelMoment },
+      sail: { Fx: aero.Fx, Fy: aero.Fy, Fz: aero.Fz, yawMoment: aero.yawMoment, heelMoment: aero.heelMoment },
       hullResist: { Fx: resist },
       hullSide: { Fx: side.Fx, Fy: side.Fy, yawMoment: side.yawMoment },
       amaDrag: { Fx: drag.Fx, yawMoment: drag.yawMoment },

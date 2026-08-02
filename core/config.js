@@ -382,6 +382,14 @@ function buildDefaultConfig() {
       lateralArea: 1.8,                    // m^2 — hull lateral (broadside) plane area (~length*draft); tunable estimate (no direct measurement of THIS hull's draft)
       yawDampingCoeff: 900,               // tunable — N*m per (rad/s), scaled by speed
       clrXFraction: 0.05,                 // tunable — center-of-lateral-resistance offset from CG (aft), fraction of half-length
+      // clrDepth (F12, work-order-2026-07-30): depth of the centre of lateral
+      // resistance below the waterline. The sail's side force and the hull's
+      // hydrodynamic reaction form a COUPLE, so the heeling arm is
+      // CEheight + clrDepth, not CEheight alone. Band estimate like
+      // lateralArea (no direct measurement of this hull): lateralArea 1.8 m^2
+      // over a 5.5 m waterline implies ~0.33 m mean draft, and the centroid
+      // of that lateral plane sits near mid-draft — 0.35 m is that, rounded.
+      clrDepth: 0.35,                     // m — tunable estimate, same status as lateralArea
       crewForeAftTrimCoeff: 0.15,          // tunable ("k_trim") — fraction of half-length the CLR shifts per unit crewPosX (FIX_REQUEST_round4_roll_dof.md 1.5)
       crewTrimSign: 1,                     // +-1 — flips the crewPosX->CLR-shift direction; verified empirically against the 1.6 coupling-sign test (forward crew -> luff), see ARCHITECTURE doc
       yawHeelSign: 1,                      // +-1 — flips the heel->yaw coupling direction (aero.js yawMomentHeel); verified empirically against the 1.6 coupling-sign test (crew toward ama -> bear away), see ARCHITECTURE doc

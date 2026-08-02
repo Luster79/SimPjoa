@@ -256,6 +256,77 @@ the moment it stopped adding free power — which is exactly the effect F4
 predicted, arriving as a change in what the optimiser chooses rather than as a
 tuning decision.
 
+### Block D — F13, F11, F12 (heel balance)
+
+Done after the margin recalibration confirmed it was safe to proceed.
+
+**F13** — `rollRestoreMoment()`'s ama lever was constant `ama.spacing` while
+`crewRollMoment()` right below it carried `cos(phi)`, from the same geometric
+argument. Two terms of the same balance disagreed; at 50 deg the ama's arm was
+overstated by 1/cos(50) = 56 %. Now both project.
+
+**F11** — the model applied ONE `cos(phi)` and used the result as both the
+horizontal side force and the heeling force. Split properly: the in-plane
+transverse force gets a second `cos(phi)` to become horizontal `Fy`,
+`sin(phi)` to become vertical `Fz`, and the heeling moment is taken from the
+in-plane force. Verified against F11's own acceptance:
+
+| phi | Fy/Fy(0) | cos^2 | M/M(0) | cos |
+|---|---|---|---|---|
+| 20 | 0.883 | 0.883 | 0.940 | 0.940 |
+| 30 | 0.750 | 0.750 | 0.866 | 0.866 |
+| 40 | 0.587 | 0.587 | 0.766 | 0.766 |
+
+`Fz` is exposed through `forcesBreakdown().sail.Fz` but **not** integrated —
+there is no heave DOF. Measured ~8 % of displacement at 40 deg heel (the audit
+predicted ~16 %, against the pre-block-B sail that made roughly twice the
+force). Both this and F13's pressed-side stiffness are now listed in README's
+"Known simplifications" as an open vertical balance, rather than being absent.
+
+**F12** — the heeling couple's arm is `CEheight + clrDepth` (2.00 + 0.35 =
++18 %), with `clrDepth` a new band estimate documented like `lateralArea`. The
+work order's alternative formulation (explicit heel moments from `hullSide.Fy`
+and `rudder.Fy`) is deliberately **not** taken yet: the rudder still makes
+~2.2 kN at 6 kn (F9, open), so coupling it into roll now would inject a heel
+moment comparable to the ama's entire righting capacity — a spurious effect
+driven by a known bug. Revisit after F9.
+
+**Prediction scorecard** (from `docs/capsize-margins-2026-07-30.md`): I
+predicted two failures — the trim-in steering leg and C-A's drift rate. One
+hit (trim-in), one miss (C-A passed), and one not predicted: **R15 moved UP**,
+9.20 -> 9.46, because F11's second `cos(phi)` cuts horizontal side force, hence
+leeway and induced drag, so the boat reaches faster. The heel-arm-scaling proxy
+could not show that, since it only perturbs the moment. Recorded because a
+margin sweep that only models one channel will systematically miss effects in
+the others.
+
+### The trim-in steering assertion: stopped re-picking it
+
+Block D broke `Sail steers: trimming the sheet in points up` for the third
+time. Before re-picking the probe a third time, I swept the claim across
+operating points (TWA 50/60/70/80 x TWS 6/8 x crewPos 0.3/0.6, trim-in
+28 -> 8 deg) — and measured it on the **committed pre-block-D model** too:
+
+| model | weather helm | lee helm | capsized |
+|---|---|---|---|
+| pre-block-D | 3 | 9 | 4 |
+| post-block-D | 4 | 6 | 6 |
+
+**The claim does not hold generally, and did not before block D either.** The
+sign flips systematically with crew position (crewPos 0.6 at TWS 6 gives lee
+helm at every TWA tried). The three green results this check produced since
+round 10 came from a hand-picked operating point, re-picked each time the model
+moved — a test calibrated to the answer it was expected to give, which is the
+exact pathology this audit exists to find.
+
+So it is no longer a single-point check: it now measures the aggregate across
+those 16 points and is tagged **`xfail:STEERING`**, reporting
+`weather=4 lee=6 capsized=6`. The windward-brail leg (a different mechanism)
+still passes on its own merits at -6.4 deg.
+
+This is the audit's own thesis applied to a test that had been passing: a green
+result is not evidence unless the thing it measures is robust.
+
 ### Block F — documentation-only items
 
 Comment/CSV mismatches (the comments are the model's primary documentation):

@@ -312,13 +312,16 @@ export function runAsserts(config, { slow = true } = {}) {
   // flagging one: F1 (flying-ama drag sign) ~9.76 -> ~10.07; block B
   // (docs/adr/0007) -> ~9.62, removing the free power a fixed reference area
   // gave a brailed rig; F14 (crew ballast from the real buoyancy balance) ->
-  // ~9.20, since this row's optimum leans on crew ballast. The band tracks the
-  // model and stays just as narrow, keeping its value for the NEXT unintended
-  // shift.
+  // ~9.20, since this row's optimum leans on crew ballast; then block D
+  // (F11's cos^2 split) took it UP to ~9.46 — less horizontal side force at
+  // heel means less leeway and less induced drag, so the boat reaches faster.
+  // That direction was NOT predicted by the pre-block-D margin sweep, which
+  // is the point of keeping this tripwire narrow. The band tracks the model
+  // and stays just as narrow, keeping its value for the NEXT unintended shift.
   {
     const row10 = computePolar(config, { twsList: [10], twaFrom: 100, twaTo: 100, step: 1 })[0];
-    check('R15: reach speed at TWS=10, TWA=100 is within a narrow absolute band [9.16,9.24] m/s',
-      row10.bestSpeed >= 9.16 && row10.bestSpeed <= 9.24,
+    check('R15: reach speed at TWS=10, TWA=100 is within a narrow absolute band [9.42,9.50] m/s',
+      row10.bestSpeed >= 9.42 && row10.bestSpeed <= 9.50,
       `speed=${row10.bestSpeed.toFixed(4)} m/s (sheet=${row10.bestSheetAngle})`);
   }
   } // if (slow) — section 3
@@ -863,12 +866,39 @@ export function runAsserts(config, { slow = true } = {}) {
     // of the suite uses (TWS10) and a longer observation window (20s, was 10):
     // the mechanism develops more slowly now that the rig is less powerful, so
     // the window has to see it. Measured -5.6deg, mid-band.
-    const trimBase = { ...base, windSpeed: 8, crewPos: 0.6, sheet: 28 * DEG };
-    const trimmed = steeringDrift(config, trimBase, (c) => { c.sheet = 8 * DEG; });
+    // Block D re-measurement (work-order-2026-07-30): this leg is NOT
+    // re-picked a third time. Sweeping the trim-in across a grid of operating
+    // points (TWA 50/60/70/80 x TWS 6/8 x crewPos 0.3/0.6, sheet 28 -> 8)
+    // shows the claim does not hold generally on this model, and did not
+    // before block D either:
+    //     pre-block-D:  weather 3 | lee 9 | capsized 4   (of 16)
+    //     post-block-D: weather 4 | lee 6 | capsized 6   (of 16)
+    // The sign flips systematically with crew position (crewPos 0.6 at TWS 6
+    // gives lee helm at every TWA tried). So the three green results this
+    // check has produced since round 10 came from a hand-picked operating
+    // point, re-picked each time the model moved — a test calibrated to the
+    // answer it was expected to give, which is the exact pathology this audit
+    // exists to find. It is therefore measured as an AGGREGATE and reported
+    // as a known limitation (xfail:STEERING) rather than pinned to whichever
+    // trim currently happens to agree.
+    const trimSweep = { weather: 0, lee: 0, capsized: 0 };
+    for (const twa of [50, 60, 70, 80]) {
+      for (const windSpeed of [6, 8]) {
+        for (const crewPos of [0.3, 0.6]) {
+          const b = { ...base, windDirFrom: HEADING0 + twa * DEG, windSpeed, crewPos, sheet: 28 * DEG };
+          const r = steeringDrift(config, b, (c) => { c.sheet = 8 * DEG; });
+          if (r.capsized) trimSweep.capsized++;
+          else if (r.drift > 0) trimSweep.weather++;
+          else trimSweep.lee++;
+        }
+      }
+    }
     const brailBase = { ...base, windSpeed: 10, crewPos: 0.6, sheet: 28 * DEG };
     const brailed = steeringDrift(config, brailBase, (c) => { c.brailWind = 1.0; }, 20, 20);
-    check('Sail steers: trimming the sheet in points up (windward)',
-      !trimmed.capsized && steeringOk(trimmed.drift, 1), `drift=${trimmed.drift.toFixed(1)}deg`);
+    check('Sail steers: trimming the sheet in points up (windward) — majority of operating points',
+      trimSweep.weather > trimSweep.lee + trimSweep.capsized,
+      `weather=${trimSweep.weather} lee=${trimSweep.lee} capsized=${trimSweep.capsized} of 16 -- the claim holds only at selected trims; sign flips with crew position. Measured, not re-picked; see comment`,
+      'STEERING');
     check('Sail steers: the windward brail bears away (leeward)',
       !brailed.capsized && steeringOk(brailed.drift, -1), `drift=${brailed.drift.toFixed(1)}deg`);
   }

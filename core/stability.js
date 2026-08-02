@@ -64,9 +64,19 @@ const HOLD_FRAC = 0.5;
 export function rollRestoreMoment(phi, config) {
   const { ama, g, stability } = config;
   const capsizeRad = stability.phiCapsizeDeg * DEG;
+  // F13 (work-order-2026-07-30): the ama's righting LEVER is its lateral
+  // offset projected onto the horizontal as the platform rolls —
+  // ama.spacing*cos(phi), not ama.spacing. crewRollMoment() directly below
+  // already carries exactly this cos(phi), from exactly the same geometric
+  // argument, so the two terms of the same balance disagreed with each other:
+  // at 50deg the ama's arm was overstated by 1/cos(50) = 56%. Applied to the
+  // returned moment (the frac shape functions model how much of the float's
+  // weight/buoyancy is engaged; this is the lever it acts on). cos(phi) does
+  // not change sign over any reachable roll angle — capsize fires at 65deg.
+  const leverProjection = Math.cos(phi);
   if (phi >= 0) {
     const liftoffRad = stability.phiLiftoffDeg * DEG;
-    const Mmax = ama.mass * g * ama.spacing;
+    const Mmax = ama.mass * g * ama.spacing * leverProjection;
     if (phi <= liftoffRad) {
       const frac = phi / liftoffRad;
       return -Mmax * frac * (2 - frac);
@@ -78,7 +88,7 @@ export function rollRestoreMoment(phi, config) {
     return -Mmax * (1 - frac2);
   }
   const submergeRad = stability.phiSubmergeDeg * DEG;
-  const Mmax = ama.maxBuoyancy * g * ama.spacing;
+  const Mmax = ama.maxBuoyancy * g * ama.spacing * leverProjection;
   if (-phi <= submergeRad) {
     const frac = -phi / submergeRad;
     return Mmax * frac * (2 - frac);

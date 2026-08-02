@@ -340,10 +340,31 @@ export function sailForces(state, controls, config) {
   Fx *= fade; Fy *= fade;
 
   // Roll (4th DOF, FIX_REQUEST_round4_roll_dof.md 1.4): heel foreshortens
-  // the sail's projected area.
+  // the sail's projected area — the apparent wind's projection onto the
+  // (tilted) sail plane. This gives the force IN THE SAIL PLANE.
   const phi = state.phi ?? 0;
   const cosPhi = Math.cos(phi);
-  Fx *= cosPhi; Fy *= cosPhi;
+  Fx *= cosPhi;
+  // F11 (work-order-2026-07-30): keep the in-plane transverse force as its
+  // own quantity. The old code applied ONE cos(phi) and then used the result
+  // as both the horizontal side force AND the heeling force, which cannot
+  // both be right: the rig tilts with the boat, so the in-plane transverse
+  // force splits into a HORIZONTAL component (a second cos(phi) — this is
+  // what loads the hull and drives leeway) and a VERTICAL one (sin(phi) —
+  // previously absent from the model entirely). Measured before this change:
+  // Fy and heelMoment scaled identically with cos(phi), so at 40deg heel the
+  // hull's side loading was overstated by 1/cos(40) = 30%.
+  // Fx (fore-aft) is unaffected by roll about the fore-aft axis, so it keeps
+  // the single projection.
+  const FyInPlane = Fy * cosPhi;
+  Fy = FyInPlane * cosPhi;
+  // Vertical component. There is no heave DOF, so this is NOT fed into the
+  // dynamics — it is exposed through forcesBreakdown() so the vertical
+  // balance the model does not close is VISIBLE and measurable rather than
+  // silently missing (see README "Known simplifications"). Measured on the
+  // post-block-B rig: ~8% of displacement at 40deg heel (the audit predicted
+  // ~16% against the pre-block-B sail, which made roughly twice the force).
+  const Fz = FyInPlane * Math.sin(phi);
 
   const brailWind = controls.brailWind ?? 0;
   // verticalLiftFraction (round 9, R9-4, ROUND9_physics_fidelity_work_
@@ -365,7 +386,20 @@ export function sailForces(state, controls, config) {
   // authority).
   const brailTrimRangeHeel = config.sail.brailTrimRange ?? 0.6;
   const brailWindHeelFactor = brailRegimeBlend(brailWind, brailTrimRangeHeel, 1, 0.7, 0.1);
-  const heelMoment = Fy * config.sail.CEheight * (1 - verticalLiftFraction) * brailWindHeelFactor;
+  // F12 (work-order-2026-07-30): the heeling COUPLE is the sail's side force
+  // against the hull's hydrodynamic reaction, so the arm is the distance
+  // between them — CE height above the water PLUS the CLR's depth below it,
+  // not the CE height alone. At CEheight 2.0 and clrDepth 0.35 that is +18%.
+  //   The work order offers an equivalent formulation (leave the sail arm at
+  // CEheight and add explicit heel moments from hullSide.Fy and rudder.Fy at
+  // their own depths). That is deliberately NOT taken yet: the rudder still
+  // produces ~2.2 kN at 6 kn (F9, not yet fixed), and coupling that into roll
+  // now would inject a heel moment comparable to the ama's entire righting
+  // capacity — a spurious effect driven by a known bug. Revisit after F9.
+  //   F11: the heeling force is the IN-PLANE transverse force, not the
+  // twice-projected horizontal one.
+  const heelArm = config.sail.CEheight + (config.hull.clrDepth ?? 0);
+  const heelMoment = FyInPlane * heelArm * (1 - verticalLiftFraction) * brailWindHeelFactor;
 
   // CE geometry — round 7, D-6 (ROUND7_DECISION.md): rebuilt around a
   // classical yacht-design "lead" (the CE-CLR longitudinal separation,
@@ -468,7 +502,7 @@ export function sailForces(state, controls, config) {
   const ceLeverSign = config.hull.ceLeverSign ?? 1;
   const yawMoment = ceLeverSign * (xCE * Fy - yCE * Fx) + yawMomentHeel;
 
-  return { Fx, Fy, heelMoment, yawMoment, yawMomentHeel, alpha, alphaSailor, aw, CL, CD };
+  return { Fx, Fy, Fz, heelMoment, yawMoment, yawMomentHeel, alpha, alphaSailor, aw, CL, CD };
 }
 
 // tableCL(apexDeg, alphaDeg, config) -> raw Polhamus-table CL (no camber/brails)

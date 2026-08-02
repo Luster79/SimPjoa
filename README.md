@@ -265,6 +265,16 @@ Step 2, since the UI doesn't change them):
   cause of yaw-hunting on offwind courses, so the model's stable,
   rudder-free deep-course equilibria are optimistic — they should not be
   read as "this boat holds a dead run hands-off on the water."
+- **The vertical force balance is not closed** (F11/F13,
+  `work-order-2026-07-30-physics-audit.md`). There is no heave degree of
+  freedom, so two real vertical effects have nowhere to go. The heeled sail's
+  vertical force component **is computed and exposed** as
+  `forcesBreakdown().sail.Fz` (~8 % of displacement at 40 deg heel) but is not
+  fed into the dynamics; and on the pressed side the ama's restoring moment
+  assumes its full added buoyancy without the platform sinking to supply it,
+  so stiffness there is somewhat overstated. Both are stated here, with the
+  first one measurable at runtime, rather than being invisible: the model's
+  roll behaviour is a 4-DOF approximation, not a closed vertical balance.
 
 Carried forward from the round-2 sign-off (`STEP1_SIGNOFF_and_STEP2_instructions.md`
 Part A) as calibration watch items, not bugs:

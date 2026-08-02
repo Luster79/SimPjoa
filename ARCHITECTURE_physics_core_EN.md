@@ -253,8 +253,16 @@ cross-check at startup as required by the main prompt. Fixed schema version: a
       // genuine zero-AoA weathervane (alphaAbsDeg -> 0) — the regime-b
       // "sail flogging" depower path, not active in normal driving trims.
     sailForces(state, controls, config)
-      -> { Fx, Fy, heelMoment, yawMoment, yawMomentHeel, alpha, alphaSailor, aw }
-      // Fx, Fy in the boat frame; heelMoment already reduced by brailWind
+      -> { Fx, Fy, Fz, heelMoment, yawMoment, yawMomentHeel, alpha, alphaSailor, aw }
+      // Fx, Fy in the boat frame. F11 (work-order-2026-07-30): the heel
+      // projection is now SPLIT — the in-plane transverse force gets a
+      // second cos(phi) to become the horizontal Fy (so Fy ~ cos^2 phi),
+      // sin(phi) to become the vertical Fz, and the heeling moment is
+      // taken from the IN-PLANE force (so heelMoment ~ cos phi). Fz is
+      // exposed but NOT integrated — there is no heave DOF; see README's
+      // "Known simplifications". F12: the heeling arm is
+      // sail.CEheight + hull.clrDepth (the sail/hull couple), not CEheight.
+      // heelMoment already reduced by brailWind
       // and by sail.verticalLiftFraction (round 9, R9-4: Marchaj's
       // crab-claw vertical-lift claim, conservatively modeled — see
       // aero.js's own comment; defaulted to 0/inactive, see config.js's
