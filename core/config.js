@@ -275,8 +275,8 @@ function buildDefaultConfig() {
 
     hull: {
       length: p.boat_length_m,           // 5.5 m
-      beam: p.hull_beam_m,                // 0.55 m
-      displacement: p.displacement_kg,    // 250 kg
+      beam: p.hull_beam_m,                // 0.45 m (see example_proa_parameters.csv)
+      displacement: p.displacement_kg,    // 190 kg (see example_proa_parameters.csv)
       yawInertia: yawInertiaFactor * p.displacement_kg * p.boat_length_m * p.boat_length_m,
       wettedSurface: 3.0,                  // m^2 — tunable estimate (slender canoe hull)
       // Cf is no longer a stored constant (round 7, R7-1) — hydro.js
@@ -287,7 +287,7 @@ function buildDefaultConfig() {
       // (ROUND9_physics_fidelity_work_order.md). Replaces the old
       // froudeThreshold/waveResistanceCoeff u^4-above-Fr-0.4 "wave wall",
       // which was a displacement-monohull hull-speed model (Fr~0.4) applied
-      // to a slender L/B=10:1 canoe hull that has no such wall (Dierking;
+      // to a slender L/B~12:1 canoe hull that has no such wall (Dierking;
       // Pacific flying proas routinely ran Fr 0.5-1.0). Expressed in the
       // SAME nondimensional form as skin friction (Cr, not a raw N-scaling
       // coefficient) and bounded to the same order as Cf (~0.003) rather
@@ -620,7 +620,7 @@ function buildDefaultConfig() {
       amaLoadDisplayCap: 3.0,    // UI-safe ceiling for amaLoad readouts (FIX_REQUEST_step1_round2.md R2-3); the raw value stays unclamped for the aback timer above
       // --- Roll as a 4th DOF (FIX_REQUEST_round4_roll_dof.md Part 1) ---
       // I_roll: the extension request's own suggested starting estimate
-      // (displacement*(0.4*ama.spacing)^2 = 250*1.0^2 = 250 kg*m^2) gave a
+      // (displacement*(0.4*ama.spacing)^2 = 190*1.0^2 = 190 kg*m^2) gave a
       // roll period of only ~1.0s at a representative 8deg step, well
       // under the requested 1.5-4s band — raised (tunable, as the request
       // itself flags this default) to hit the target: 1500 kg*m^2 gives a

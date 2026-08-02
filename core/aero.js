@@ -83,6 +83,12 @@ function interpTable(alphaAbsDeg, table) {
 
 function blendApexCL(apexDeg, alphaAbsDeg, aeroTable) {
   const apexKeys = Object.keys(aeroTable).map(Number).sort((a, b) => a - b);
+  // NOTE (block F, work-order-2026-07-30): this blends between the SMALLEST
+  // and LARGEST apex keys only — any intermediate columns are ignored. Safe
+  // today (the CSV carries exactly two, 45 and 60), but a silent trap if a
+  // third apex is ever added: it would be interpolated across, not to. Add a
+  // real per-segment interpolation (or an assertion on apexKeys.length===2)
+  // before extending the table.
   const lo = apexKeys[0], hi = apexKeys[apexKeys.length - 1];
   const clampedApex = Math.min(Math.max(apexDeg, lo), hi);
   const w = (clampedApex - lo) / (hi - lo || 1);
@@ -183,6 +189,13 @@ export function sailCoefficients(alpha, controls, config) {
   const alphaAbsRad = alphaAbsDeg * DEG;
 
   const CLtable = blendApexCL(sail.apexAngleDeg, alphaAbsDeg, config.aeroTable);
+  // KNOWN OFFSET (block F, work-order-2026-07-30): `alpha` here is the
+  // GEOMETRIC chord-flow angle, but data/dipiazza_2014_digitized.csv states
+  // its alpha is "measured from ZERO-LIFT incidence". A cambered sail has a
+  // negative zero-lift angle, so the v2 table is shifted a few degrees in
+  // alpha versus this geometric convention (v1/Polhamus has no built-in
+  // camber, so it is unaffected). Documented, not yet corrected — a constant
+  // alpha offset on the v2 lookup would fix it but moves the whole polar.
   // Runtime CD reconstruction with the tunable partial-suction factor
   // (see config.js header comment for why this isn't read from the CSV).
   const CDbase = sail.CD0 + sail.s * CLtable * Math.tan(Math.min(alphaAbsRad, 89.9 * DEG));
