@@ -198,10 +198,19 @@ export function updateAback(state, amaLoad, Msail, dt, config) {
   const isAback = state.phi < 0 && amaLoad > 1.0;
   const abackTimer = isAback ? state.abackTimer + dt : 0;
 
-  const flyingCapsizeRad = (phiCapsizeDeg + capsizeTriggerMarginDeg) * DEG;
+  // Angular capsize threshold, applied SYMMETRICALLY (F2, work-order-
+  // 2026-07-30): rollRestoreMoment() reverses the righting arm past
+  // phiCapsizeDeg on BOTH sides, so a pressed-side runaway (phi <= -threshold)
+  // is as unrecoverable as a flying-side one. Before this the pressed side
+  // had only the (slower, correct) aback timer, letting phi run to a full
+  // -360deg barrel roll caught by integrator's isPhysicallyPlausible() guard
+  // — a real capsize misreported as an arithmetic failure. The aback timer
+  // is unchanged: it is the earlier, nautical (6s sustained submersion)
+  // mechanism, deliberately distinct from this point-of-no-return angle.
+  const capsizeRad = (phiCapsizeDeg + capsizeTriggerMarginDeg) * DEG;
   const capsized = state.capsized
     || abackTimer > abackCapsizeTime
-    || state.phi >= flyingCapsizeRad;
+    || Math.abs(state.phi) >= capsizeRad;
 
   return { abackTimer, capsized };
 }
