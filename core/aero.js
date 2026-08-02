@@ -217,7 +217,22 @@ export function sailCoefficients(alpha, controls, config) {
   // alpha offset on the v2 lookup would fix it but moves the whole polar.
   // Runtime CD reconstruction with the tunable partial-suction factor
   // (see config.js header comment for why this isn't read from the CSV).
-  const CDbase = sail.CD0 + sail.s * CLtable * Math.tan(Math.min(alphaAbsRad, 89.9 * DEG));
+  //
+  // F3a (work-order-2026-07-30): the induced (suction-loss) term is
+  // s*CL*tan(alpha), but the table forces CL(90deg)=0 EXACTLY, so at
+  // alpha=90 the product collapses (0 * large) and CD drops to CD0 — the
+  // broadside, MAXIMUM-drag attitude reporting parasitic drag only. The
+  // physical limit as alpha->90 is finite (s*CL_gain*Kv, ~1.03 here), which
+  // the 89deg table value already carries. So evaluate the induced term at
+  // min(alpha, 89deg): CD holds ~1.07 through 90 instead of collapsing. Only
+  // alpha in (89,90] is affected (rare on any grid — the polar is
+  // byte-unchanged), and alpha<=89 is identical to before, so the peak-L/D
+  // calibration anchor is untouched. The gentler non-monotonicity of the
+  // tan form up near 80deg is a property of the suction-loss CD shape itself
+  // and belongs to F7's CD-form work, not here.
+  const alphaDragDeg = Math.min(alphaAbsDeg, 89);
+  const CLtableForDrag = alphaAbsDeg <= 89 ? CLtable : blendApexCL(sail.apexAngleDeg, alphaDragDeg, config.aeroTable);
+  const CDbase = sail.CD0 + sail.s * CLtableForDrag * Math.tan(alphaDragDeg * DEG);
 
   // Flogging drag (R5-1, regime b): a real luffing sail flutters, adding
   // unsteady-flow drag beyond what a static flat plate at the same
