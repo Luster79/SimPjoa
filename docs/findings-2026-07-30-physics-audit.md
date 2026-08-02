@@ -182,6 +182,80 @@ ceiling.
    spec acceptance threshold, so per the work order's own rule it is reported,
    not calibrated away.
 
+### F14 — crew ballast derived from the real buoyancy balance (core/hydro.js)
+
+The crew's effect on ama immersion was `crewPos * crewImmersionCoeff *
+(crew.mass / ama.maxBuoyancy)` with `crewImmersionCoeff = 0.30` — exactly 1/3
+of the physical effect, and a coefficient whose own config comment admitted it
+had been raised from 0.21 to keep a polar acceptance ratio in band. (F1 had
+already removed the term, since it applied to a *flying* ama too; F14 is where
+it comes back, correctly.)
+
+Now derived: taking moments about the hull centreline, a crew at `crewPos`
+puts `crewPos * crew.mass` on the float, so the extra immersion is that over
+`ama.maxBuoyancy`. `crewImmersionCoeff` is deleted.
+
+- crewPos 0.35 -> 31.5 kg on the float = 0.39 of its buoyancy (was 0.13).
+- **crewPos >= 0.889 = `maxBuoyancy / crew.mass` -> fully submerged**, which is
+  F14's acceptance. crewPos 1.0 = 90 kg on 80 kgf: it sinks, as it should.
+- `crew.posMax` deliberately left at 1.0 — the work order's "either restrict
+  the position or let the model punish it, not both"; the model now punishes
+  it correctly.
+- Bonus: `restingImmersion = 0.30` turns out to be `ama.mass /
+  ama.maxBuoyancy = 25/80 = 0.31`, so it is now derived rather than a literal.
+
+R7-4a's static band re-derived across the same physical formFactor range round
+9 used (1.1-1.4): static ratio span 0.145-0.185, band [0.05,0.15] ->
+**[0.10,0.22]**, bracketing the span rather than the single configured value.
+Max-immersion band and the ama-drag absolute band are unchanged.
+
+**Did the close-hauled optimum leave crewPos = 1.0?** (F14's own acceptance
+question.) Measured at TWA 40:
+
+- **TWS 6: yes — the optimum is now crewPos 0.3**, and 1.0 is not chosen at
+  all, so the "cost" of losing it is 0.00 %. This is the configuration whose
+  attractiveness the old `crewImmersionCoeff = 0.30` comment admitted it had
+  been tuned around.
+- TWS 10: still 1.0, but its margin over crewPos 0.3 is only 3.77 % — in more
+  wind the extra righting moment is worth more than the immersion penalty,
+  which is the physically expected trade.
+
+The reach-speed tripwire (R15, TWA 100 / TWS 10) fired again at 9.198 and was
+re-anchored to [9.16, 9.24] — its third re-anchor this audit, each one an
+intended change it correctly flagged.
+
+### F16 — the deep-course sheet jitter: hypothesis tested and REJECTED
+
+The work order proposed that `bestSheetAngle`'s jumping at TWA 160 is
+multimodality around `deltaAlign`'s discontinuity at AWA = 0, and that the fix
+is hysteresis on the regime a <-> c transition. **Measurement does not support
+that**, so no hysteresis was added.
+
+- **(a) No bistability.** Driving TWA 160 for 400 s from two different initial
+  yard angles (delta = 0 and delta = sheet), at sheets 12/24/40/56/84, at
+  TWS 4/6/10: identical settled speed and yard angle **to three decimals**,
+  heading error 0. The settle has one attractor.
+- **The discontinuity is real but not reached.** `deltaAlign` does flip
+  +179.8 -> -179.8 as AWA crosses 0 (clamping 60 deg -> 0 deg), but a boat at
+  TWA 160 never gets there.
+- **The actual cause is a bimodal objective.** At TWA 160 the speed-vs-sheet
+  curve has two nearly equal maxima at opposite ends of the range with a
+  trough between: TWS 10 gives 5.850 m/s at sheet 12, 4.385 at sheet 56, 5.807
+  at sheet 84 — the two peaks within 0.7 %. Any small model change flips which
+  one wins. Physically a very deep course is drag-driven either sheeted hard in
+  or eased right out; edge-on in the middle is the bad case.
+
+`README.md`'s claim that this is "a flat downwind optimum ... the speed curve
+itself is smooth there" was wrong on both counts and is corrected in place, per
+F16's own acceptance.
+
+Also recorded here because it is a visible consequence of block B: the deep
+polar rows now choose **`bestBrailWind = 0`**, where every row from TWA 140 up
+previously sat at 0.6. The carrot stopped being the optimal deep-course trim
+the moment it stopped adding free power — which is exactly the effect F4
+predicted, arriving as a change in what the optimiser chooses rather than as a
+tuning decision.
+
 ### Block F — documentation-only items
 
 Comment/CSV mismatches (the comments are the model's primary documentation):
