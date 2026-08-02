@@ -82,6 +82,25 @@ rebuild and committed with the change.
 
 Full suite after F1: **85/85**.
 
+### F5 — camber CD ratio transform (core/aero.js) [block B]
+
+Round 10d's C-C fix made the CL camber bonus a ratio relative to the v2
+table's built-in camber but left the CD bonus in the old absolute
+"relative-to-flat-plate" form (`1 + 1.0*camberEff`), double-counting the
+camber the v2 table already carries. New `camberCDDelta` applies the same
+ratio transform.
+
+- v1 CD bit-identical (ratio with builtin=0 reduces to the old `1+delta`);
+  v2 with camberDelta=0 identical (the brailWind=0 reach anchor); v2 at
+  brailWind=0.6 the CD multiplier drops 1.450 -> 1.409.
+- Peak no-brail L/D unchanged (5.30 @ 13deg — brailWind=0 is an exact
+  identity, so the calibration anchor is untouched).
+- Polar moves only on brail>0 (downwind) rows, re-optimised and regenerated.
+  Suite 85/85.
+
+This is the one cleanly-separable block-B item. The rest of block B (F3a,
+F6, F7, F4) is a single coupled recalibration — see below.
+
 ### Block F — documentation-only items
 
 Comment/CSV mismatches (the comments are the model's primary documentation):
@@ -104,10 +123,20 @@ deferred to ride with a polar-moving commit, since each perturbs forces.
 
 In recommended order:
 
-- **F3(a)+(b), block B (F4-F7)** — the sail-model consistency block. F3(a)
-  (CD alpha->90deg limit) is coupled to F7 (induced drag from working CL) per
-  the work order; block B moves the polar as one diff and is a design
-  decision (effective sail area under brail). Next up.
+- **Rest of block B — F3(a), F6, F7, F4** — a single COUPLED recalibration,
+  not separable the way F5 was. F7 replaces the induced-drag form
+  (`CD0 + s*CLtable*tan(a)` -> pole-free `CD0 + s*CL_working^2/k`), which also
+  resolves F3(a)'s alpha->90deg collapse but needs `k` re-picked to hold the
+  peak-L/D 5.29@14deg anchor. F4 introduces an effective sail area under
+  brail (a design decision) so reefing can't add unconditional power. F6
+  bounds the camber bonus (`brailCamberGain 0.45` puts camberEff at ~0.55, ~4x
+  outside the `1+1.75c` fit range) — but capping it via validateConfig would
+  reject the current default, so F6 forces a `brailCamberGain` cut that
+  overlaps F4's downwind-power concern. These four move CL, CD and area
+  together and must be calibrated jointly against the anchor and the downwind
+  polar; doing them piecemeal would ship intermediate miscalibrations. Next
+  unit, as one careful pass. F3(b) (dead CD column / data contract) is a
+  separate decision needing its own ADR.
 - **F14, F16** — after F1, both small, both move the polar.
 - **Capsize-margin recalibration** — the work order's section G is explicit:
   block D (F11/F12/F13) shifts the heel-moment balance 15-30%, against a T6
