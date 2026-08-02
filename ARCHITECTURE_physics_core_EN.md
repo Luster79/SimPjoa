@@ -367,7 +367,14 @@ cross-check at startup as required by the main prompt. Fixed schema version: a
                                             // crew luffs, aft bears away,
                                             // with crewTrimSign=+1 — no flip
                                             // needed (see coupling-sign test).
-    amaDrag(u, amaLoad, crewPos, end, config) -> { Fx, yawMoment }
+    amaDrag(u, phi, crewPos, end, config) -> { Fx, yawMoment }
+                                            // F1 (work-order-2026-07-30):
+                                            // takes phi (not amaLoad) and
+                                            // derives immersion WITH SIGN —
+                                            // full when pressed (phi<0), zero
+                                            // when flying (phi>0). Fixes the
+                                            // old unsigned-amaLoad bug where a
+                                            // flying ama had maximum drag.
                                             // Round 5 (P2-1, Pjoa manual
                                             // III.3: the ama's drag rotates
                                             // the canoe around it): yawMoment
