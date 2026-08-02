@@ -114,6 +114,74 @@ deferred with F7's CD-form work.
 F5 and F3(a) were the cleanly-separable block-B items. The rest (F6, F7, F4)
 is a single coupled recalibration and a design decision — see below.
 
+### Block B proper — F7 + F4 + F6 (+F3b), one model change [docs/adr/0007]
+
+Done as one commit because the three findings are one problem: induced drag
+was driven by the table CL, the reference area ignored the brails, and the
+camber bonus was unbounded. Maintainer chose the **aggressive** area variant.
+
+**What changed.** `CD = CD0 + inducedK*CL_working^2 + CDbroadside*sin^4(alpha)
++ brailParasiticCD*max(brails) + flogging`, and the brails now act through an
+effective AREA (`areaAtTrimBrail = 0.55`, `areaAtFullBrail = 0.20`,
+`areaAtFullLeeBrail = 0.35`) instead of opaque CL multipliers.
+`brailCamberGain` 0.45 -> 0.10 with a validator on the total camber. `sail.s`
+deleted (no remaining reader); `camberCDf` from F5 subsumed.
+
+**Two corrections to my own earlier analysis, both from measurement:**
+
+1. I previously reported that the work order's suggested `CD0 + s*CL^2/k`
+   "does not preserve the anchor". **That was wrong** — it was based on a
+   guessed `k`. Derived analytically (`k = (1/(2*L/Dmax))^2 / CD0`) it hits
+   the anchor exactly (5.298 @ 13deg). The real objection is different: the
+   quadratic form alone *re-introduces* the F3(a) collapse from the other
+   side, because at alpha=90 CL=0, so induced drag vanishes and CD returns to
+   CD0. A separation term is required, not optional.
+2. Fitting to Di Piazza's four measured `(CL,CD)` pairs **alone
+   under-constrains the model**: their lowest point is at alpha ~20.5, so
+   alpha<20 is unconstrained and the best fit runs peak L/D to **7.6** while
+   still matching all four pairs. The reported `L/D_max ~ 5.4` has to enter
+   the fit as a fifth constraint. With it: `CD0=0.0375, inducedK=0.215,
+   CDbroadside=1.06`, residuals +0.029/+0.036/-0.021/+0.010 against the four
+   pairs — inside the +-0.05 digitisation uncertainty the source CSV states.
+
+**Acceptance, all measured:**
+
+| criterion | result |
+|---|---|
+| total aero force non-increasing in brailWind and brailLee | **yes** (was +41% at bw=0.6) |
+| L/D non-increasing in both brails | **yes** (was rising in TRIM and again past 0.8) |
+| no-brail peak L/D within +-2% of anchor | 5.401 @ 12deg vs 5.298 @ 13 = **+1.94%** |
+| CD monotonic in alpha, CD(90) >= 1.0 | monotonic for alpha>=8; **CD(90)=1.098** |
+| validateConfig rejects total camber > 0.20 | **yes**; default config valid |
+
+(The only non-monotonic stretch, alpha in [0,2], is the pre-existing
+luffing-flogging ramp.)
+
+**A regression this surfaced, worth recording.** F6's ceiling, applied
+literally, made **archived recordings unloadable**: the 2026-07-16 fixture
+carries `sail.camber = 0.10` under *pre-v2* semantics (absolute camber against
+a flat table), which on today's v2 table is a delta on top of its built-in
+0.10 — total 0.30, rejected. This would have hit `harness/replay.js` too, not
+just the test. Fixed with `configFromRecordingSnapshot()` in `core/config.js`,
+used by both, which migrates the stale field forward rather than weakening the
+ceiling.
+
+**Three assertions re-anchored, each with its reason:**
+
+1. `R15 TWA100/TWS10`: 10.03-10.11 -> **9.58-9.66**. Intended (block B removes
+   the free power); band kept equally narrow.
+2. `Sail steers: windward brail bears away`: -0.5deg on the old TWS6 base,
+   under the 2deg floor. Direction still correct at every trim tried; only
+   magnitude fell, because that leg's yaw moment scales with rig force and
+   block B cut it deliberately. Re-anchored to TWS10 with a 20s window (was
+   10s) — the mechanism now develops more slowly. Measured **-5.6deg**.
+3. `no meaningful progress below ~50deg TWA`: **re-tagged
+   `xfail:CALIBRATION`, not retuned.** Ratio 0.557 vs the 0.55 ceiling, and
+   the move is entirely in the denominator — globalMax at TWS6 fell 5.61 ->
+   4.86 while speed(40) held (2.76 -> 2.71; a beat uses no brail). This is a
+   spec acceptance threshold, so per the work order's own rule it is reported,
+   not calibrated away.
+
 ### Block F — documentation-only items
 
 Comment/CSV mismatches (the comments are the model's primary documentation):
@@ -136,8 +204,8 @@ deferred to ride with a polar-moving commit, since each perturbs forces.
 
 In recommended order:
 
-- **Rest of block B — F6, F7, F4 (+ F3b)** — a single COUPLED recalibration
-  AND a design decision. Measured basis for the decision:
+- ~~**Rest of block B — F6, F7, F4 (+ F3b)**~~ — **DONE**, see above. The
+  analysis that led to it is kept below for the record:
     - F4: total aero force RISES +41% as brailWind goes 0 -> 0.6 (reefing
       adds power) because the reference area is fixed and the camber bonus
       inflates CL. Fixing it needs an effective area `areaEff(brail)` — its
