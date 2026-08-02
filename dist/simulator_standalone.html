@@ -1909,6 +1909,10 @@ function shuntForceFade(shunt) {
 // at their own length/Reynolds number (round 7, R7-1 — replaces the old
 // hull.Cf constant and the ama's unrelated bluff-body dragCoeff=0.4, which
 // was the root cause of the ama out-dragging the main hull 26-30x).
+// Speed scale over which direction-of-travel terms are smoothed instead of
+// switching discontinuously at u=0 (block F, work-order-2026-07-30). Matches
+// the ittc57Cf Reynolds floor, so the two low-speed regularisations agree.
+const U_SMOOTH = 0.05; // m/s
 const NU_SEAWATER = 1.19e-6; // m^2/s, kinematic viscosity of seawater at ~15degC (ITTC standard condition)
 
 function ittc57Cf(u, length) {
@@ -1947,7 +1951,8 @@ function hullResistance(u, config) {
     : gaussian);
   const residuary = 0.5 * rho_w * hull.wettedSurface * Cr * uAbs * uAbs;
 
-  return -Math.sign(u) * (friction + residuary);
+  // sign(u)*uAbs^2 is exactly u*|u| — written directly, no sign() switch.
+  return -(friction + residuary) * Math.sign(u);
 }
 
 // hullSideForceCoeff(lambdaDeg, hull) -> CS, the measured-anchored side-
@@ -2003,8 +2008,23 @@ function clrXPosition(crewPosX, config) {
 function hullSideForce(u, v, crewPosX, config) {
   const { hull, rho_w } = config;
   const DEG = Math.PI / 180;
-  const leewayRaw = Math.atan2(v, Math.abs(u) + 0.05);
-  const leewayAbs = Math.abs(leewayRaw);
+  // Block F (work-order-2026-07-30): the drift angle is measured against the
+  // SIGNED u. It used to use `Math.abs(u) + 0.05`, which after a shunt — where
+  // u is legitimately negative while the boat still carries its old way (see
+  // core/shunt.js) — computed the leeway as though the hull were going bow
+  // first. The magnitude fed to the CS curve is then folded into [0,90] the
+  // same way aero.js folds the sail's alpha, so a hull moving stern-first at a
+  // small drift angle reads as a small drift angle rather than ~180deg.
+  //   KNOWN LIMITATION, stated rather than hidden: the folded angle is looked
+  // up in the SAME CS curve either way, and Flay's measurements are for a hull
+  // going forward. A V-sectioned hull travelling backwards is not the same
+  // foil. Folding is the better of the two available approximations, not a
+  // claim that direction does not matter.
+  const leewayRaw = Math.atan2(v, u);
+  const leewayFoldedRad = Math.abs(leewayRaw) <= Math.PI / 2
+    ? Math.abs(leewayRaw)
+    : Math.PI - Math.abs(leewayRaw);
+  const leewayAbs = leewayFoldedRad;
   const leewayAbsDeg = leewayAbs / DEG;
 
   const CS = hullSideForceCoeff(leewayAbsDeg, hull);
@@ -2076,7 +2096,13 @@ function hullSideForce(u, v, crewPosX, config) {
   } else if (leewayAbsDeg <= reliefFadeEndDeg) {
     relief = reliefPeak * (1 - (leewayAbsDeg - reliefPlateauEndDeg) / (reliefFadeEndDeg - reliefPlateauEndDeg));
   }
-  const Fx = -Math.sign(u) * Math.abs(FyFoil) * Math.sin(leewayAbs) * (1 - relief);
+  // Block F: the direction of induced drag was `-Math.sign(u)`, a genuine C0
+  // jump at u=0 — and unlike the u*|u| terms elsewhere in this file it does NOT
+  // vanish there, because |FyFoil| keeps the nonzero low-speed linear part. RK4
+  // loses its order across such a step, and the boat crosses u=0 on every
+  // shunt. Same magnitude, smoothed over a small speed scale.
+  const uDirection = u / Math.sqrt(u * u + U_SMOOTH * U_SMOOTH);
+  const Fx = -uDirection * Math.abs(FyFoil) * Math.sin(leewayAbs) * (1 - relief);
 
   // Center of lateral resistance offset from CG (slightly aft, tunable) — gives
   // a modest weather-helm-like turning tendency rather than zero yaw coupling.
@@ -2147,7 +2173,12 @@ function amaDrag(u, phi, crewPos, end, config) {
 
   // Crew to LEEWARD (crewPos<0) eases the windward ama's wetted area a little
   // (unchanged from round 4).
-  const outboardRelief = 1 - 0.15 * (Math.max(0, -crewPos) / 0.3);
+  // Block F: the 0.3 here was silently |crew.posMin|'s default. validateConfig
+  // permits posMin down to -1, which drove relief to 0.5 with no clamp. Derive
+  // the span from the configured limit and clamp it, so the relief stays a
+  // 0-15% effect whatever the crew's range is set to.
+  const reliefSpan = Math.abs(crew.posMin) || 0.3;
+  const outboardRelief = 1 - 0.15 * Math.min(1, Math.max(0, -crewPos) / reliefSpan);
   const Seff = ama.wettedSurface * immersion * outboardRelief;
   // Skin friction at the ama's own (shorter) length, same ITTC-57 line the
   // main hull uses above, times a form factor (1+k) — standard ITTC/Prohaska
@@ -3277,14 +3308,14 @@ const MS_TO_KN = 1.9438;
 // recording's codeVersion is meaningful (harness/replay.js warns on
 // mismatch) for a downloaded bundle without requiring a build step for
 // plain `python3 -m http.server` development.
-const CODE_VERSION = "4eb076d";
+const CODE_VERSION = "da6c991";
 // BUILD_TIME: same pattern as CODE_VERSION above — tools/bundle.js
 // replaces this with the COMMIT's timestamp (not wall-clock build time),
 // so it stays stable across re-bundling the same commit and always
 // matches CODE_VERSION's hash. Shown in the bottom-right version footer
 // so a bug report/recording can be tied to an exact, dated build without
 // having to separately ask "which commit was this."
-const BUILD_TIME = "2026-08-02T19:14:12+02:00";
+const BUILD_TIME = "2026-08-02T21:43:11+02:00";
 
 // ---------------------------------------------------------------------
 // i18n — EN/PL. Static labels are marked with data-i18n="key" in
