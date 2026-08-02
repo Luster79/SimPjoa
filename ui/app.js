@@ -71,7 +71,7 @@ const TRANSLATIONS = {
     // both so the split isn't only discoverable by reading the source.
     'tooltip.brailWindZones': (pct) => `0-${pct}%: trim (carrot) — sail keeps drawing · ${pct}-100%: power dump — spills power, panic/furl`,
     'h.steering': 'Steering & trim', 'lbl.rudder': 'Rudder', 'hint.rudder': 'A/D deflect, auto-centers on release',
-    'lbl.rudderUp': 'Rudder up (shipped)', 'hint.rudderUp': 'A steering oar, not a fixed rudder — usually out of the water; produces no force while shipped',
+    'lbl.oarDeployed': 'Oar in the water', 'hint.oarDeployed': 'A steering oar, not a fixed rudder: normally shipped. Put it in the water to steer — it costs speed while it is down',
     'lbl.crewPos': 'Crew position', 'hint.crewPos': 'Drag the dot, or J/L (lateral), I/K (fore-aft)',
     'pad.ama': 'ama', 'pad.leeward': 'leeward', 'pad.aft': 'aft', 'pad.fwd': 'fwd',
     'pad.headUp': 'heading up', 'pad.bearAway': 'bearing away',
@@ -138,7 +138,7 @@ const TRANSLATIONS = {
     'lbl.brailWind': 'Gejtawa nawietrzna', 'hint.brailWind': 'W wybiera, X luzuje',
     'tooltip.brailWindZones': (pct) => `0-${pct}%: trym (marchewka) — żagiel dalej ciągnie · ${pct}-100%: zrzut mocy — panika/refowanie`,
     'h.steering': 'Sterowanie i wyważenie', 'lbl.rudder': 'Ster', 'hint.rudder': 'A/D wychyla ster, centruje się po puszczeniu',
-    'lbl.rudderUp': 'Wiosło wyjęte', 'hint.rudderUp': 'Ster to wiosło, nie stały ster — zwykle jest wyjęte z wody; nie wytwarza wtedy żadnej siły',
+    'lbl.oarDeployed': 'Wiosło w wodzie', 'hint.oarDeployed': 'Ster to wiosło, nie stały ster — normalnie jest wyjęte. Włóż je do wody, żeby sterować — zanurzone kosztuje prędkość',
     'lbl.crewPos': 'Pozycja załogi', 'hint.crewPos': 'Przeciągnij kropkę, lub J/L (bok), I/K (wzdłuż)',
     'pad.ama': 'ama', 'pad.leeward': 'zawietrzna', 'pad.aft': 'rufa', 'pad.fwd': 'dziób',
     'pad.headUp': 'Ostrzenie', 'pad.bearAway': 'Odpadanie',
@@ -306,7 +306,7 @@ skinSelect.addEventListener('change', () => {
   localStorage.setItem('proaSkin', skinSelect.value);
   renderCrewPad(); // the SVG backdrop is static — the live canvas repaints itself, this doesn't
 });
-const rudderUpCheckbox = document.getElementById('rudderUp');
+const oarDeployedCheckbox = document.getElementById('oarDeployed');
 const btnRec = document.getElementById('btnRec');
 const btnMark = document.getElementById('btnMark');
 const btnDownloadRec = document.getElementById('btnDownloadRec');
@@ -517,14 +517,23 @@ crewPad.addEventListener('pointerup', (e) => {
 // produces no force regardless of controls.rudder's own value. The
 // slider itself is disabled while shipped (nothing for it to do), not
 // reset, so re-shipping the oar resumes from wherever it was left.
-rudderUpCheckbox.addEventListener('change', () => {
-  controls.rudderUp = rudderUpCheckbox.checked;
-  sliders.rudder.disabled = controls.rudderUp;
-  stepButtons.rudder.minus.disabled = controls.rudderUp;
-  stepButtons.rudder.plus.disabled = controls.rudderUp;
+// The checkbox reads the way the sailor acts: ticking it PUTS THE OAR IN.
+// controls.rudderUp is the core's own (inverted) flag, so the two are mirrored
+// here rather than in the physics.
+function syncOarUI() {
+  oarDeployedCheckbox.checked = !controls.rudderUp;
+  const shipped = controls.rudderUp;
+  sliders.rudder.disabled = shipped;
+  stepButtons.rudder.minus.disabled = shipped;
+  stepButtons.rudder.plus.disabled = shipped;
+}
+oarDeployedCheckbox.addEventListener('change', () => {
+  controls.rudderUp = !oarDeployedCheckbox.checked;
+  syncOarUI();
 });
 
 syncSlidersFromControls();
+syncOarUI();   // the oar starts SHIPPED, so the checkbox and the disabled slider must say so
 updateBrailZoneUI();
 
 // ---------------------------------------------------------------------

@@ -72,7 +72,13 @@ export function createDefaultControls() {
     windSpeed: 6,
     sheet: 0, // MAXIMUM yard angle delta_max [rad], >=0 (R5-1) — NOT the actual yard angle, see state.delta
     rudder: 0,
-    rudderUp: false, // steering oar shipped (out of the water) — see core/rudder.js
+    // A steering oar's natural resting state is SHIPPED — lifted clear of the
+    // water — which is what core/rudder.js's own header says. Defaulting it to
+    // deployed contradicted that: the boat started with a permanently-dragging
+    // blade nobody had put in. Only ui/app.js consumes these defaults (the
+    // harness and the polar build their own control objects), so this does not
+    // touch the sweep, which genuinely needs the oar down to hold course.
+    rudderUp: true, // steering oar shipped (out of the water) — see core/rudder.js
     brailLee: 0,
     brailWind: 0,
     crewPos: 0,

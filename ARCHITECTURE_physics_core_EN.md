@@ -226,6 +226,7 @@ changes.
       sheet,            // [rad] MAXIMUM yard angle (delta_max), >=0 — round 5; NOT the actual yard angle, see state.delta
       rudder,           // [-1..1] -> scaled to +/-35 deg in rudder.js
       rudderUp,         // bool — steering oar shipped (out of the water); zero force
+                        // DEFAULTS TO TRUE: shipped is the oar's resting state
                         // regardless of `rudder`'s own value (see rudder.js)
       brailLee,         // 0..1 leeward brail
       brailWind,        // 0..1 windward brail
@@ -442,10 +443,14 @@ cross-check at startup as required by the main prompt. Fixed schema version: a
       // boat axes, so Fx exists and steering costs speed. The oar sits at
       // the PHYSICAL STERN, -(L/2)*end; the old +(L/2) was invisible without
       // an inflow term and inconsistent with it.
-      // lever arm = half hull length * state.end; dead at |u| ~ 0
-      // controls.rudderUp short-circuits to { Fy: 0, yawMoment: 0 } — a
-      // Pjoa's "rudder" is a steering OAR, normally shipped clear of the
-      // water, not centered
+      // lever arm = -(half hull length) * state.end — the PHYSICAL stern
+      // (F9 corrected the sign; see core/rudder.js for why it was invisible
+      // before an inflow term existed). Dead at |u| ~ 0.
+      // controls.rudderUp short-circuits to { Fx: 0, Fy: 0, yawMoment: 0 } —
+      // a Pjoa's "rudder" is a steering OAR, normally shipped clear of the
+      // water, not centered. createDefaultControls() therefore defaults it
+      // to rudderUp=TRUE (shipped); the UI's checkbox reads the other way
+      // round ("oar in the water") because that is how a sailor acts on it.
 
 ### stability.js — roll as a 4th DOF (FIX_REQUEST_round4_roll_dof.md Part 1;
 ### supersedes the round-3 static heelMoment/restoringCapacity model)
