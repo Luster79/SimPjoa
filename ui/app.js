@@ -2617,7 +2617,13 @@ function drawPolarView(rows) {
 const BOAT_FIELDS = [
   { path: 'hull.length', kind: 'physics', unit: 'm', step: 0.1, labelEn: 'Hull length', labelPl: 'Długość kadłuba' },
   { path: 'hull.beam', kind: 'graphics', unit: 'm', step: 0.01, labelEn: 'Hull beam', labelPl: 'Szerokość kadłuba' },
-  { path: 'hull.displacement', kind: 'physics', unit: 'kg', step: 1, labelEn: 'Displacement', labelPl: 'Wyporność' },
+  // F8: these three are what the dynamics actually integrate. hull.displacement
+  // is no longer read by the physics — it is only an input to the derivation in
+  // config.js — so editing it here would silently do nothing; the derived
+  // inertias are exposed instead.
+  { path: 'hull.massSurge', kind: 'physics', unit: 'kg', step: 5, labelEn: 'Mass, surge (m_x)', labelPl: 'Masa wzdłużna (m_x)' },
+  { path: 'hull.massSway', kind: 'physics', unit: 'kg', step: 10, labelEn: 'Mass, sway (m_y, incl. added)', labelPl: 'Masa poprzeczna (m_y, z towarzyszącą)' },
+  { path: 'hull.yawInertia', kind: 'physics', unit: 'kg·m²', step: 50, labelEn: 'Yaw inertia (I_z)', labelPl: 'Bezwładność yaw (I_z)' },
   { path: 'hull.wettedSurface', kind: 'physics', unit: 'm²', step: 0.1, labelEn: 'Hull wetted surface', labelPl: 'Pow. zwilżona kadłuba' },
   { path: 'hull.residuaryPeakCr', kind: 'physics', unit: '', step: 0.0005, labelEn: 'Wave-resistance peak (Cr)', labelPl: 'Szczyt oporu falowego (Cr)' },
   { path: 'hull.residuaryFrPeak', kind: 'physics', unit: '', step: 0.01, labelEn: 'Peak Froude number', labelPl: 'Liczba Froude’a szczytu oporu' },

@@ -274,7 +274,23 @@ function buildDefaultConfig() {
   const aeroTableV2 = loadAeroTable('crab_claw_CL_CD_v2.csv');
   crossCheckAeroTableV2(aeroTableV2);
   const p = loadBoatParamsCSV();
-  const yawInertiaFactor = 0.06; // tunable — fraction of m*L^2 approximating yaw inertia of a slender hull
+  // F8 (work-order-2026-07-30): inertia is now three separate quantities,
+  // derived rather than a single fudge factor. A hull accelerating SIDEWAYS
+  // drags a large body of water with it (added mass); pushing it forward
+  // barely does. The old single 0.06*m*L^2 for yaw was below even a uniform
+  // rod's 1/12, which no mass distribution can justify — added mass only ever
+  // adds. Derivations, for L = 5.5 m and draft = lateralArea/L = 0.327 m:
+  //   added sway mass  ~ rho*pi*draft^2/4 per unit length, x L  = 474 kg
+  //   added yaw inertia = that strip mass integrated with x^2   = 1195 kg.m^2
+  //   rod term          = m*L^2/12                              =  479
+  //   ama at its spacing = ama.mass * spacing^2                 =  156
+  // Surge added mass for a slender body is small (a few % — it is pushing
+  // water aside lengthwise, not broadside); 10% is used. ama.mass is now
+  // included in the translational masses, which it previously was not.
+  const HULL_LATERAL_AREA = 1.8;                        // m^2 — see hull.lateralArea below (same value, needed here first)
+  const draft = HULL_LATERAL_AREA / p.boat_length_m;    // ~0.327 m
+  const addedSwayPerLength = 1025 * Math.PI * draft * draft / 4;  // kg/m, 2D cylinder analogy
+  const dryMass = p.displacement_kg + p.ama_mass_kg;
 
   return {
     configVersion: CONFIG_VERSION,
@@ -288,7 +304,13 @@ function buildDefaultConfig() {
       length: p.boat_length_m,           // 5.5 m
       beam: p.hull_beam_m,                // 0.45 m (see example_proa_parameters.csv)
       displacement: p.displacement_kg,    // 190 kg (see example_proa_parameters.csv)
-      yawInertia: yawInertiaFactor * p.displacement_kg * p.boat_length_m * p.boat_length_m,
+      // massSurge / massSway / yawInertia: see the F8 note above for each
+      // term's derivation. All three are configurable, as the work order asks.
+      massSurge: dryMass + 0.10 * p.displacement_kg,
+      massSway: dryMass + addedSwayPerLength * p.boat_length_m,
+      yawInertia: dryMass * p.boat_length_m * p.boat_length_m / 12
+        + p.ama_mass_kg * p.beam_overall_m * p.beam_overall_m
+        + addedSwayPerLength * Math.pow(p.boat_length_m, 3) / 12,
       wettedSurface: 3.0,                  // m^2 — tunable estimate (slender canoe hull)
       // Cf is no longer a stored constant (round 7, R7-1) — hydro.js
       // computes it per-call from the ITTC-57 model-ship line at the
@@ -379,7 +401,7 @@ function buildDefaultConfig() {
       // 0001) already covers the high-Fr regime with its own separate
       // provenance; no additional guard needed here since side force and
       // longitudinal resistance are independent terms.
-      lateralArea: 1.8,                    // m^2 — hull lateral (broadside) plane area (~length*draft); tunable estimate (no direct measurement of THIS hull's draft)
+      lateralArea: HULL_LATERAL_AREA,      // m^2 — hull lateral (broadside) plane area (~length*draft); tunable estimate (no direct measurement of THIS hull's draft)
       // Yaw damping (F10, work-order-2026-07-30) — replaces the single
       // yawDampingCoeff: 900 with `r*(1+|u|)`, which was dimensionally
       // inconsistent (a bare 1 added to m/s) and gave a STOPPED boat full

@@ -70,14 +70,25 @@ export function computeForces(state, controls, config) {
 }
 
 // derivatives(state, forces, config) -> time derivatives of the ODE state
+// F8 (work-order-2026-07-30): three SEPARATE inertias, not one displacement.
+// A hull accelerating sideways drags a large body of water with it; pushing it
+// forward barely does. Previously m_x = m_y = displacement = 190 kg and
+// I_z = 0.06*m*L^2 = 345 kg.m^2 — the latter BELOW even a uniform rod (1/12),
+// which no mass distribution can justify once added mass is counted, since
+// added mass only ever adds.
+//
+// Writing the rigid-body equations with distinct inertias also produces the
+// MUNK MOMENT on its own — the (m_x - m_y)*u*v term in dr, the classical
+// destabilising moment on a slender body at an angle of attack. It was
+// identically zero before, and not because it was neglected: with m_x = m_y
+// there was nothing to express it with.
 export function derivatives(state, forces, config) {
-  const m = config.hull.displacement;
-  const I = config.hull.yawInertia;
+  const { massSurge, massSway, yawInertia } = config.hull;
   const Iroll = config.stability.I_roll;
   return {
-    du: forces.Fx / m + state.v * state.r,
-    dv: forces.Fy / m - state.u * state.r,
-    dr: forces.M / I,
+    du: forces.Fx / massSurge + (massSway / massSurge) * state.v * state.r,
+    dv: forces.Fy / massSway - (massSurge / massSway) * state.u * state.r,
+    dr: (forces.M + (massSurge - massSway) * state.u * state.v) / yawInertia,
     dx: state.u * Math.cos(state.heading) - state.v * Math.sin(state.heading),
     dy: state.u * Math.sin(state.heading) + state.v * Math.cos(state.heading),
     dheading: state.r,

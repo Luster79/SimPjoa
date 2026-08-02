@@ -432,6 +432,54 @@ over the 60 s, was -23 deg) and drifts faster. The new value is also the more
 plausible one — 0.57 m/s is ~1.1 kn of bare-pole drift in a 12 kn breeze, where
 0.06 m/s is essentially pinned.
 
+### F8 — three inertias, and the Munk moment that falls out of them
+
+Last item of block C, deliberately: it invalidates the measurements F9 and F10
+were taken against.
+
+The model used **one** mass for surge and sway (`displacement` = 190 kg) and
+`I_z = 0.06*m*L^2 = 345 kg.m^2`. My own derivation reproduces the audit's
+numbers almost exactly:
+
+| quantity | used | derived | ratio |
+|---|---|---|---|
+| sway mass | 190 | 190 + 25 (ama) + 474 (added) = **689** | 3.6x |
+| yaw inertia | 345 | 479 (rod) + 156 (ama) + 1195 (added) = **1894** | 5.5x |
+| surge mass | 190 | 190 + 25 + ~10 % = **234** | 1.2x |
+
+`0.06` is below even a uniform rod's `1/12 = 0.083`, which no mass distribution
+can justify once added mass is counted — added mass only ever adds. `ama.mass`
+was not in the translational mass at all.
+
+**The Munk moment is not added as a term.** Writing the rigid-body equations
+with distinct inertias produces `(m_x - m_y)*u*v` in `dr` on its own. It was
+identically zero before not because it was neglected but because, with
+`m_x = m_y`, there was nothing to express it with. At a representative point
+(u = 3, v = -0.15, ~3 deg leeway) it is **205 N.m** — comparable to the hull's
+own yaw damping there, so a genuinely significant new destabilising term.
+
+`hull.displacement` is now only an input to the derivation; nothing in the
+dynamics reads it. Since `createConfig`'s deep-merge would not recompute the
+derived inertias, editing it in the boat panel would have silently done
+nothing — so the UI now exposes `massSurge` / `massSway` / `yawInertia`
+instead, which are what the dynamics integrate.
+
+**Two assertions moved, both anticipated.** R15 went UP to 8.98 (sixth
+re-anchor this audit): 5.5x the yaw inertia and 3.6x the sway mass make the
+boat far less twitchy under the polar's autopilot, so it holds a cleaner line.
+And T9's yank threshold was re-derived 0.01 -> 0.004 on the same rule round 10
+used (floor at ~half the measured value: 0.039 -> 0.019 -> 0.0074). The claim
+T9 makes — that the yaw yank **emerges** from the force path rather than being
+scripted — is unchanged; with 5.5x the inertia the same impulse simply shows
+up as a smaller rate.
+
+**Side effect worth recording:** the `xfail:STEERING` trim-in tally jumped from
+**0 / 9 / 7** to **6 / 4 / 6** (weather / lee / capsized). The Munk moment and
+the much larger inertia changed the balance enough that "trimming in points up"
+now holds at a plurality of operating points. It still does not hold at a
+majority, so the xfail stands — but this is the first change in the whole audit
+that moved it *toward* the claim rather than away.
+
 ### Block F — documentation-only items
 
 Comment/CSV mismatches (the comments are the model's primary documentation):

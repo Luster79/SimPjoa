@@ -332,12 +332,16 @@ export function runAsserts(config, { slow = true } = {}) {
   // is the point of keeping this tripwire narrow. F9 then took it DOWN to
   // ~8.62: steering is no longer free, and the polar's own autopilot holds
   // course with continuous rudder, so the blade's drag is now paid on every
-  // row. The band tracks the model and stays just as narrow, keeping its
-  // value for the NEXT unintended shift.
+  // row. F8 then took it back UP to ~8.98 — 5.5x the yaw inertia and 3.6x the
+  // sway mass make the boat far less twitchy under the autopilot, so it holds
+  // a cleaner line and wastes less. Sixth re-anchor of this tripwire in one
+  // audit; each move was an intended change it correctly flagged. The band
+  // tracks the model and stays just as narrow, keeping its value for the NEXT
+  // unintended shift.
   {
     const row10 = computePolar(config, { twsList: [10], twaFrom: 100, twaTo: 100, step: 1 })[0];
-    check('R15: reach speed at TWS=10, TWA=100 is within a narrow absolute band [8.58,8.66] m/s',
-      row10.bestSpeed >= 8.58 && row10.bestSpeed <= 8.66,
+    check('R15: reach speed at TWS=10, TWA=100 is within a narrow absolute band [8.94,9.02] m/s',
+      row10.bestSpeed >= 8.94 && row10.bestSpeed <= 9.02,
       `speed=${row10.bestSpeed.toFixed(4)} m/s (sheet=${row10.bestSheetAngle})`);
   }
   } // if (slow) — section 3
@@ -1202,7 +1206,7 @@ export function runAsserts(config, { slow = true } = {}) {
       swingTime !== null && swingTime <= expectedSwingTime + 0.3,
       `swingTime=${swingTime === null ? 'never' : swingTime.toFixed(2)}s expected~${expectedSwingTime.toFixed(2)}s`);
     check('T9: a nonzero yaw-rate impulse is recorded during the swing (the yank emerges, not scripted)',
-      maxAbsR > 0.01, `maxAbsR=${maxAbsR.toFixed(4)} rad/s -- threshold re-derived from 0.02 (round 10, R10-1): the weaker Di Piazza-anchored sail produces a smaller-but-still-clearly-emergent yank (measured 0.019 rad/s, was 0.039 pre-R10-1); see ROUND10_data_integration_findings.md`);
+      maxAbsR > 0.004, `maxAbsR=${maxAbsR.toFixed(4)} rad/s -- threshold re-derived twice, each time keeping the floor at ~half the measured value: 0.02 (pre-R10-1, yank 0.039) -> 0.01 (R10-1's weaker sail, 0.019) -> 0.004 (F8, 0.0074). F8 raised yaw inertia 5.5x, so the SAME yaw impulse necessarily shows up as a smaller rate; what this check asserts — that the yank EMERGES from the force path rather than being scripted — is unchanged, and only its scale moved.`);
   }
 
   // --- H2 (round 10d, ROUND10d_helm_balance.md): through-gybe aback

@@ -565,6 +565,16 @@ cross-check at startup as required by the main prompt. Fixed schema version: a
 ### integrator.js
     derivatives(state, forces, config) -> { du, dv, dr, dphi, dp, ... }
       // dphi = state.p; dp = forces.Mroll / stability.I_roll (round 4)
+      // F8 (work-order-2026-07-30): THREE separate inertias — hull.massSurge,
+      // hull.massSway (which carries the added mass of the water a hull drags
+      // when accelerating sideways, ~3.6x the dry mass) and hull.yawInertia
+      // (~5.5x the old value, which was below even a uniform rod's m*L^2/12).
+      // hull.displacement is no longer read by the dynamics; it is only an
+      // input to the derivation in config.js. Because m_x != m_y, the
+      // rigid-body equations now also produce the MUNK MOMENT,
+      // (m_x - m_y)*u*v in dr — the classical destabilising moment on a
+      // slender body at an angle of attack, which was identically zero before
+      // for want of anything to express it with.
     integrate(state, controls, config, dt) -> newState   // RK4, dt=1/240,
       // ODE state [x, y, heading, u, v, r, phi, p] (phi/p added round 4)
       // physics dt smaller than a frame; the facade runs N substeps.
