@@ -199,33 +199,36 @@ export function hullSideForce(u, v, crewPosX, config) {
 //   INCREASED ama drag turns the bow TOWARD the ama side with no extra
 //   flip knob needed: e.g. end=+1 (ama at +y), Fx more negative (more
 //   drag) -> moment = -(spacing)*Fx more POSITIVE -> CCW -> the bow (+x)
-//   swings toward +y, the ama's own side. The round-4 crew-immersion term
-//   above already modulates this drag with crewPos, so "crew toward the
-//   ama sinks it, and the extra drag swings the bow toward the ama" (the
-//   manual's rule I) emerges with no new controls.
-export function amaDrag(u, amaLoad, crewPos, end, config) {
-  const { ama, crew, rho_w } = config;
-  // Even at zero heel the ama still floats partially immersed at rest on
-  // its own static buoyancy (it isn't hauled out just because there's no
-  // sail force) — a floor keeps its wetted surface from vanishing to zero.
+//   swings toward +y, the ama's own side. (The manual's rule I — crew
+//   toward the ama sinks it, swinging the bow that way — rode on the
+//   crew-immersion term removed by F1; it returns with the corrected
+//   crew/ama-buoyancy coupling in F14.)
+export function amaDrag(u, phi, crewPos, end, config) {
+  const { ama, rho_w, stability } = config;
+  const DEG = Math.PI / 180;
+  // Immersion derived from HEEL WITH SIGN (F1, work-order-2026-07-30). The
+  // ama is pressed DEEPER as the boat heels toward it (phi<0) and lifts CLEAR
+  // as it flies (phi>0). Earlier this took the UNSIGNED amaLoad from
+  // computeAmaLoad(), whose two branches both GROW with |phi| — so a flying
+  // ama (phi>0) reported the same "fully immersed" drag as a pressed one,
+  // i.e. maximum ama drag in the one configuration where the float isn't
+  // touching the water. Now:
+  //   - at rest (phi~0) it floats at restingImmersion on static buoyancy
+  //     (the floor that keeps wetted surface from vanishing there);
+  //   - pressed (phi<0) it grows to full submersion by phiSubmergeDeg;
+  //   - flying (phi>0) it fades to zero wetted area by phiLiftoffDeg.
   const restingImmersion = 0.3;
-  const heelImmersion = Math.max(restingImmersion, Math.min(amaLoad, 1.3));
+  const phiSub = stability.phiSubmergeDeg * DEG;
+  const phiLift = stability.phiLiftoffDeg * DEG;
+  const immersion = phi < 0
+    ? restingImmersion + (1.3 - restingImmersion) * Math.min(1, -phi / phiSub)
+    : restingImmersion * Math.max(0, 1 - phi / phiLift);
 
-  // Crew weight standing at/near the ama presses it physically deeper into
-  // the water — a direct weight effect, separate from (and not captured
-  // by) amaLoad, which only measures the SAIL's heeling demand vs righting
-  // capacity and can be near-zero even with the crew's full weight sitting
-  // right on the ama. Without this term, moving crew to windward looks
-  // purely free (less heel => less amaLoad => less drag), letting ballast
-  // erase the leeway/induced-drag cost of pointing high with no downside —
-  // verified during FIX_REQUEST_step1_round2.md R2-1 review (mushing
-  // coefficient had zero effect on the polar's actual TWA=40 optimum
-  // because that optimum ballasts to crewPos=1.0 and never approaches
-  // leeway saturation). Scales with crew mass relative to ama buoyancy so
-  // a heavier crew on a smaller ama pays proportionally more.
-  const crewImmersion = Math.max(0, crewPos) * ama.crewImmersionCoeff * (crew.mass / ama.maxBuoyancy);
-
-  const immersion = Math.min(heelImmersion + crewImmersion, 1.3);
+  // Crew to LEEWARD (crewPos<0) eases the windward ama's wetted area a little
+  // (unchanged from round 4). The old crew-PRESSES-ama immersion term is gone
+  // with F1: a crew standing on a FLYING ama immersed nothing, the same sign
+  // bug. The crew-ballast vs ama-buoyancy coupling returns, correctly derived
+  // from the real buoyancy balance, in F14.
   const outboardRelief = 1 - 0.15 * (Math.max(0, -crewPos) / 0.3);
   const Seff = ama.wettedSurface * immersion * outboardRelief;
   // Skin friction at the ama's own (shorter) length, same ITTC-57 line the

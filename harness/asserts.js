@@ -293,12 +293,16 @@ export function runAsserts(config, { slow = true } = {}) {
   // the committed out/polar.csv byte-gate caught it, and that gate is a
   // tripwire, not an assertion: it says something changed, never what).
   // TWA100/TWS10 (the polar's own fastest TWS10 row) moves by ~0.4-0.6%
-  // for a +-2% area change (measured 9.7588 base, 9.7950 at +2%, 9.6964 at
-  // -2%) — narrow enough that either direction lands outside this band.
+  // for a +-2% area change — narrow enough that either direction lands
+  // outside this band. Re-anchored after F1 (work-order-2026-07-30): the
+  // flying-ama-drag sign fix raised this reach speed from ~9.76 to ~10.07
+  // (less parasitic drag when the ama is clear of the water), an intended
+  // change; the band tracks it, staying just as narrow to keep its
+  // tripwire value for the NEXT unintended shift.
   {
     const row10 = computePolar(config, { twsList: [10], twaFrom: 100, twaTo: 100, step: 1 })[0];
-    check('R15: reach speed at TWS=10, TWA=100 is within a narrow absolute band [9.70,9.78] m/s',
-      row10.bestSpeed >= 9.70 && row10.bestSpeed <= 9.78,
+    check('R15: reach speed at TWS=10, TWA=100 is within a narrow absolute band [10.03,10.11] m/s',
+      row10.bestSpeed >= 10.03 && row10.bestSpeed <= 10.11,
       `speed=${row10.bestSpeed.toFixed(4)} m/s (sheet=${row10.bestSheetAngle})`);
   }
   } // if (slow) — section 3
@@ -530,8 +534,12 @@ export function runAsserts(config, { slow = true } = {}) {
     check('crew on the ama lowers the ama-load indicator vs crew leeward', loadAmaCrew < loadLeeCrew,
       `load(crew=+1.0)=${loadAmaCrew.toFixed(2)} load(crew=-0.3)=${loadLeeCrew.toFixed(2)}`);
 
-    const dragLeeCrew = Math.abs(amaDrag(3, 0.5, -0.3, 1, config).Fx);
-    const dragCenterCrew = Math.abs(amaDrag(3, 0.5, 0, 1, config).Fx);
+    // F1: amaDrag now takes phi (not amaLoad); phi=0 is the resting float.
+    // The surviving crew channel here is outboardRelief (crew to leeward
+    // eases the windward ama's wetted area); the crew-presses-ama term is
+    // gone with F1 and returns in F14.
+    const dragLeeCrew = Math.abs(amaDrag(3, 0, -0.3, 1, config).Fx);
+    const dragCenterCrew = Math.abs(amaDrag(3, 0, 0, 1, config).Fx);
     check('crew outboard-leeward reduces ama drag in light conditions', dragLeeCrew < dragCenterCrew,
       `drag(crew=-0.3)=${dragLeeCrew.toFixed(2)} drag(crew=0)=${dragCenterCrew.toFixed(2)}`);
   }
@@ -820,7 +828,16 @@ export function runAsserts(config, { slow = true } = {}) {
     const twaDeg = 70, tws = 6, sheetDeg = 25;
     const windDirFrom = HEADING0 + twaDeg * DEG;
     const base = { windDirFrom, windSpeed: tws, sheet: sheetDeg * DEG, brailLee: 0, brailWind: 0, crewPos: 0.3, crewPosX: 0, shuntRequest: false };
-    const trimmed = steeringDrift(config, base, (c) => { c.sheet = (sheetDeg - 20) * DEG; });
+    // F1 (work-order-2026-07-30) corrected the flying-ama drag this leg's
+    // TWS6/crew0.3 trim-in relied on: the weather-helm drift fell 3.0 ->
+    // 1.5deg, under steeringOk's 2deg floor, because ~half of it had been
+    // ama-drag yaw rather than sail steering. Re-anchored to a powered,
+    // ballasted trim (TWS8, crewPos 0.6) where genuine sail-trim weather helm
+    // dominates and clears the floor with margin (~6deg) without capsizing
+    // (phi~9deg) — the "re-pick the probe, not the physics" approach rounds
+    // 10/10d used. The brailed leg keeps the shared base (unaffected, -3.1deg).
+    const trimBase = { ...base, windSpeed: 8, crewPos: 0.6, sheet: 28 * DEG };
+    const trimmed = steeringDrift(config, trimBase, (c) => { c.sheet = 8 * DEG; });
     const brailed = steeringDrift(config, base, (c) => { c.brailWind = 1.0; });
     check('Sail steers: trimming the sheet in points up (windward)',
       !trimmed.capsized && steeringOk(trimmed.drift, 1), `drift=${trimmed.drift.toFixed(1)}deg`);
@@ -1201,14 +1218,19 @@ export function runAsserts(config, { slow = true } = {}) {
   // across the physical 1.1-1.4 range: static 0.086-0.109, max
   // 0.267-0.340 — see ROUND9_physics_fidelity_findings.md) — re-anchored
   // to bracket that range with margin, not reverse-engineered from the
-  // single configured value. Reference condition unchanged: u=1.6 m/s,
-  // static immersion (amaLoad=0, floors to the resting-immersion floor),
-  // crewPos=0.35 (matching the round doc's own reference point).
+  // single configured value. Reference condition: u=1.6 m/s, crewPos=0.35.
+  // F1 (work-order-2026-07-30): amaDrag now takes phi, so the two immersion
+  // regimes are addressed by heel, not by an amaLoad proxy — static is
+  // phi=0 (the resting floor), max is phi past phiSubmergeDeg (pressed fully
+  // under). Dropping the old crew-immersion term lowered the static ratio
+  // (0.09 -> 0.067), still inside the band; the max regime is unchanged
+  // (both capped at full submersion).
   {
     const uRef = 1.6;
+    const phiPressed = -(config.stability.phiSubmergeDeg + 5) * Math.PI / 180; // past full submersion
     const hullFx = Math.abs(hullResistance(uRef, config));
     const staticAmaFx = Math.abs(amaDrag(uRef, 0, 0.35, 1, config).Fx);
-    const maxAmaFx = Math.abs(amaDrag(uRef, 1.3, 0.35, 1, config).Fx);
+    const maxAmaFx = Math.abs(amaDrag(uRef, phiPressed, 0.35, 1, config).Fx);
     const staticRatio = staticAmaFx / hullFx;
     const maxRatio = maxAmaFx / hullFx;
     check('R7-4a: ama/hull drag ratio at static immersion is in [0.05,0.15] (re-derived R9-3 for the physical formFactor range)',
@@ -1222,8 +1244,16 @@ export function runAsserts(config, { slow = true } = {}) {
     // gap the review found with sail.area). A narrow absolute band on the
     // submerged-ama regime's own drag force, same reference condition
     // (u=1.6, amaLoad=1.3 — past full submersion), anchored post-R9-3.
-    check('R15: ama drag force at max immersion (amaLoad=1.3, u=1.6 m/s) is within a narrow absolute band [4.0,4.45] N',
+    check('R15: ama drag force at max immersion (phi past phiSubmergeDeg, u=1.6 m/s) is within a narrow absolute band [4.0,4.45] N',
       maxAmaFx >= 4.0 && maxAmaFx <= 4.45, `Fx=${maxAmaFx.toFixed(3)}N`);
+
+    // F1 (work-order-2026-07-30): the sign fix's own acceptance — a flying
+    // ama (phi past phiLiftoffDeg, clear of the water) must add LESS total
+    // resistance than the resting float at phi=0, not the MAXIMUM it used to.
+    const totFlying = Math.abs(hullResistance(uRef, config)) + Math.abs(amaDrag(uRef, 14 * Math.PI / 180, 0.35, 1, config).Fx);
+    const totResting = Math.abs(hullResistance(uRef, config)) + Math.abs(amaDrag(uRef, 0, 0.35, 1, config).Fx);
+    check('F1: total resistance with the ama flying (phi=+14deg) is below the resting-float value',
+      totFlying < totResting, `flying=${totFlying.toFixed(2)}N resting=${totResting.toFixed(2)}N`);
   }
 
   // --- R7-4b (ROUND7_drag_calibration.md, refined per ROUND7_DECISION.md

@@ -31,7 +31,7 @@ export function computeForces(state, controls, config) {
 
   const resist = hullResistance(state.u, config);
   const side = hullSideForce(state.u, state.v, controls.crewPosX ?? 0, config);
-  const drag = amaDrag(state.u, amaLoad, controls.crewPos, state.end, config);
+  const drag = amaDrag(state.u, state.phi, controls.crewPos, state.end, config);
   const rudder = rudderForce(state, controls, config);
   const damp = yawDamping(state.r, state.u, config);
 
