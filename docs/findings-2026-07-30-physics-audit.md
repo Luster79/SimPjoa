@@ -98,8 +98,21 @@ ratio transform.
 - Polar moves only on brail>0 (downwind) rows, re-optimised and regenerated.
   Suite 85/85.
 
-This is the one cleanly-separable block-B item. The rest of block B (F3a,
-F6, F7, F4) is a single coupled recalibration — see below.
+### F3(a) — CD no longer collapses at alpha=90deg (core/aero.js) [block B]
+
+The induced term `s*CL*tan(alpha)` collapsed at alpha=90 because the table
+forces `CL(90)=0` exactly, so the broadside maximum-drag attitude reported
+parasitic drag only (0.04). Evaluated at `min(alpha,89deg)` where the finite
+limit (~1.03) already lives: CD holds ~1.073 through 90deg. Only alpha in
+(89,90] changes; the peak-L/D anchor is untouched and the polar is
+byte-identical (the grid never lands there). Suite 85/85.
+
+F3(b) (the dead CD column in the CSV, and the cross-check that validates a
+CD value no runtime path reads) is a data-contract decision for its own ADR,
+deferred with F7's CD-form work.
+
+F5 and F3(a) were the cleanly-separable block-B items. The rest (F6, F7, F4)
+is a single coupled recalibration and a design decision — see below.
 
 ### Block F — documentation-only items
 
@@ -123,20 +136,34 @@ deferred to ride with a polar-moving commit, since each perturbs forces.
 
 In recommended order:
 
-- **Rest of block B — F3(a), F6, F7, F4** — a single COUPLED recalibration,
-  not separable the way F5 was. F7 replaces the induced-drag form
-  (`CD0 + s*CLtable*tan(a)` -> pole-free `CD0 + s*CL_working^2/k`), which also
-  resolves F3(a)'s alpha->90deg collapse but needs `k` re-picked to hold the
-  peak-L/D 5.29@14deg anchor. F4 introduces an effective sail area under
-  brail (a design decision) so reefing can't add unconditional power. F6
-  bounds the camber bonus (`brailCamberGain 0.45` puts camberEff at ~0.55, ~4x
-  outside the `1+1.75c` fit range) — but capping it via validateConfig would
-  reject the current default, so F6 forces a `brailCamberGain` cut that
-  overlaps F4's downwind-power concern. These four move CL, CD and area
-  together and must be calibrated jointly against the anchor and the downwind
-  polar; doing them piecemeal would ship intermediate miscalibrations. Next
-  unit, as one careful pass. F3(b) (dead CD column / data contract) is a
-  separate decision needing its own ADR.
+- **Rest of block B — F6, F7, F4 (+ F3b)** — a single COUPLED recalibration
+  AND a design decision. Measured basis for the decision:
+    - F4: total aero force RISES +41% as brailWind goes 0 -> 0.6 (reefing
+      adds power) because the reference area is fixed and the camber bonus
+      inflates CL. Fixing it needs an effective area `areaEff(brail)` — its
+      shape (how much area a partial carrot actually gathers) is the design
+      call.
+    - F6: `brailCamberGain=0.45` drives camberEff to ~0.55, ~4x outside the
+      `1+1.75c` fit range. The work order's acceptance (validateConfig
+      rejects sum>0.20) forces `brailCamberGain` down to ~0.10 — a large cut
+      to the downwind camber bonus, entangled with F4.
+    - F7: the work order suggests `CD0 + s*CL^2/k`, but MEASURED that form
+      moves the peak L/D off the anchor (peak shifts to CL~0.47/~alpha10 and
+      rises to ~5.84 vs the 5.29@13-14 anchor). An anchor-preserving
+      alternative exists — keep the suction-loss `s*CL*tan(alpha)` but drive
+      it from the WORKING CL (identical at no brail, so the anchor is exact;
+      induced then tracks the brail-cut CL). This satisfies F7's real intent
+      without the anchor conflict.
+  Together these three make reefing reduce power monotonically — the correct
+  physics — which will SLOW the downwind polar and re-anchor the deep-course
+  acceptance bands (C ratio, D4, and the `bestBrailWind=0.6` optimum every
+  deep row currently sits on). That downwind re-anchoring, plus F4's
+  area-model shape, is a design decision the maintainer should weigh in on,
+  not something to bake in autonomously. Recommended path recorded above;
+  awaiting a direction on how much downwind power the effective-area model
+  should retain.
+  F3(b) (dead CD column / data contract) is a separate decision needing its
+  own ADR, naturally done with F7's CD-form change.
 - **F14, F16** — after F1, both small, both move the polar.
 - **Capsize-margin recalibration** — the work order's section G is explicit:
   block D (F11/F12/F13) shifts the heel-moment balance 15-30%, against a T6
