@@ -1050,9 +1050,29 @@ export function runAsserts(config, { slow = true } = {}) {
     // weather helm it heels hard / rounds up rather than flipping (safer and
     // realistic). The danger this rule answers is now "the ama flies hard"
     // (amaLoad well past 1), which the panic-release legs below then defuse.
+    // Capsize-margin recalibration (work-order-2026-07-30 section G, the
+    // prerequisite for block D). MEASURED on the post-block-B/F14 model, by
+    // scaling the heel arm (CEheight) — which is exactly what F12 will do,
+    // by +15-25%:
+    //   - T6's panic-release legs below (the rule this test exists to prove)
+    //     are ROBUST: phi_max stays 15-16deg across the whole 1.00-1.30 range.
+    //   - The squall/aback scenarios and the phi-threshold checks likewise
+    //     hold across that range.
+    //   - This held-sheet leg, however, flips from "heels to 23deg and
+    //     survives" to "capsizes at 65deg" between CEheight 2.08 and 2.10 —
+    //     a 4-5% knife edge, the same fragility section G flagged via
+    //     verticalLiftFraction.
+    // The check below deliberately does NOT assert which side of that edge
+    // the model is on: that quantity is not robust, and asserting it would
+    // pin the suite to the model's accidental position rather than to
+    // physics. What it asserts is the DANGER PREMISE (the ama flies hard),
+    // true on both sides. But the outcome is now reported in the detail, so
+    // a crossing is visible in the log instead of silent — previously both
+    // 23deg and 65deg cleared the same 18deg bound and the flip left no
+    // trace at all.
     check('T6: a sustained gust with the sheet held flies the ama hard (the danger this rule answers)',
       heldSheet.maxPhi / DEG > config.stability.phiLiftoffDeg * 1.5,
-      `maxPhi=${(heldSheet.maxPhi / DEG).toFixed(1)}deg (amaLoad~${(heldSheet.maxPhi / DEG / config.stability.phiLiftoffDeg).toFixed(1)})`);
+      `maxPhi=${(heldSheet.maxPhi / DEG).toFixed(1)}deg (amaLoad~${(heldSheet.maxPhi / DEG / config.stability.phiLiftoffDeg).toFixed(1)}) capsized=${heldSheet.state.capsized} -- survive/capsize boundary measured at CEheight 2.08-2.10; not asserted on purpose, see comment`);
     check('T6: releasing the sheet fully at amaLoad~1.2 saves the boat (the panic rule works)',
       !panicRelease.state.capsized, `capsized=${panicRelease.state.capsized} finalAmaLoad=${panicRelease.state.amaLoad.toFixed(2)}`);
     check('T6: the release arrests phi growth BEFORE the capsizing-arm reversal (phi_max < phiCapsizeDeg)',

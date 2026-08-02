@@ -307,11 +307,21 @@ In recommended order:
   F3(b) (dead CD column / data contract) is a separate decision needing its
   own ADR, naturally done with F7's CD-form change.
 - **F14, F16** — after F1, both small, both move the polar.
-- **Capsize-margin recalibration** — the work order's section G is explicit:
-  block D (F11/F12/F13) shifts the heel-moment balance 15-30%, against a T6
-  margin that a **1%** `verticalLiftFraction` change already flips. This
-  recalibration is a prerequisite for block D, a task in its own right, and
-  must not be bundled into a finding.
+- ~~**Capsize-margin recalibration**~~ — **DONE**, see
+  `docs/capsize-margins-2026-07-30.md`. Measured on the post-block-B model by
+  scaling the heel arm (what F12 will do) x1.00-x1.30. Outcome, briefly: the
+  capsize margins are **robust** — T6's panic-release legs hold flat at
+  15-16 deg phi across the whole range, and no capsize assertion fails at
+  +15/20/25 %. The audit's expectation that block D needs the margins widened
+  first does not reproduce on this model, most likely because block B removed
+  the sail power that used to hold it against those thresholds.
+  What the sweep *did* find is an **observability** defect: T6's held-sheet leg
+  flips survive -> capsize between CEheight 2.08 and 2.10 (a 4-5 % knife edge),
+  and check A passes on both sides, so the crossing was silent. Fixed by
+  reporting the outcome and the measured boundary in the detail, without
+  asserting the fragile quantity. Two probes that block D *will* break are
+  identified in advance with numbers (the trim-in steering leg capsizes; C-A's
+  drift rate goes 21.8-23.1 vs its 20 bound).
 - **Block D (F11 cosPhi split + Fz, F12 heel arm, F13 ama-arm cosPhi/heave)**
   — after recalibration.
 - **F9, F10, F8** — rudder drag/stall, yaw-damping decomposition, added mass
