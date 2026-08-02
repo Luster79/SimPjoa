@@ -378,16 +378,20 @@ function createDefaultControls() {
 // config.js — default CONFIG, CSV loading, Polhamus regeneration cross-check,
 // range validation. Pure ESM, no external dependencies, Node >= 18.
 //
-// Design note on the sail drag model (CD0 + s*CL*tan(alpha)):
-// data/crab_claw_CL_CD_polhamus.csv was generated with FULL leading-edge
-// suction loss (s = 1.0 — see data/README_input_data_EN.md). The startup
-// integrity cross-check therefore regenerates the table with s = 1.0 to
-// verify the CSV has not been silently edited/corrupted. The prompt's
-// tunable partial-suction factor (CONFIG.sail.s, default 0.85) is a
-// SEPARATE runtime knob: aero.js never reads the CD column directly, it
-// recomputes CD at runtime from the table's CL (which does not depend on
-// s) using CONFIG.sail.s. This keeps the shipped table an unmodified,
-// verifiable artifact while still honouring the prompt's tunable drag.
+// Design note on the sail drag model.
+// The RUNTIME model is the composite in docs/adr/0007 (block B of
+// work-order-2026-07-30):
+//     CD = CD0 + inducedK*CL_working^2 + CDbroadside*sin^4(alpha) + ...
+// The suction-loss form CD0 + s*CL*tan(alpha) that used to live here is gone,
+// and with it CONFIG.sail.s — it had no remaining runtime reader.
+//
+// The Polhamus CD helpers below (polhamusCD/polhamusCDv2, with their own
+// per-table `s`) are retained for ONE purpose: regenerating the shipped CSVs'
+// CD column at startup to verify the files have not been silently edited or
+// corrupted. That is an integrity/provenance check on the data files, NOT a
+// live code path — aero.js reads only the CL column. See F3(b) in
+// work-order-2026-07-30-physics-audit.md and the note at
+// crossCheckAeroTableV2.
 
 
 
@@ -839,7 +843,13 @@ function buildDefaultConfig() {
       // formFactor>=~3 — it was an artifact of accommodating the
       // unphysical value, not an independent physical constraint.
       formFactor: 1.2,
-      crewImmersionCoeff: 0.30,            // tunable — fraction of crew weight (relative to ama buoyancy) that presses the ama deeper when crewPos>0 (FIX_REQUEST_step1_round2.md R2-1). Raised from 0.21 in round 3 (FIX_REQUEST_round3_worldframe.md R3-2): doubling the ama/crew righting levers to the full spacing (see stability.js) roughly halved amaLoad for a given heel moment, which — via this term's amaLoad-driven immersion floor — quietly cut the ama-drag penalty enough to let the TWA=40 close-hauled polar point creep past the "no meaningful progress below ~50deg" acceptance ratio (0.353 vs the 0.35 limit); this restores the same margin (0.338) without touching the threshold or the hull/yaw tunables the over-sheeting broach-cliff probe depends on.
+      // crewImmersionCoeff DELETED (F14, work-order-2026-07-30): the crew's
+      // effect on ama immersion is now DERIVED in hydro.js from the real
+      // buoyancy balance (crewPos*crew.mass vs ama.maxBuoyancy), not scaled by
+      // a tunable. The old 0.30 gave exactly 1/3 of the physical effect, and
+      // the comment it carried admitted it had been raised from 0.21 to keep a
+      // polar acceptance ratio in band — a knob fitted to a test threshold
+      // rather than to the float's buoyancy.
     },
 
     sail: {
@@ -1933,7 +1943,7 @@ function hullSideForce(u, v, crewPosX, config) {
 //   crew-immersion term removed by F1; it returns with the corrected
 //   crew/ama-buoyancy coupling in F14.)
 function amaDrag(u, phi, crewPos, end, config) {
-  const { ama, rho_w, stability } = config;
+  const { ama, crew, rho_w, stability } = config;
   const DEG = Math.PI / 180;
   // Immersion derived from HEEL WITH SIGN (F1, work-order-2026-07-30). The
   // ama is pressed DEEPER as the boat heels toward it (phi<0) and lifts CLEAR
@@ -1946,18 +1956,37 @@ function amaDrag(u, phi, crewPos, end, config) {
   //     (the floor that keeps wetted surface from vanishing there);
   //   - pressed (phi<0) it grows to full submersion by phiSubmergeDeg;
   //   - flying (phi>0) it fades to zero wetted area by phiLiftoffDeg.
-  const restingImmersion = 0.3;
+  // restingImmersion is the ama floating on its OWN weight: ama.mass /
+  // ama.maxBuoyancy = 25/80 = 0.31, which is where the hand-picked 0.30 came
+  // from — derived here rather than repeated as a literal.
+  const restingImmersion = ama.mass / ama.maxBuoyancy;
+
+  // Crew weight the AMA actually carries (F14, work-order-2026-07-30).
+  // On a rigid platform, taking moments about the hull centreline, a crew at
+  // crewPos (fraction of ama.spacing outboard) puts crewPos*crew.mass onto
+  // the float. Expressed as a fraction of the float's own buoyancy, that is
+  // the extra immersion it must take. At crewPos=1.0 this is 90/80 = 1.125 —
+  // MORE than the ama can float, so it goes under, which is the physically
+  // right answer and why crewPos above maxBuoyancy/crew.mass = 0.889 is
+  // unusable on this boat.
+  //   Previously this was `crewPos * crewImmersionCoeff * (crew.mass /
+  // maxBuoyancy)` with crewImmersionCoeff = 0.30 — i.e. exactly 1/3 of the
+  // physical effect, and a coefficient the config comment admits was raised
+  // from 0.21 to keep a polar acceptance ratio in band. It is now derived,
+  // not tuned, and crewImmersionCoeff is deleted.
+  const crewOnAma = Math.max(0, crewPos) * crew.mass / ama.maxBuoyancy;
+
+  // The crew's weight only immerses the float while the float is in the
+  // water: once the rig is lifting it clear (phi past phiLiftoffDeg) the crew
+  // is being lifted with it. Same liftoff fade the resting term uses.
   const phiSub = stability.phiSubmergeDeg * DEG;
   const phiLift = stability.phiLiftoffDeg * DEG;
   const immersion = phi < 0
-    ? restingImmersion + (1.3 - restingImmersion) * Math.min(1, -phi / phiSub)
-    : restingImmersion * Math.max(0, 1 - phi / phiLift);
+    ? Math.min(1.3, restingImmersion + crewOnAma + (1.3 - restingImmersion) * Math.min(1, -phi / phiSub))
+    : Math.min(1.3, (restingImmersion + crewOnAma) * Math.max(0, 1 - phi / phiLift));
 
   // Crew to LEEWARD (crewPos<0) eases the windward ama's wetted area a little
-  // (unchanged from round 4). The old crew-PRESSES-ama immersion term is gone
-  // with F1: a crew standing on a FLYING ama immersed nothing, the same sign
-  // bug. The crew-ballast vs ama-buoyancy coupling returns, correctly derived
-  // from the real buoyancy balance, in F14.
+  // (unchanged from round 4).
   const outboardRelief = 1 - 0.15 * (Math.max(0, -crewPos) / 0.3);
   const Seff = ama.wettedSurface * immersion * outboardRelief;
   // Skin friction at the ama's own (shorter) length, same ITTC-57 line the
@@ -2963,14 +2992,14 @@ const MS_TO_KN = 1.9438;
 // recording's codeVersion is meaningful (harness/replay.js warns on
 // mismatch) for a downloaded bundle without requiring a build step for
 // plain `python3 -m http.server` development.
-const CODE_VERSION = "5d4c817";
+const CODE_VERSION = "79350ea";
 // BUILD_TIME: same pattern as CODE_VERSION above — tools/bundle.js
 // replaces this with the COMMIT's timestamp (not wall-clock build time),
 // so it stays stable across re-bundling the same commit and always
 // matches CODE_VERSION's hash. Shown in the bottom-right version footer
 // so a bug report/recording can be tied to an exact, dated build without
 // having to separately ask "which commit was this."
-const BUILD_TIME = "2026-08-02T13:57:30+02:00";
+const BUILD_TIME = "2026-08-02T17:01:47+02:00";
 
 // ---------------------------------------------------------------------
 // i18n — EN/PL. Static labels are marked with data-i18n="key" in
@@ -5554,7 +5583,6 @@ const BOAT_FIELDS = [
   { path: 'ama.spacing', kind: 'physics', unit: 'm', step: 0.1, labelEn: 'Hull-ama spacing', labelPl: 'Rozstaw kadłub–ama' },
   { path: 'ama.wettedSurface', kind: 'physics', unit: 'm²', step: 0.05, labelEn: 'Ama wetted surface', labelPl: 'Pow. zwilżona amy' },
   { path: 'ama.formFactor', kind: 'physics', unit: '', step: 0.05, labelEn: 'Ama form factor (1+k)', labelPl: 'Współcz. kształtu amy (1+k)' },
-  { path: 'ama.crewImmersionCoeff', kind: 'physics', unit: '', step: 0.01, labelEn: 'Crew-immersion coeff.', labelPl: 'Współcz. zanurzania przez załogę' },
 
   { path: 'sail.area', kind: 'physics', unit: 'm²', step: 0.1, labelEn: 'Sail area', labelPl: 'Powierzchnia żagla' },
   { path: 'sail.apexAngleDeg', kind: 'physics', unit: '°', step: 1, labelEn: 'Sail apex angle', labelPl: 'Kąt wierzchołkowy żagla' },
