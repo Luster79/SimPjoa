@@ -417,7 +417,14 @@ cross-check at startup as required by the main prompt. Fixed schema version: a
     yawDamping(r, u, config) -> moment
 
 ### rudder.js
-    rudderForce(state, controls, config) -> { Fy, yawMoment }
+    rudderForce(state, controls, config) -> { Fx, Fy, yawMoment }
+      // F9 (work-order-2026-07-30): a proper foil, not coeff*sin(deflection).
+      // Effective AoA = deflection + inflow angle at the blade (so leeway
+      // weathercocks and yaw rate DAMPS — neither existed before), a stall
+      // shape past rudder.stallAngleDeg, and lift+drag projected onto the
+      // boat axes, so Fx exists and steering costs speed. The oar sits at
+      // the PHYSICAL STERN, -(L/2)*end; the old +(L/2) was invisible without
+      // an inflow term and inconsistent with it.
       // lever arm = half hull length * state.end; dead at |u| ~ 0
       // controls.rudderUp short-circuits to { Fy: 0, yawMoment: 0 } — a
       // Pjoa's "rudder" is a steering OAR, normally shipped clear of the

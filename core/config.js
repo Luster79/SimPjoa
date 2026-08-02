@@ -726,7 +726,30 @@ function buildDefaultConfig() {
 
     rudder: {
       maxDeflectionDeg: 35,
-      area: 0.4,                // m^2 — tunable estimate, steering-oar blade
+      // area (F9, work-order-2026-07-30): 0.4 m^2 was an unanchored "tunable
+      // estimate" and is a DINGHY RUDDER blade, not a hand-held steering oar —
+      // it is what produced 2.2 kN (1.2 g on this boat) at 6 kn, eight times
+      // the sail's own side force. A Polynesian steering paddle's blade is
+      // roughly 0.75 m x 0.20 m. ADR 0005's coeff stays as derived; this is
+      // the term that was wrong.
+      area: 0.15,               // m^2 — steering-oar blade (~0.75 x 0.20 m)
+      // stallAngleDeg (F9): a low-AR (~1.5) plate separates around 20-25deg;
+      // past it core/rudder.js's lift shape falls away instead of climbing to
+      // the mechanical limit. Below it the shape is exactly the old
+      // sin(deflection), so ADR 0005's slope derivation is untouched.
+      stallAngleDeg: 22,
+      // Blade drag (F9): steering was previously free — rudderForce returned
+      // no Fx at all. CD0 is a thin plate's parasitic drag; inducedK gives the
+      // lift-induced part, so hard steering costs speed and hard-over-past-
+      // stall costs a lot of it.
+      // CD0 referenced to the blade's PLANFORM area: skin friction on both
+      // faces (~2*Cf ~ 0.008) plus section/form drag for a plain oar blade.
+      // 0.02 is that; an initial 0.05 was measured to make a CENTRED oar 22%
+      // of total drag, which is bluff-strut territory, not a blade.
+      CD0: 0.02,
+      // inducedK ~ 1/(pi*AR*e) with AR~1.5 and e~0.7 gives 0.30; 0.35 keeps a
+      // little margin for a square-tipped blade.
+      inducedK: 0.35,
       // coeff: round 10b (D3, docs/adr/0005) — derived, not felt. The blade
       // is a low-AR (~1-2) lifting surface; core/rudder.js's CL(deflection)
       // = coeff*sin(deflection) stays in the small/moderate-angle range

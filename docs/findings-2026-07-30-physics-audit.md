@@ -327,6 +327,62 @@ still passes on its own merits at -6.4 deg.
 This is the audit's own thesis applied to a test that had been passing: a green
 result is not evidence unless the thing it measures is robust.
 
+### F9 — the steering oar rebuilt as a foil (core/rudder.js)
+
+Three defects in one function, all reproduced first at u = 3 m/s, full 35 deg:
+**2222 N** of side force (1.2 g laterally on a 190 kg boat, and **8x** the
+sail's own side force at TWS 8 — even worse than the audit's 3.7x, because
+block B halved the sail); **no stall**, force climbing monotonically to the
+mechanical limit; and **no drag and no inflow term at all**, so steering was
+free and a centred oar at r = 0.3 rad/s produced exactly 0.00 N of damping.
+
+ADR 0005's `coeff = 2.1` is **not** the problem and is untouched — it is a
+derived low-AR lift slope and CL(35 deg) = 1.20 sits inside Hoerner's measured
+band. The excess came from `area = 0.4 m^2`, an unanchored estimate that is a
+dinghy rudder blade; a steering-oar blade is ~0.75 x 0.20 m, so 0.15 m^2.
+
+Rebuilt in the flow frame like the sail: effective AoA from deflection **plus
+inflow**, a stall shape past 22 deg, and lift + drag projected onto the boat
+axes so `Fx` exists and feeds surge.
+
+**A sign error the old model structurally could not expose.** The oar is at the
+physical **stern**, `-(L/2)`, which is where `drawBoat()` has always drawn it —
+but `rudder.js` used `+(L/2)`. With no inflow term that was invisible (only
+deflection mattered, and the sign vanished into the steering convention). With
+one it is not: leeway and yaw rate both enter through the same velocity, and
+only the true stern position makes them agree. Found by exhausting the sign
+combinations against three required properties — positive rudder gives the
+historical turn direction, leeway **weathercocks**, yaw rate **damps**. With
+`+(L/2)` no combination satisfies all three. Two intermediate revisions were
+measured and rejected: one produced anti-damping, the earlier one a slow
+unforced round-up (TWA 90 -> 62 in 30 s) that collapsed the boat to 0.5 m/s.
+
+`CD0` was also corrected mid-work: an initial 0.05 made a **centred** oar 22 %
+of total drag — bluff-strut territory. For a thin blade referenced to planform
+area (skin friction both faces plus form) 0.02 is right; measured share is now
+**10 %**, inside the plausible band for a permanently-deployed blade.
+
+Result at u = 3, full deflection: **497 N** (was 2222), ratio to the sail
+**1.84x**. The audit's acceptance says <= 1.5x, and this misses it — reported,
+not chased: the criterion's reference moved when block B halved the sail
+(1.5x was 908 N when written, 405 N now), and reaching 405 N would need a blade
+of ~0.07 m^2, which is not a steering oar. Stall is visible in the numbers
+(force peaks ~523 N around 0.6-0.8 deflection and **falls** to 497 at full).
+Damping is real: -1185 N.m at r = 0.3 with the oar centred.
+
+**Two assertions moved.** R15 re-anchored a fifth time, [9.42,9.50] ->
+**[8.58,8.66]**: steering is no longer free and the polar's autopilot holds
+course with continuous rudder, so the blade's drag is paid on every row.
+And `sustained hard-over rudder ends capsized` had its **premise** removed — a
+2.2 kN no-stall blade could spin the boat over, a stalling oar cannot, and that
+is the correct outcome rather than something to assert away. Rewritten to the
+invariant the leg actually guards: the run ends either genuinely capsized or
+genuinely upright, never parked at an impossible heel.
+
+The `xfail:STEERING` trim-in tally moved again, to **weather 0 | lee 9 |
+capsized 7** — F9's realistic oar removed the last operating points where
+"trimming in points up" held at all.
+
 ### Block F — documentation-only items
 
 Comment/CSV mismatches (the comments are the model's primary documentation):

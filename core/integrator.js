@@ -35,7 +35,7 @@ export function computeForces(state, controls, config) {
   const rudder = rudderForce(state, controls, config);
   const damp = yawDamping(state.r, state.u, config);
 
-  const Fx = aero.Fx + resist + side.Fx + drag.Fx;
+  const Fx = aero.Fx + resist + side.Fx + drag.Fx + rudder.Fx;
   const Fy = aero.Fy + side.Fy + rudder.Fy;
   const M = aero.yawMoment + side.yawMoment + rudder.yawMoment + damp + drag.yawMoment;
 
@@ -62,7 +62,7 @@ export function computeForces(state, controls, config) {
       hullResist: { Fx: resist },
       hullSide: { Fx: side.Fx, Fy: side.Fy, yawMoment: side.yawMoment },
       amaDrag: { Fx: drag.Fx, yawMoment: drag.yawMoment },
-      rudder: { Fy: rudder.Fy, yawMoment: rudder.yawMoment },
+      rudder: { Fx: rudder.Fx, Fy: rudder.Fy, yawMoment: rudder.yawMoment },
       yawDamping: { M: damp },
       roll: { Msail, Mrestore, Mcrew, Mdamp, Mroll },
     },

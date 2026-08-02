@@ -316,12 +316,15 @@ export function runAsserts(config, { slow = true } = {}) {
   // (F11's cos^2 split) took it UP to ~9.46 — less horizontal side force at
   // heel means less leeway and less induced drag, so the boat reaches faster.
   // That direction was NOT predicted by the pre-block-D margin sweep, which
-  // is the point of keeping this tripwire narrow. The band tracks the model
-  // and stays just as narrow, keeping its value for the NEXT unintended shift.
+  // is the point of keeping this tripwire narrow. F9 then took it DOWN to
+  // ~8.62: steering is no longer free, and the polar's own autopilot holds
+  // course with continuous rudder, so the blade's drag is now paid on every
+  // row. The band tracks the model and stays just as narrow, keeping its
+  // value for the NEXT unintended shift.
   {
     const row10 = computePolar(config, { twsList: [10], twaFrom: 100, twaTo: 100, step: 1 })[0];
-    check('R15: reach speed at TWS=10, TWA=100 is within a narrow absolute band [9.42,9.50] m/s',
-      row10.bestSpeed >= 9.42 && row10.bestSpeed <= 9.50,
+    check('R15: reach speed at TWS=10, TWA=100 is within a narrow absolute band [8.58,8.66] m/s',
+      row10.bestSpeed >= 8.58 && row10.bestSpeed <= 8.66,
       `speed=${row10.bestSpeed.toFixed(4)} m/s (sheet=${row10.bestSheetAngle})`);
   }
   } // if (slow) — section 3
@@ -367,7 +370,19 @@ export function runAsserts(config, { slow = true } = {}) {
     check('sustained hard-over rudder does not diverge numerically',
       Number.isFinite(speed) && Number.isFinite(state.phi) && speed < 100 && Math.abs(state.phi) < 2 * Math.PI,
       `speed=${speed} phi=${(state.phi / DEG).toFixed(1)}deg`);
-    check('sustained hard-over rudder ends capsized, not ghost-sailing', state.capsized === true);
+    // F9 (work-order-2026-07-30) changed this leg's PREMISE. The old assertion
+    // was "ends capsized": with a 2.2 kN no-stall blade, holding the oar
+    // hard over span the boat hard enough to put it over. A real steering oar
+    // stalls past ~22deg and makes a fraction of that force, so it no longer
+    // does — the boat slows and turns instead, which is the correct outcome
+    // and not something to assert away. What this leg is actually guarding is
+    // the divergence fix (above) plus "no ghost-sailing at an absurd heel", so
+    // that is what it now asserts: the run ends either genuinely capsized or
+    // genuinely upright, never parked at an impossible angle.
+    const capsizeLimitDeg = config.stability.phiCapsizeDeg + config.stability.capsizeTriggerMarginDeg;
+    check('sustained hard-over rudder ends in a physical attitude (capsized, or upright inside the capsize threshold)',
+      state.capsized || Math.abs(state.phi) / DEG < capsizeLimitDeg,
+      `capsized=${state.capsized} phi=${(state.phi / DEG).toFixed(1)}deg limit=${capsizeLimitDeg}deg`);
   }
 
   const stop = scenarioStop(config);
@@ -873,6 +888,9 @@ export function runAsserts(config, { slow = true } = {}) {
     // before block D either:
     //     pre-block-D:  weather 3 | lee 9 | capsized 4   (of 16)
     //     post-block-D: weather 4 | lee 6 | capsized 6   (of 16)
+    //     post-F9:      weather 0 | lee 9 | capsized 7   (of 16)
+    // F9's realistic oar (stall, drag, and real weathercocking from the inflow
+    // term) removed the last operating points where it held at all.
     // The sign flips systematically with crew position (crewPos 0.6 at TWS 6
     // gives lee helm at every TWA tried). So the three green results this
     // check has produced since round 10 came from a hand-picked operating
