@@ -12,7 +12,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
-import { createConfig, CONFIG_VERSION } from '../core/config.js';
+import { createConfig, CONFIG_VERSION, configFromRecordingSnapshot } from '../core/config.js';
 import { integrate, computeForces } from '../core/integrator.js';
 import { hashState } from './checksum.js';
 
@@ -131,7 +131,7 @@ function main() {
     console.warn('WARNING: this recording was trimmed (ring buffer capacity exceeded) -- it does not cover the full session, only its most recent portion.');
   }
 
-  const config = createConfig(recording.configSnapshot);
+  const config = configFromRecordingSnapshot(recording.configSnapshot);
   let state = { ...recording.initialState, shunt: { ...recording.initialState.shunt } };
   let lastShuntRequest = Boolean(recording.initialLastShuntRequest);
 

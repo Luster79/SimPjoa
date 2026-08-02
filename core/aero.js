@@ -225,15 +225,6 @@ export function sailCoefficients(alpha, controls, config) {
   // physical limit as alpha->90 is finite (s*CL_gain*Kv, ~1.03 here), which
   // the 89deg table value already carries. So evaluate the induced term at
   // min(alpha, 89deg): CD holds ~1.07 through 90 instead of collapsing. Only
-  // alpha in (89,90] is affected (rare on any grid — the polar is
-  // byte-unchanged), and alpha<=89 is identical to before, so the peak-L/D
-  // calibration anchor is untouched. The gentler non-monotonicity of the
-  // tan form up near 80deg is a property of the suction-loss CD shape itself
-  // and belongs to F7's CD-form work, not here.
-  const alphaDragDeg = Math.min(alphaAbsDeg, 89);
-  const CLtableForDrag = alphaAbsDeg <= 89 ? CLtable : blendApexCL(sail.apexAngleDeg, alphaDragDeg, config.aeroTable);
-  const CDbase = sail.CD0 + sail.s * CLtableForDrag * Math.tan(alphaDragDeg * DEG);
-
   // Flogging drag (R5-1, regime b): a real luffing sail flutters, adding
   // unsteady-flow drag beyond what a static flat plate at the same
   // (near-zero) AoA would cost. Ramped in only within a narrow window
@@ -261,25 +252,47 @@ export function sailCoefficients(alpha, controls, config) {
   const builtinCamber = sail.aeroTableVersion === 'v2' ? (sail.aeroV2BuiltinCamber ?? 0.10) : 0;
 
   const camberCLf = camberCLDelta(alphaAbsDeg, camberEff, builtinCamber);
-  const camberCDf = camberCDDelta(camberEff, builtinCamber);
 
-  let CL1 = CLtable * camberCLf;
-  let CD1 = (CDbase + floggingCD) * camberCDf;
-
-  // Windward-brail CL cut (C1): two-regime, see brailRegimeBlend() above.
-  // TRIM (b<=brailTrimRange): mild, x(1-0.15*b_norm) at the endpoint — the
-  // sail stays powered, consistent with the manual's downwind chapter.
-  // SURVIVAL (b>brailTrimRange): ramps to the original strong cut, x0.2 at
-  // b=1 — preserves T6/panic, the stop scenario, and the squall
-  // controller's semantics unchanged at full pull.
-  const brailWindCLFactor = brailRegimeBlend(brailWind, brailTrimRange, 1, 0.85, 0.2);
-  let CL2 = CL1 * (1 - 0.7 * brailLee) * brailWindCLFactor;
-  let CD2 = CD1 * (1 - 0.3 * brailLee);
-
-  // Both brails fully on: sail furled against the yard, forces -> spar drag only.
+  // --- Brail acts through AREA, not through a CL fudge (F4) ---------------
+  // A brail GATHERS CLOTH toward the yard. The force that costs is therefore
+  // a smaller reference area, which is what areaFactor carries out to
+  // sailForces() below. Previously the brails cut CL by opaque multipliers
+  // while the reference area stayed at the full sail.area, so partial
+  // brailing could ADD total force (measured: +41% at brailWind=0.6, because
+  // the camber bonus outran a mild CL cut) — reefing that makes the rig more
+  // powerful. Now: area falls monotonically, the TRIM-regime camber bonus
+  // (bounded by F6) acts on that REDUCED area, and the survival endpoint
+  // (brailWind=1 -> 0.20) is chosen to land near the old CL x0.2 cut so the
+  // T6/stop/squall semantics that were calibrated at full pull are preserved.
+  const areaWindFactor = brailRegimeBlend(brailWind, brailTrimRange, 1, sail.areaAtTrimBrail, sail.areaAtFullBrail);
+  const areaLeeFactor = 1 - (1 - sail.areaAtFullLeeBrail) * brailLee;
   const furl = brailLee * brailWind;
-  const CLf = CL2 * (1 - furl);
-  const CDf = CD2 * (1 - furl) + sail.CD0 * furl;
+  const areaFactor = areaWindFactor * areaLeeFactor;
+
+  const CLf = CLtable * camberCLf * (1 - furl);
+
+  // --- CD: parasitic + induced(WORKING CL) + separation (F7, F3a) ---------
+  // Replaces the suction-loss form CD0 + s*CLtable*tan(alpha), which had
+  // three faults: it was driven by the TABLE CL (so induced drag ignored what
+  // the sail was actually producing once brails/camber had modified it), it
+  // has a pole at alpha=90, and there CLtable=0 exactly, collapsing CD to
+  // CD0 in the maximum-drag broadside attitude. The replacement is the
+  // standard decomposition:
+  //     CD = CD0 + k*CL^2 + CD90*sin^4(alpha) + parasitic-from-gathering
+  // - induced now depends on the WORKING CL, so the polar stays a polar;
+  // - no pole, and the separation term makes broadside genuinely draggy;
+  // - camber's drag cost arrives automatically via its own CL rise, so the
+  //   separate camberCDf multiplier (F5) is subsumed and gone.
+  // Constants are a least-squares fit to Di Piazza's four measured Santa Cruz
+  // (CL,CD) pairs PLUS their reported L/D_max ~5.4 as a fifth constraint —
+  // the four pairs alone leave alpha<20deg unconstrained and let peak L/D run
+  // to 7.6. See docs/adr/0007 for the fit and its residuals.
+  const gatherCD = (sail.brailParasiticCD ?? 0) * Math.max(brailLee, brailWind);
+  const CDf = sail.CD0
+    + sail.inducedK * CLf * CLf
+    + sail.CDbroadside * Math.pow(Math.sin(alphaAbsRad), 4)
+    + gatherCD
+    + floggingCD;
 
   const sign = alpha >= 0 ? 1 : -1;
   // alphaSailor: the acute angle [0, pi/2] a sailor would call "angle of
@@ -287,7 +300,7 @@ export function sailCoefficients(alpha, controls, config) {
   // lookup above, exposed here so callers don't have to redo the mirror
   // (FIX_REQUEST_step1_round2.md R2-3; see sailForces() for the raw,
   // unmirrored `alpha` this complements).
-  return { CL: sign * CLf, CD: CDf, alphaSailor: alphaAbsRad };
+  return { CL: sign * CLf, CD: CDf, alphaSailor: alphaAbsRad, areaFactor };
 }
 
 // sailForces(state, controls, config)
@@ -308,9 +321,12 @@ export function sailForces(state, controls, config) {
   const awChordYcw = aw.vx * cy - aw.vy * cx; // dot with the chord rotated -90deg
   const alpha = Math.atan2(awChordYcw, awChordX);
 
-  const { CL, CD, alphaSailor } = sailCoefficients(alpha, controls, config);
+  const { CL, CD, alphaSailor, areaFactor } = sailCoefficients(alpha, controls, config);
 
-  const q = 0.5 * config.rho_air * config.sail.area * aw.speed * aw.speed;
+  // Reference area is the EFFECTIVE (brail-reduced) area, not the full sail
+  // (F4): a brail gathers cloth, so the working area shrinks. areaFactor is
+  // 1 with both brails off, so an unbrailed rig is unchanged.
+  const q = 0.5 * config.rho_air * config.sail.area * areaFactor * aw.speed * aw.speed;
   let Fx = 0, Fy = 0;
   if (aw.speed > 1e-6) {
     const xHatX = aw.vx / aw.speed, xHatY = aw.vy / aw.speed; // drag direction

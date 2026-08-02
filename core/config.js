@@ -208,6 +208,13 @@ function crossCheckAeroTable(byApex) {
 // Polhamus formula — the v2 table is a measured-anchored RESCALING, not a
 // direct Polhamus output, so checking it against the unscaled formula
 // would always fail. Tolerance unchanged (2%) per the work order.
+// F3(b) (work-order-2026-07-30, settled by docs/adr/0007): the CD column
+// checked below is NOT read by any runtime path — since ADR 0007 the runtime
+// builds CD from CD0 + inducedK*CL^2 + CDbroadside*sin^4(alpha), and before
+// that it rebuilt CD from the CL column. This cross-check is therefore an
+// INTEGRITY/PROVENANCE check on the shipped CSV (has the file been silently
+// edited or corrupted?), not coverage of a live code path. Kept deliberately,
+// and labelled so it cannot be mistaken for the latter.
 function crossCheckAeroTableV2(byApex) {
   const REL_TOL = 0.02;
   for (const apexStr of Object.keys(byApex)) {
@@ -495,8 +502,31 @@ function buildDefaultConfig() {
       // Only read when sail.aeroTableVersion is 'v2' (aero.js); v1 uses 0
       // (a genuinely flat, uncambered theoretical table) unconditionally.
       aeroV2BuiltinCamber: 0.10,
-      CD0: 0.040,
-      s: 0.41,                                 // tunable (RUNTIME only) — v2 fit, apexAngleDeg=50-interpolated between apex45 (0.406) and apex60 (0.428); see AERO_V2_PARAMS
+      // --- CD model (F7, work-order-2026-07-30, docs/adr/0007) ------------
+      // CD = CD0 + inducedK*CL_working^2 + CDbroadside*sin^4(alpha)
+      //      + brailParasiticCD*max(brails) + flogging
+      // Least-squares fit to Di Piazza's four measured Santa Cruz (CL,CD)
+      // pairs PLUS their reported L/D_max ~5.4 as a fifth constraint (the
+      // four pairs alone leave alpha<20deg unconstrained — the fit then runs
+      // peak L/D to 7.6). Residuals vs the four pairs: +0.029/+0.036/-0.021/
+      // +0.010, i.e. inside the digitisation uncertainty the source CSV
+      // states (+-0.05). Replaces the old CD0 + s*CLtable*tan(alpha): that
+      // form had a pole at 90deg, collapsed to CD0 there (CLtable=0 exactly)
+      // and drove induced drag from the TABLE CL rather than the working one.
+      // `s` is gone with it — it had no other runtime reader.
+      CD0: 0.0375,
+      inducedK: 0.215,                         // induced-drag coefficient on the WORKING CL^2
+      CDbroadside: 1.06,                       // CD at alpha=90 (flat-plate/separated limit); with sin^4 it is negligible at the low-alpha calibration point
+      brailParasiticCD: 0.06,                  // extra parasitic drag from gathered/flogging cloth, scaled by max(brailLee, brailWind) — F7: the brails' drag effect is an ADDITION, not a multiplier that cut drag
+      // --- Effective area under brail (F4) --------------------------------
+      // A brail gathers cloth: the working area shrinks. AGGRESSIVE variant
+      // (maintainer's call): a full TRIM-regime carrot keeps 55% of the area,
+      // so reefing genuinely depowers instead of adding force. The survival
+      // endpoint (0.20) is picked to land near the OLD CL x0.2 cut at
+      // brailWind=1, keeping the T6/stop/squall calibration at full pull.
+      areaAtTrimBrail: 0.55,                   // areaFactor at brailWind = brailTrimRange
+      areaAtFullBrail: 0.20,                   // areaFactor at brailWind = 1
+      areaAtFullLeeBrail: 0.35,                // areaFactor at brailLee = 1 (linear in brailLee)
       // --- Sheet constraint (ROUND5_CONSOLIDATED_work_order.md P1) ---
       yardSwingRateDegPerSec: 90,             // tunable — max slew rate for state.delta relaxing toward its equilibrium (request's own suggested 60-120deg/s band: "a swinging yard, not a teleport")
       deltaMaxReleaseDeg: 90,                 // the sheet limit is released to this during a shunt's ease/transfer/swap phases, then closes back to the commanded controls.sheet once 'sheet' starts hauling it in (P1.1 point 3)
@@ -555,7 +585,17 @@ function buildDefaultConfig() {
       // deep-course speed-ratio test is re-anchored against the corrected
       // (smaller, since it no longer double-counts) effective bonus — see
       // ROUND10d_helm_balance_findings.md.
-      brailCamberGain: 0.45,
+      //
+      // F6 (work-order-2026-07-30): cut 0.45 -> 0.10. At 0.45 the DELTA is
+      // added to the table's own 0.10, so camberCLFactor was evaluated at
+      // c = 0.55 — a 55%-of-chord draft, i.e. a half-circle, roughly 4x
+      // outside the c ~ 0.05-0.15 band the linear 1+1.75c fit is valid over.
+      // 0.10 keeps the sum (camber + gain + builtin) at the 0.20 ceiling
+      // validateConfig now enforces, and still gives a real TRIM-regime
+      // bonus: CL x1.15 at low alpha. The area model (F4) now carries the
+      // brail's force change; this term only carries the BAGGING effect it
+      // was always meant to describe.
+      brailCamberGain: 0.10,
       // ceSwingFraction: round 7, D-6. The yard's swing (delta) still
       // moves the CE fore-aft/athwartship (a real crab-claw's CE genuinely
       // shifts with trim — that's the whole mechanism by which trimming
@@ -719,6 +759,29 @@ function buildDefaultConfig() {
   };
 }
 
+// configFromRecordingSnapshot(snapshot) -> a validated config, with stale
+// field SEMANTICS from older recordings migrated forward.
+//
+// Recordings store a raw config snapshot, and some fields have changed
+// meaning since. `sail.camber` is the one that matters: before the v2 aero
+// table (round 10, ADR 0003) it was an ABSOLUTE camber ratio against a flat
+// Polhamus table, so 0.10 was an ordinary value; on the v2 table — which
+// already carries the source sail's own ~0.10 camber — the same field is a
+// DELTA on top of that. Replaying an old snapshot verbatim therefore
+// double-counts exactly what round 10d's C-C fix removed, and since F6's
+// total-camber ceiling (0.20) it would be rejected outright, making archived
+// recordings unloadable. Normalise instead: on v2, a pre-v2 snapshot's
+// absolute camber is already represented by the table itself.
+export function configFromRecordingSnapshot(snapshot) {
+  const snap = snapshot ?? {};
+  const sail = snap.sail ?? {};
+  const usesV2 = (sail.aeroTableVersion ?? 'v2') === 'v2';
+  if (usesV2 && (sail.camber ?? 0) > 0) {
+    return createConfig({ ...snap, sail: { ...sail, camber: 0 } });
+  }
+  return createConfig(snap);
+}
+
 export function validateConfig(config) {
   const errs = [];
   const inRange = (v, lo, hi, name) => { if (!(v >= lo && v <= hi)) errs.push(`${name}=${v} out of range [${lo},${hi}]`); };
@@ -727,6 +790,19 @@ export function validateConfig(config) {
   if (!['v1', 'v2'].includes(config.sail.aeroTableVersion)) errs.push(`sail.aeroTableVersion must be 'v1' or 'v2', got ${config.sail.aeroTableVersion}`);
   inRange(config.sail.apexAngleDeg, 45, 60, 'sail.apexAngleDeg');
   inRange(config.sail.camber, 0, 0.20, 'sail.camber');
+  // F6 (work-order-2026-07-30): the TOTAL camber the CL curve is ever
+  // evaluated at — the table's own built-in camber plus sail.camber plus the
+  // brail's TRIM-regime bagging gain — must stay inside the band the linear
+  // 1+1.75c fit is valid over. Bounding only sail.camber (as before) left
+  // brailCamberGain entirely unchecked, which is how c=0.55 (a half-circle
+  // "sail") became the default operating point on deep courses.
+  {
+    const builtin = config.sail.aeroTableVersion === 'v2' ? (config.sail.aeroV2BuiltinCamber ?? 0.10) : 0;
+    const totalCamber = config.sail.camber + (config.sail.brailCamberGain ?? 0) + builtin;
+    if (!(totalCamber <= 0.20)) {
+      errs.push(`sail.camber + sail.brailCamberGain + built-in table camber = ${totalCamber.toFixed(3)} exceeds the 0.20 physical ceiling`);
+    }
+  }
   // ceSwingFraction is a fraction of the half-chord (round 7, D-6 — see the
   // comment on its default above for the provenance audit this bound comes
   // from); values outside (0,1] were never validated by any committed test.
