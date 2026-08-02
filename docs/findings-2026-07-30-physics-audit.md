@@ -529,9 +529,36 @@ Comment/CSV mismatches (the comments are the model's primary documentation):
   zero-lift, the model feeds it geometric alpha, a few-degrees systematic
   offset (documented, not corrected — a fix moves the whole polar).
 
-The **code-behavior** items in block F (`Math.sign` -> `v*|v|` smoothing,
-`leewayRaw` using `|u|` after a shunt, `outboardRelief` hardcoded 0.3) are
-deferred to ride with a polar-moving commit, since each perturbs forces.
+### Block F — the three code-behaviour items [moves polar]
+
+Done last, as planned. Each perturbs forces, so they rode together.
+
+**`Math.sign` smoothing.** Checking each of the six sites first was worth it:
+five of them multiply a SQUARE (`sign(u)*u^2` is exactly `u*|u|`), so they were
+already C1 at zero and only needed to be written that way. Exactly one is a
+genuine C0 jump — the induced-drag direction in `hullSideForce`, where
+`|FyFoil|` does **not** vanish at u=0 because it carries the nonzero low-speed
+linear term. That one is now smoothed over `U_SMOOTH = 0.05 m/s`, matched to
+the existing `ittc57Cf` Reynolds floor so the two low-speed regularisations
+agree. RK4 loses its order across such a step and the boat crosses u=0 on
+every shunt.
+
+**`leewayRaw` after a shunt.** It used `Math.abs(u) + 0.05`, so with u
+legitimately negative (the boat still carrying its old way through a shunt,
+see `core/shunt.js`) the drift angle was computed as though the hull were
+going bow-first. Now `atan2(v, u)` with the magnitude folded into [0,90] for
+the CS lookup — the same fold `aero.js` already applies to the sail's alpha —
+so a hull moving stern-first at a small drift angle reads as a small drift
+angle rather than ~180 deg. The **known limitation is stated in the code
+rather than hidden**: the folded angle is looked up in the same CS curve
+either way, and Flay's measurements are for a hull going forward. A V-hull
+travelling backwards is not the same foil; folding is the better of the two
+available approximations, not a claim that direction is irrelevant.
+
+**`outboardRelief`'s hardcoded 0.3.** It was silently `|crew.posMin|`'s
+default. `validateConfig` permits `posMin` down to -1, which drove the relief
+to 0.5 with no clamp. The span is now derived from the configured limit and
+clamped, so it stays a 0-15 % effect whatever the crew's range is set to.
 
 ## Deferred (with the work order's own reasons)
 
