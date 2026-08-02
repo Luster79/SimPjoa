@@ -652,7 +652,23 @@ function buildDefaultConfig() {
   const aeroTableV2 = loadAeroTable('crab_claw_CL_CD_v2.csv');
   crossCheckAeroTableV2(aeroTableV2);
   const p = loadBoatParamsCSV();
-  const yawInertiaFactor = 0.06; // tunable — fraction of m*L^2 approximating yaw inertia of a slender hull
+  // F8 (work-order-2026-07-30): inertia is now three separate quantities,
+  // derived rather than a single fudge factor. A hull accelerating SIDEWAYS
+  // drags a large body of water with it (added mass); pushing it forward
+  // barely does. The old single 0.06*m*L^2 for yaw was below even a uniform
+  // rod's 1/12, which no mass distribution can justify — added mass only ever
+  // adds. Derivations, for L = 5.5 m and draft = lateralArea/L = 0.327 m:
+  //   added sway mass  ~ rho*pi*draft^2/4 per unit length, x L  = 474 kg
+  //   added yaw inertia = that strip mass integrated with x^2   = 1195 kg.m^2
+  //   rod term          = m*L^2/12                              =  479
+  //   ama at its spacing = ama.mass * spacing^2                 =  156
+  // Surge added mass for a slender body is small (a few % — it is pushing
+  // water aside lengthwise, not broadside); 10% is used. ama.mass is now
+  // included in the translational masses, which it previously was not.
+  const HULL_LATERAL_AREA = 1.8;                        // m^2 — see hull.lateralArea below (same value, needed here first)
+  const draft = HULL_LATERAL_AREA / p.boat_length_m;    // ~0.327 m
+  const addedSwayPerLength = 1025 * Math.PI * draft * draft / 4;  // kg/m, 2D cylinder analogy
+  const dryMass = p.displacement_kg + p.ama_mass_kg;
 
   return {
     configVersion: CONFIG_VERSION,
@@ -666,7 +682,13 @@ function buildDefaultConfig() {
       length: p.boat_length_m,           // 5.5 m
       beam: p.hull_beam_m,                // 0.45 m (see example_proa_parameters.csv)
       displacement: p.displacement_kg,    // 190 kg (see example_proa_parameters.csv)
-      yawInertia: yawInertiaFactor * p.displacement_kg * p.boat_length_m * p.boat_length_m,
+      // massSurge / massSway / yawInertia: see the F8 note above for each
+      // term's derivation. All three are configurable, as the work order asks.
+      massSurge: dryMass + 0.10 * p.displacement_kg,
+      massSway: dryMass + addedSwayPerLength * p.boat_length_m,
+      yawInertia: dryMass * p.boat_length_m * p.boat_length_m / 12
+        + p.ama_mass_kg * p.beam_overall_m * p.beam_overall_m
+        + addedSwayPerLength * Math.pow(p.boat_length_m, 3) / 12,
       wettedSurface: 3.0,                  // m^2 — tunable estimate (slender canoe hull)
       // Cf is no longer a stored constant (round 7, R7-1) — hydro.js
       // computes it per-call from the ITTC-57 model-ship line at the
@@ -757,7 +779,7 @@ function buildDefaultConfig() {
       // 0001) already covers the high-Fr regime with its own separate
       // provenance; no additional guard needed here since side force and
       // longitudinal resistance are independent terms.
-      lateralArea: 1.8,                    // m^2 — hull lateral (broadside) plane area (~length*draft); tunable estimate (no direct measurement of THIS hull's draft)
+      lateralArea: HULL_LATERAL_AREA,      // m^2 — hull lateral (broadside) plane area (~length*draft); tunable estimate (no direct measurement of THIS hull's draft)
       // Yaw damping (F10, work-order-2026-07-30) — replaces the single
       // yawDampingCoeff: 900 with `r*(1+|u|)`, which was dimensionally
       // inconsistent (a bare 1 added to m/s) and gave a STOPPED boat full
@@ -2697,14 +2719,25 @@ function computeForces(state, controls, config) {
 }
 
 // derivatives(state, forces, config) -> time derivatives of the ODE state
+// F8 (work-order-2026-07-30): three SEPARATE inertias, not one displacement.
+// A hull accelerating sideways drags a large body of water with it; pushing it
+// forward barely does. Previously m_x = m_y = displacement = 190 kg and
+// I_z = 0.06*m*L^2 = 345 kg.m^2 — the latter BELOW even a uniform rod (1/12),
+// which no mass distribution can justify once added mass is counted, since
+// added mass only ever adds.
+//
+// Writing the rigid-body equations with distinct inertias also produces the
+// MUNK MOMENT on its own — the (m_x - m_y)*u*v term in dr, the classical
+// destabilising moment on a slender body at an angle of attack. It was
+// identically zero before, and not because it was neglected: with m_x = m_y
+// there was nothing to express it with.
 function derivatives(state, forces, config) {
-  const m = config.hull.displacement;
-  const I = config.hull.yawInertia;
+  const { massSurge, massSway, yawInertia } = config.hull;
   const Iroll = config.stability.I_roll;
   return {
-    du: forces.Fx / m + state.v * state.r,
-    dv: forces.Fy / m - state.u * state.r,
-    dr: forces.M / I,
+    du: forces.Fx / massSurge + (massSway / massSurge) * state.v * state.r,
+    dv: forces.Fy / massSway - (massSurge / massSway) * state.u * state.r,
+    dr: (forces.M + (massSurge - massSway) * state.u * state.v) / yawInertia,
     dx: state.u * Math.cos(state.heading) - state.v * Math.sin(state.heading),
     dy: state.u * Math.sin(state.heading) + state.v * Math.cos(state.heading),
     dheading: state.r,
@@ -3191,14 +3224,14 @@ const MS_TO_KN = 1.9438;
 // recording's codeVersion is meaningful (harness/replay.js warns on
 // mismatch) for a downloaded bundle without requiring a build step for
 // plain `python3 -m http.server` development.
-const CODE_VERSION = "55a3960";
+const CODE_VERSION = "1f25d30";
 // BUILD_TIME: same pattern as CODE_VERSION above — tools/bundle.js
 // replaces this with the COMMIT's timestamp (not wall-clock build time),
 // so it stays stable across re-bundling the same commit and always
 // matches CODE_VERSION's hash. Shown in the bottom-right version footer
 // so a bug report/recording can be tied to an exact, dated build without
 // having to separately ask "which commit was this."
-const BUILD_TIME = "2026-08-02T18:25:42+02:00";
+const BUILD_TIME = "2026-08-02T18:51:20+02:00";
 
 // ---------------------------------------------------------------------
 // i18n — EN/PL. Static labels are marked with data-i18n="key" in
@@ -5769,7 +5802,13 @@ function drawPolarView(rows) {
 const BOAT_FIELDS = [
   { path: 'hull.length', kind: 'physics', unit: 'm', step: 0.1, labelEn: 'Hull length', labelPl: 'Długość kadłuba' },
   { path: 'hull.beam', kind: 'graphics', unit: 'm', step: 0.01, labelEn: 'Hull beam', labelPl: 'Szerokość kadłuba' },
-  { path: 'hull.displacement', kind: 'physics', unit: 'kg', step: 1, labelEn: 'Displacement', labelPl: 'Wyporność' },
+  // F8: these three are what the dynamics actually integrate. hull.displacement
+  // is no longer read by the physics — it is only an input to the derivation in
+  // config.js — so editing it here would silently do nothing; the derived
+  // inertias are exposed instead.
+  { path: 'hull.massSurge', kind: 'physics', unit: 'kg', step: 5, labelEn: 'Mass, surge (m_x)', labelPl: 'Masa wzdłużna (m_x)' },
+  { path: 'hull.massSway', kind: 'physics', unit: 'kg', step: 10, labelEn: 'Mass, sway (m_y, incl. added)', labelPl: 'Masa poprzeczna (m_y, z towarzyszącą)' },
+  { path: 'hull.yawInertia', kind: 'physics', unit: 'kg·m²', step: 50, labelEn: 'Yaw inertia (I_z)', labelPl: 'Bezwładność yaw (I_z)' },
   { path: 'hull.wettedSurface', kind: 'physics', unit: 'm²', step: 0.1, labelEn: 'Hull wetted surface', labelPl: 'Pow. zwilżona kadłuba' },
   { path: 'hull.residuaryPeakCr', kind: 'physics', unit: '', step: 0.0005, labelEn: 'Wave-resistance peak (Cr)', labelPl: 'Szczyt oporu falowego (Cr)' },
   { path: 'hull.residuaryFrPeak', kind: 'physics', unit: '', step: 0.01, labelEn: 'Peak Froude number', labelPl: 'Liczba Froude’a szczytu oporu' },
