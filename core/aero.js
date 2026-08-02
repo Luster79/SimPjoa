@@ -149,6 +149,25 @@ function camberCLDelta(alphaAbsDeg, camberDelta, builtinCamber) {
   return atBuiltinPlusDelta / atBuiltin;
 }
 
+// camberCDFactor / camberCDDelta (F5, work-order-2026-07-30): the CD analog
+// of the two functions above. Round 10d's C-C fix made the CL camber bonus a
+// RATIO relative to the table's built-in camber (camberCLDelta), but left the
+// CD bonus in the old absolute "relative to a flat plate" form
+// (camberCDf = 1 + 1.0*camberEff) — so CD double-counted the camber the v2
+// table already carries (its CD0/s are least-squares fits to the SAME
+// already-cambered Santa Cruz sail). Same ratio transform closes it: at
+// camberDelta=0 an exact identity for any builtinCamber (v2 default
+// untouched); at builtinCamber=0 (v1) it reduces to the old 1 + 1.0*delta,
+// so v1 CD is bit-identical. The factor has no alpha dependence, matching the
+// old camberCDf. Measured effect at brailWind=0.6 (delta=0.45), v2: the CD
+// multiplier drops 1.450 -> 1.409.
+function camberCDFactor(camber) {
+  return 1 + 1.0 * camber;
+}
+function camberCDDelta(camberDelta, builtinCamber) {
+  return camberCDFactor(builtinCamber + camberDelta) / camberCDFactor(builtinCamber);
+}
+
 function smoothstep01(t) {
   const c = Math.min(Math.max(t, 0), 1);
   return c * c * (3 - 2 * c);
@@ -227,7 +246,7 @@ export function sailCoefficients(alpha, controls, config) {
   const builtinCamber = sail.aeroTableVersion === 'v2' ? (sail.aeroV2BuiltinCamber ?? 0.10) : 0;
 
   const camberCLf = camberCLDelta(alphaAbsDeg, camberEff, builtinCamber);
-  const camberCDf = 1 + 1.0 * camberEff;
+  const camberCDf = camberCDDelta(camberEff, builtinCamber);
 
   let CL1 = CLtable * camberCLf;
   let CD1 = (CDbase + floggingCD) * camberCDf;
