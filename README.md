@@ -265,6 +265,14 @@ Step 2, since the UI doesn't change them):
   cause of yaw-hunting on offwind courses, so the model's stable,
   rudder-free deep-course equilibria are optimistic — they should not be
   read as "this boat holds a dead run hands-off on the water."
+- **Windage is one lumped area** (F15, `docs/adr/0008`). The boat's above-water
+  air drag — hull topsides, crew, mast, spars — is a single
+  `hull.windageArea x hull.windageCD` acting along the apparent wind. It is a
+  real force now (it was entirely absent before, which among other things made
+  the exposed middle of a shunt safe by construction), but because it is
+  lumped it produces no heeling moment and no yaw moment of its own. A
+  per-component model with its own levers is the obvious next step if windage
+  is ever anchored to measurement rather than a band estimate.
 - **The vertical force balance is not closed** (F11/F13,
   `work-order-2026-07-30-physics-audit.md`). There is no heave degree of
   freedom, so two real vertical effects have nowhere to go. The heeled sail's

@@ -334,14 +334,14 @@ export function runAsserts(config, { slow = true } = {}) {
   // course with continuous rudder, so the blade's drag is now paid on every
   // row. F8 then took it back UP to ~8.98 — 5.5x the yaw inertia and 3.6x the
   // sway mass make the boat far less twitchy under the autopilot, so it holds
-  // a cleaner line and wastes less. Sixth re-anchor of this tripwire in one
-  // audit; each move was an intended change it correctly flagged. The band
-  // tracks the model and stays just as narrow, keeping its value for the NEXT
-  // unintended shift.
+  // a cleaner line and wastes less. F15 then took it to ~8.51: the boat now
+  // has above-water air drag, which it had none of before. Seventh re-anchor
+  // of this tripwire in one audit; every move was an intended change that it
+  // correctly flagged, which is the whole reason it is kept this narrow.
   {
     const row10 = computePolar(config, { twsList: [10], twaFrom: 100, twaTo: 100, step: 1 })[0];
-    check('R15: reach speed at TWS=10, TWA=100 is within a narrow absolute band [8.94,9.02] m/s',
-      row10.bestSpeed >= 8.94 && row10.bestSpeed <= 9.02,
+    check('R15: reach speed at TWS=10, TWA=100 is within a narrow absolute band [8.47,8.55] m/s',
+      row10.bestSpeed >= 8.47 && row10.bestSpeed <= 8.55,
       `speed=${row10.bestSpeed.toFixed(4)} m/s (sheet=${row10.bestSheetAngle})`);
   }
   } // if (slow) — section 3

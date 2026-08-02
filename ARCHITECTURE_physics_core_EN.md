@@ -252,6 +252,16 @@ cross-check at startup as required by the main prompt. Fixed schema version: a
       // floggingCDFactor * CD0) ramped in only within LUFF_WINDOW_DEG of a
       // genuine zero-AoA weathervane (alphaAbsDeg -> 0) — the regime-b
       // "sail flogging" depower path, not active in normal driving trims.
+    windageForce(state, controls, config) -> { Fx, Fy }
+      // F15 (docs/adr/0008): the boat's own above-water air drag — hull
+      // topsides, crew, mast, spars — along the apparent wind. Before this,
+      // rho_air had exactly ONE user in the whole core (the sail). Exposed
+      // area interpolates on sin^2 of the apparent-wind angle between
+      // hull.windageAreaFrontal and hull.windageArea. Deliberately NOT faded
+      // by shuntForceFade: the sail's lift is carried across during a shunt,
+      // the hull and crew are not. Summed into Fx/Fy (not into hull
+      // resistance) because on a broad reach it PUSHES rather than retards.
+
     sailForces(state, controls, config)
       -> { Fx, Fy, Fz, heelMoment, yawMoment, yawMomentHeel, alpha, alphaSailor, aw }
       // Fx, Fy in the boat frame. F11 (work-order-2026-07-30): the heel

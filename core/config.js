@@ -311,6 +311,14 @@ function buildDefaultConfig() {
       yawInertia: dryMass * p.boat_length_m * p.boat_length_m / 12
         + p.ama_mass_kg * p.beam_overall_m * p.beam_overall_m
         + addedSwayPerLength * Math.pow(p.boat_length_m, 3) / 12,
+      // Windage (F15, docs/adr/0008): the above-water body the air acts on —
+      // hull topsides (~5.5 x 0.25), a standing crew (~0.6), mast and spars
+      // (~0.4), platform edge (~0.2). Beam-on projected area, the orientation
+      // that matters most (a shunt lies the boat across the wind). CD ~0.85 is
+      // the usual bluff-body range for such a collection of shapes.
+      windageArea: 1.8,                    // m^2 — BEAM-ON projected area; tunable estimate, same status as lateralArea
+      windageAreaFrontal: 0.5,             // m^2 — END-ON area (bow, mast section, one crew); windageForce interpolates on sin^2 of the apparent-wind angle
+      windageCD: 0.85,
       wettedSurface: 3.0,                  // m^2 — tunable estimate (slender canoe hull)
       // Cf is no longer a stored constant (round 7, R7-1) — hydro.js
       // computes it per-call from the ITTC-57 model-ship line at the

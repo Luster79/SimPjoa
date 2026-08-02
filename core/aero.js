@@ -309,6 +309,49 @@ export function sailCoefficients(alpha, controls, config) {
 //   sign — NOT the sailor's angle of attack (it reads ~140-170deg on normal
 //   courses, see aero.js header comment). alphaSailor: the acute [0, pi/2]
 //   angle a sailor/UI would call AoA (FIX_REQUEST_step1_round2.md R2-3).
+// windageForce(state, controls, config) -> { Fx, Fy } in the boat frame.
+//
+// F15 (work-order-2026-07-30, docs/adr/0008). `grep -rn "rho_air" core/`
+// returned exactly TWO hits before this: the constant's definition and the
+// sail's own dynamic pressure. Nothing else in the model felt the air at all —
+// no hull topsides, no crew, no mast, no spars.
+//
+// Two consequences, both real:
+//   - A furled rig had only the sail's own residual CD standing in for the
+//     whole boat's air drag.
+//   - shuntForceFade() returns EXACTLY 0 through the 'transfer' and 'swap'
+//     phases, which is 8.4 s of a 16.4 s shunt. Fading the sail's LIFT there
+//     is right (the rig is being carried across, not working), but with no
+//     windage the boat felt no air force whatever while lying beam-on with a
+//     flogging rig — so the most exposed moment of the whole manoeuvre was
+//     safe by construction. This term is deliberately NOT faded, so it stays
+//     through the shunt.
+//
+// Applied along the apparent wind, i.e. pure drag on the above-water body. It
+// is not always a retarding force: on a broad reach the apparent wind has a
+// forward component and windage pushes the boat along, which is the physically
+// correct behaviour and the reason it belongs in Fx/Fy rather than in the
+// resistance term.
+export function windageForce(state, controls, config) {
+  const { windageArea, windageAreaFrontal, windageCD } = config.hull;
+  if (!windageArea || !windageCD) return { Fx: 0, Fy: 0 };
+  const aw = apparentWind(state, controls);
+  if (aw.speed < 1e-6) return { Fx: 0, Fy: 0 };
+  // The exposed area depends on which way the air meets the boat: end-on it
+  // sees a bow, a mast section and a crew member; beam-on it sees the whole
+  // topside. Interpolating on sin^2 of the apparent-wind angle is the usual
+  // treatment and matters a lot here — using the beam-on figure at every
+  // angle overstates windage worst exactly where the apparent wind is
+  // strongest (close-hauled), which measured as a 21-33% speed loss upwind
+  // before this was added.
+  const sinA = Math.sin(aw.angleToBoat);
+  const areaEff = windageAreaFrontal + (windageArea - windageAreaFrontal) * sinA * sinA;
+  const q = 0.5 * config.rho_air * areaEff * windageCD * aw.speed;
+  // q already carries one power of speed; multiplying by the velocity
+  // COMPONENTS below supplies the second and the direction at once.
+  return { Fx: q * aw.vx, Fy: q * aw.vy };
+}
+
 export function sailForces(state, controls, config) {
   const aw = apparentWind(state, controls);
   const delta = Math.abs(state.delta ?? 0); // actual yard angle magnitude, R5-1 — reused below for CE geometry (P1.2)

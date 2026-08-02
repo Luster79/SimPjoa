@@ -480,6 +480,41 @@ now holds at a plurality of operating points. It still does not hold at a
 majority, so the xfail stands — but this is the first change in the whole audit
 that moved it *toward* the claim rather than away.
 
+### F15 — windage (core/aero.js, docs/adr/0008)
+
+`grep -rn "rho_air" core/` returned exactly **two** hits before this: the
+constant's definition and the sail's own dynamic pressure. Nothing else in the
+model felt the air — no hull topsides, no crew, no mast, no spars.
+
+The consequence that matters is not the furled rig, it is the **shunt**.
+`shuntForceFade()` returns *exactly* 0 through `transfer` and `swap` — 8.4 s of
+a 16.4 s sequence. Fading the sail's lift there is right; but with no windage
+the boat felt **no air force at all** while lying beam-on with a flogging rig,
+so the most exposed moment of the manoeuvre was safe by construction.
+
+Added as a separate `windageForce()`, summed into Fx/Fy, exposed in the
+breakdown, and deliberately **not** faded by the shunt. It goes in Fx/Fy rather
+than into hull resistance because it is not always retarding — on a broad reach
+the apparent wind has a forward component and windage pushes the boat along.
+
+**A first version was wrong and the measurement caught it.** Using the beam-on
+area at every angle cost **21-33 % of upwind speed** (TWA 40/TWS 10: 3.76 ->
+2.96) — because close-hauled is exactly where the apparent wind is strongest,
+and exactly where a boat presents its bow rather than its side. The area now
+interpolates on `sin^2` of the apparent-wind angle between an end-on 0.5 m^2
+and a beam-on 1.8 m^2. Measured after: 74 N at TWA 40, 98 N at TWA 90, 9 N dead
+downwind.
+
+That same error also tripped `head-to-wind sheeted stays essentially still`
+(0.645 m/s of sternway against a 0.5 limit) and briefly promoted the
+close-hauled `xfail:CALIBRATION` — both artefacts of the over-large frontal
+windage, both gone with the angle dependence.
+
+Acceptance verified: force during `transfer` is 94.6 N instead of exactly zero;
+its direction is parallel to the apparent wind to `cos = 1.0000`; and a furled
+boat's air drag is now dominated by the boat (94.6 N) rather than by residual
+sail coefficients (13.9 N). R15 re-anchored a seventh time, to [8.47,8.55].
+
 ### Block F — documentation-only items
 
 Comment/CSV mismatches (the comments are the model's primary documentation):
