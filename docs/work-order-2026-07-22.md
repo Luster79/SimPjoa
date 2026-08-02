@@ -192,3 +192,30 @@ realna i zautomatyzowana. Zostaje w repo. *Nie robić.*
 Pozycje 1 i 2 są bezpieczne do zrobienia od ręki. Pozycja 3 wymaga decyzji
 o wartości plateau — próg leży między 0.05 a 0.10, ale konkretna wartość powinna
 być uzasadniona literaturą oporu kadłubów smukłych, nie dobrana pod próg.
+
+---
+
+## Stan wykonania (uzupełnione 2026-07-30)
+
+Zamknięte: **P1, P2, P3, P4, P5** (fizyka — ogon oporu, bramka `settled`,
+asercja gładkości, koszt shuntu, zakres bez fal), **R15** (czułość pakietu —
+wąskie pasma bezwzględne), **R3** (`abackWarning` usunięty), **R7** (`--fast`
+vs `test:full`), **R8** (`CLAUDE.md`), **R9** (`npm test`), **R11** (korzeń:
+z 11 plików `.md` do 4), **R14** (`reset()` zeruje `lastForces`).
+
+Częściowo: **R2** — marker `+dirty` plus dyscyplina dwóch commitów
+(źródło → przebudowa → `dist/`) daje czysty, identyfikujący stempel przy
+każdym wydaniu. Stosowane konsekwentnie od tej rundy; hook nadal nie istnieje.
+
+Wycofane: **R5** (patrz wyżej — przesłanka okazała się nieprawdziwa).
+
+**Otwarte, świadomie nietknięte:**
+
+- **R13 — monolity.** `ui/app.js` 2904 linii, `harness/asserts.js` 1737.
+  Oba UROSŁY w trakcie audytu fizyki, bo tam trafiały nowe asercje i pola UI.
+  Podział to osobne zadanie refaktoryzacyjne — mieszanie go ze zmianami
+  fizyki uniemożliwiłoby przypisanie regresji do przyczyny.
+- **R10 — lint/formater/typy.** Brak konfiguracji. Niezależne od fizyki,
+  do zrobienia w dowolnym momencie.
+
+Dowody i pomiary: `docs/findings-2026-07-22-work-order.md`.

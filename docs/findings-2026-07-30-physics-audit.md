@@ -9,6 +9,44 @@ verified** and what is **deferred**, with the reason for each boundary.
 All numbers below are measured, from the repro blocks in the work order or
 their direct extensions.
 
+## Status: COMPLETE
+
+All sixteen items (F1-F16) executed, plus the capsize-margin recalibration the
+work order names as a precondition for block D. Final suite: **83/83**, with
+two deliberately-reported `xfail`s (below). Three ADRs written:
+
+| ADR | subject |
+|---|---|
+| 0006 | residuary tail plateau (removes a spurious fast speed branch) |
+| 0007 | composite sail CD + brail-effective area |
+| 0008 | windage |
+
+**The two tracked `xfail`s are results, not unfinished work.** Neither was
+tuned to pass:
+
+- *no meaningful progress below ~50 deg TWA* (0.591 vs a 0.55 ceiling) — the
+  move is entirely in the DENOMINATOR: correcting the model cut top speed while
+  close-hauled speed barely changed. The threshold comes from the spec, so it
+  is reported.
+- *trimming the sheet in points up* (weather 6 / lee 4 / capsized 6 of 16) —
+  measured across a grid, and on the pre-change model too: the claim never held
+  generally. Its previous green results came from a hand-picked operating point
+  re-picked whenever the model moved.
+
+**What the audit found that its own list did not contain.** Two things, both
+from measurement rather than from reading:
+
+1. **A sign error in the rudder's lever arm** (F9). The oar was modelled at the
+   bow rather than the stern. The old model *structurally could not* expose it:
+   with no inflow term, the sign hid inside the steering convention.
+2. **A test calibrated to its expected answer** (block D). The trim-in steering
+   assertion had been passing since round 10 only because its operating point
+   was re-picked each time the model moved.
+
+Two of my own errors were also caught by measurement and are recorded in place:
+a wrong claim about the `CL^2/k` CD form (from a guessed constant), and a first
+windage version using beam-on area at every angle (-21 to -33 % upwind).
+
 ## Done
 
 ### F2 — symmetric angular capsize (core/stability.js)
