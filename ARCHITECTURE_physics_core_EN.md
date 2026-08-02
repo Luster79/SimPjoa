@@ -415,6 +415,13 @@ cross-check at startup as required by the main prompt. Fixed schema version: a
                                             // re-derived R7-4a drag-ratio
                                             // bands this now satisfies.
     yawDamping(r, u, config) -> moment
+      // F10 (work-order-2026-07-30): the BARE HULL's term only, as the two
+      // standard manoeuvring components — N_r*|u|*r (circulatory, vanishes
+      // at u=0) + N_rr*r*|r| (cross-flow, present at rest). Replaces
+      // `coeff*r*(1+|u|)`, which was dimensionally inconsistent and gave a
+      // stopped boat full damping. The magnitude also came down: before F9
+      // the steering oar supplied zero yaw damping, so the old single
+      // coefficient was covering the rudder's share as well.
 
 ### rudder.js
     rudderForce(state, controls, config) -> { Fx, Fy, yawMoment }

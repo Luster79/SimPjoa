@@ -267,6 +267,33 @@ export function amaDrag(u, phi, crewPos, end, config) {
   return { Fx, yawMoment };
 }
 
+// yawDamping(r, u, config) -> N*m, the BARE HULL's resistance to yawing.
+//
+// F10 (work-order-2026-07-30) replaced `-yawDampingCoeff * r * (1 + |u|)`.
+// Two faults. Dimensionally, `1 + |u|` adds a bare 1 to a speed in m/s, so the
+// expression has no consistent units and does not survive a change of them.
+// Physically, the consequence: at u = 0 it still returned FULL damping
+// (-270 N*m at r = 0.3), i.e. a boat sitting still resisted being spun as if
+// it were making way.
+//
+// Standard manoeuvring form instead, two terms with distinct physics:
+//   N_r    * u * r      — the lifting/circulatory term. Needs flow over the
+//                         hull, so it vanishes at u = 0, as it must.
+//   N_rr   * r * |r|    — cross-flow drag on the hull's own transverse motion
+//                         as it rotates. Quadratic in r, and present at rest,
+//                         which is what actually damps a stationary boat.
+//
+// The coefficient also had to SHRINK, not carry over. The old 900 was doing
+// two jobs: the hull's own damping and, silently, the rudder's — because
+// before F9 the steering oar contributed exactly zero yaw damping (no inflow
+// term at all). With F9's oar in the water the measured split at u = 3,
+// r = 0.3 is 52% rudder / 48% hull, so leaving 900 in place would double-count
+// the half the oar now supplies. These values keep the bare hull (oar shipped)
+// damping in the same range it had, while the deployed oar adds its own real
+// contribution on top rather than being stood in for.
 export function yawDamping(r, u, config) {
-  return -config.hull.yawDampingCoeff * r * (1 + Math.abs(u));
+  const { hull } = config;
+  const linear = hull.yawDampingLinear * Math.abs(u) * r;
+  const crossFlow = hull.yawDampingCrossFlow * r * Math.abs(r);
+  return -(linear + crossFlow);
 }

@@ -383,6 +383,55 @@ The `xfail:STEERING` trim-in tally moved again, to **weather 0 | lee 9 |
 capsized 7** — F9's realistic oar removed the last operating points where
 "trimming in points up" held at all.
 
+### F10 — yaw damping decomposed (core/hydro.js)
+
+`-yawDampingCoeff * r * (1 + |u|)` had two faults. Dimensionally, `1 + |u|`
+adds a bare 1 to a speed in m/s. Physically, the consequence: at `u = 0` it
+returned FULL damping (-270 N.m at r = 0.3) — a boat sitting still resisted
+being spun as if it were making way.
+
+Replaced with the two standard manoeuvring terms: `N_r * |u| * r` (circulatory,
+vanishes at u = 0 — F10's own acceptance) and `N_rr * r * |r|` (hull cross-flow,
+present at rest, which is what actually damps a stationary hull).
+
+`yawDampingCrossFlow` is **derived, not picked**: strip theory over the lateral
+plane gives `0.5 * rho * Cd * draft * r^2 * L^4/32`; with the same
+`crossFlowDragCoeff = 1.1` `hullSideForce` already uses, draft = lateralArea/L
+= 0.327 m and L = 5.5 m, that is **5276**, halved to **2640** as an explicit,
+labelled reduction (the full value assumes fully separated cross-flow along the
+whole hull, an upper bound at realistic yaw rates).
+
+**The coefficient had to shrink, not carry over** — the audit's instruction, and
+the measurement backs it: before F9 the steering oar supplied *exactly zero*
+yaw damping, so the old 900 was silently doing the rudder's job too. Measured
+split at u = 3, r = 0.3 once the oar became a real foil: **52 % rudder / 48 %
+hull**.
+
+**Damping breakdown after F10** (the "documented breakdown" the acceptance asks
+for), at u = 3, r = 0.3:
+
+| configuration | hull | rudder | total | vs old 1080 |
+|---|---|---|---|---|
+| oar deployed | 373 | 1169 | **1541** | +43 % |
+| oar shipped | 373 | 0 | **373** | -65 % |
+
+The acceptance's "same yaw response +-20 %" is **not met, and reported rather
+than tuned to**: the old single number could not distinguish oar-down from
+oar-up, so there is no one value it can now match. Deployed damping is higher
+because a real oar in the water genuinely damps and previously did not; bare-hull
+damping is lower because a double-ended canoe with no skeg genuinely has little
+of its own — which is why a proa needs the oar. F8 (added yaw inertia, ~5x) will
+move the response period far more than either, which is exactly why the work
+order puts F8 last and warns it invalidates measurements taken before it.
+
+**One assertion re-anchored.** H3 (parked hull, furled, drift speed) went
+0.06 -> 0.57 m/s, band [0.05,0.4] -> **[0.35,0.8]**. Attribution verified
+directly: restoring a stiff low-r damping reproduces the old 0.077 m/s. With
+correct weak low-r damping the hull weathervanes further (-54 deg from beam-on
+over the 60 s, was -23 deg) and drifts faster. The new value is also the more
+plausible one — 0.57 m/s is ~1.1 kn of bare-pole drift in a 12 kn breeze, where
+0.06 m/s is essentially pinned.
+
 ### Block F — documentation-only items
 
 Comment/CSV mismatches (the comments are the model's primary documentation):

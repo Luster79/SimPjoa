@@ -164,8 +164,21 @@ export function runAsserts(config, { slow = true } = {}) {
       brailLee: 1, brailWind: 1, crewPos: 0, crewPosX: 0, shuntRequest: false };
     for (let i = 0; i < Math.round(60 / config.dt); i++) state = integrate(state, controls, config, config.dt);
     const speed = Math.hypot(state.u, state.v);
-    check('H3: parked hull, beam TWS6, sail furled -> downwind drift speed in [0.05,0.4] m/s within 60s',
-      speed >= 0.05 && speed <= 0.4, `speed=${speed.toFixed(4)} m/s (u=${state.u.toFixed(4)} v=${state.v.toFixed(4)})`);
+    // Band re-anchored for F10 (work-order-2026-07-30). The old [0.05,0.4]
+    // was set around a measured 0.063 m/s, which depended on the parked hull
+    // being held nearly beam-on by the old yaw damping — that term returned
+    // FULL damping at u=0 and, being linear in r, was ~34x stiffer at the
+    // small yaw rates a drifting hull actually sees than the cross-flow
+    // (r*|r|) term that physically replaces it. With the correct weak low-r
+    // damping the hull weathervanes further (heading -54deg from beam-on over
+    // the 60 s, was -23deg) and drifts at 0.57 m/s. Attribution verified
+    // directly: restoring a stiff low-r damping reproduces the old 0.077 m/s.
+    // The new value is also the more plausible one — 0.57 m/s is ~1.1 kn of
+    // bare-pole drift in a 12 kn breeze, where 0.06 m/s (0.12 kn) is
+    // essentially pinned. The check's intent (it drifts, it is not stuck, and
+    // it does not sail off) is unchanged.
+    check('H3: parked hull, beam TWS6, sail furled -> downwind drift speed in [0.35,0.8] m/s within 60s',
+      speed >= 0.35 && speed <= 0.8, `speed=${speed.toFixed(4)} m/s (u=${state.u.toFixed(4)} v=${state.v.toFixed(4)})`);
   }
 
   // --- 3. Polar shape + speed anchor (TWS=6) --- (slow: computePolar sweep)
@@ -1370,8 +1383,10 @@ export function runAsserts(config, { slow = true } = {}) {
   // SUSTAINED |r| > 4deg/s for > 0.5s continuous, not a single-frame
   // instant — a brief transient during the sail's unstall (measured once
   // at 4.58deg/s for a single frame) is not a round-up; a sustained one
-  // would be. yawDampingCoeff stays at 900 (D-2: not re-tuned to chase
-  // this number — the fix is the drag ratio, not damping).
+  // would be. Yaw damping was not re-tuned to chase this number either
+  // (D-2: the fix is the drag ratio, not damping); F10 later replaced the
+  // single coefficient with the two-term manoeuvring form, again without
+  // tuning it against this fixture.
   {
     const recPath = path.join(__dirname, '..', 'recordings', 'simpjoa-recording-20260716-155817.json');
     let recording = null, recErr = null;
