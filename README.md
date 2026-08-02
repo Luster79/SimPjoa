@@ -281,9 +281,19 @@ Part A) as calibration watch items, not bugs:
   it. Both acceptance bands were re-derived against the new, physically
   faster polar and now genuinely pass — see
   `ROUND9_physics_fidelity_findings.md` for the full before/after.
-- `bestSheetAngle` jitters at TWA 160 in the polar (a flat downwind
-  optimum where several trims give near-identical speed) — cosmetic,
-  the speed curve itself is smooth there.
+- `bestSheetAngle` jumps around at TWA 160-170 in the polar. Measured (F16,
+  `work-order-2026-07-30-physics-audit.md`): this is **not** a flat optimum,
+  and not a settle artifact. At TWA 160 the speed-vs-sheet curve is genuinely
+  **bimodal** — sheeted hard in and eased right out are both fast, the middle
+  is slow, and the two maxima are within ~1 % of each other (TWS 10:
+  5.85 m/s at sheet 12 deg vs 5.81 at 84 deg, minimum 4.39 at 56 deg). Any
+  small model change flips which peak wins, hence the jump. The settle itself
+  is stable: driving the same trim from two different initial yard angles
+  gives identical speed and yard angle to three decimals, at every sheet
+  tried and at TWS 4/6/10 — so the `deltaAlign` discontinuity at AWA = 0 was
+  *not* the cause, and adding hysteresis there would damp nothing. Physically
+  a very deep course is drag-driven either way; edge-on in the middle is the
+  bad case.
 
 UI-specific simplifications (Step 2 only, not physics):
 

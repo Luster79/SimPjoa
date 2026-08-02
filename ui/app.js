@@ -2630,7 +2630,6 @@ const BOAT_FIELDS = [
   { path: 'ama.spacing', kind: 'physics', unit: 'm', step: 0.1, labelEn: 'Hull-ama spacing', labelPl: 'Rozstaw kadłub–ama' },
   { path: 'ama.wettedSurface', kind: 'physics', unit: 'm²', step: 0.05, labelEn: 'Ama wetted surface', labelPl: 'Pow. zwilżona amy' },
   { path: 'ama.formFactor', kind: 'physics', unit: '', step: 0.05, labelEn: 'Ama form factor (1+k)', labelPl: 'Współcz. kształtu amy (1+k)' },
-  { path: 'ama.crewImmersionCoeff', kind: 'physics', unit: '', step: 0.01, labelEn: 'Crew-immersion coeff.', labelPl: 'Współcz. zanurzania przez załogę' },
 
   { path: 'sail.area', kind: 'physics', unit: 'm²', step: 0.1, labelEn: 'Sail area', labelPl: 'Powierzchnia żagla' },
   { path: 'sail.apexAngleDeg', kind: 'physics', unit: '°', step: 1, labelEn: 'Sail apex angle', labelPl: 'Kąt wierzchołkowy żagla' },

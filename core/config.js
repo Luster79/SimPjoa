@@ -1,16 +1,20 @@
 // config.js — default CONFIG, CSV loading, Polhamus regeneration cross-check,
 // range validation. Pure ESM, no external dependencies, Node >= 18.
 //
-// Design note on the sail drag model (CD0 + s*CL*tan(alpha)):
-// data/crab_claw_CL_CD_polhamus.csv was generated with FULL leading-edge
-// suction loss (s = 1.0 — see data/README_input_data_EN.md). The startup
-// integrity cross-check therefore regenerates the table with s = 1.0 to
-// verify the CSV has not been silently edited/corrupted. The prompt's
-// tunable partial-suction factor (CONFIG.sail.s, default 0.85) is a
-// SEPARATE runtime knob: aero.js never reads the CD column directly, it
-// recomputes CD at runtime from the table's CL (which does not depend on
-// s) using CONFIG.sail.s. This keeps the shipped table an unmodified,
-// verifiable artifact while still honouring the prompt's tunable drag.
+// Design note on the sail drag model.
+// The RUNTIME model is the composite in docs/adr/0007 (block B of
+// work-order-2026-07-30):
+//     CD = CD0 + inducedK*CL_working^2 + CDbroadside*sin^4(alpha) + ...
+// The suction-loss form CD0 + s*CL*tan(alpha) that used to live here is gone,
+// and with it CONFIG.sail.s — it had no remaining runtime reader.
+//
+// The Polhamus CD helpers below (polhamusCD/polhamusCDv2, with their own
+// per-table `s`) are retained for ONE purpose: regenerating the shipped CSVs'
+// CD column at startup to verify the files have not been silently edited or
+// corrupted. That is an integrity/provenance check on the data files, NOT a
+// live code path — aero.js reads only the CL column. See F3(b) in
+// work-order-2026-07-30-physics-audit.md and the note at
+// crossCheckAeroTableV2.
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -463,7 +467,13 @@ function buildDefaultConfig() {
       // formFactor>=~3 — it was an artifact of accommodating the
       // unphysical value, not an independent physical constraint.
       formFactor: 1.2,
-      crewImmersionCoeff: 0.30,            // tunable — fraction of crew weight (relative to ama buoyancy) that presses the ama deeper when crewPos>0 (FIX_REQUEST_step1_round2.md R2-1). Raised from 0.21 in round 3 (FIX_REQUEST_round3_worldframe.md R3-2): doubling the ama/crew righting levers to the full spacing (see stability.js) roughly halved amaLoad for a given heel moment, which — via this term's amaLoad-driven immersion floor — quietly cut the ama-drag penalty enough to let the TWA=40 close-hauled polar point creep past the "no meaningful progress below ~50deg" acceptance ratio (0.353 vs the 0.35 limit); this restores the same margin (0.338) without touching the threshold or the hull/yaw tunables the over-sheeting broach-cliff probe depends on.
+      // crewImmersionCoeff DELETED (F14, work-order-2026-07-30): the crew's
+      // effect on ama immersion is now DERIVED in hydro.js from the real
+      // buoyancy balance (crewPos*crew.mass vs ama.maxBuoyancy), not scaled by
+      // a tunable. The old 0.30 gave exactly 1/3 of the physical effect, and
+      // the comment it carried admitted it had been raised from 0.21 to keep a
+      // polar acceptance ratio in band — a knob fitted to a test threshold
+      // rather than to the float's buoyancy.
     },
 
     sail: {

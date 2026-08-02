@@ -220,11 +220,13 @@ export function runAsserts(config, { slow = true } = {}) {
   // of holding a plateau (P1). With both fixed, globalMax rose to its
   // true, properly-bounded value and the ratio fell back under 0.55
   // (measured 0.502) — promoted back to a real, always-must-pass check.
-  // Block B (F4/F6/F7, docs/adr/0007) pushed this back out of band, to 0.557
-  // against the 0.55 ceiling. The mechanism is entirely in the DENOMINATOR:
-  // removing the free power a fixed reference area gave a brailed rig cut
-  // globalMax at TWS6 from 5.61 to 4.86, while speed(40) barely moved (2.76
-  // -> 2.71 — a beat uses no brail, so block B hardly touches it). The
+  // Block B (F4/F6/F7, docs/adr/0007) pushed this back out of band, and F14
+  // moved it further, to 0.585 against the 0.55 ceiling. The mechanism is
+  // overwhelmingly in the DENOMINATOR: removing the free power a fixed
+  // reference area gave a brailed rig cut globalMax at TWS6 from 5.61 to 4.86,
+  // and F14's real crew-ballast cost took it to 4.59, while speed(40) barely
+  // moved across both (2.76 -> 2.71 -> 2.68 — a beat uses no brail, and its
+  // optimum has now left crewPos=1.0 at this wind entirely). The
   // criterion is a spec acceptance threshold, so it is re-tagged and reported
   // rather than retuned to pass — the same treatment round 10 gave it, and the
   // same rule the 2026-07-30 work order sets for its own thresholds ("if it
@@ -232,7 +234,7 @@ export function runAsserts(config, { slow = true } = {}) {
   // is 1.3% over a bound whose own wording is approximate ("~50deg").
   check('no meaningful progress below ~50deg TWA',
     bySpeed(40) < 0.55 * globalMax,
-    `speed(40)=${bySpeed(40).toFixed(2)} globalMax=${globalMax.toFixed(2)} ratio=${(bySpeed(40) / globalMax).toFixed(3)} -- block B (docs/adr/0007) cut globalMax 5.61->4.86 while speed(40) held; ratio is denominator-driven, reported not retuned`,
+    `speed(40)=${bySpeed(40).toFixed(2)} globalMax=${globalMax.toFixed(2)} ratio=${(bySpeed(40) / globalMax).toFixed(3)} -- block B + F14 cut globalMax 5.61->4.59 while speed(40) held (2.76->2.68); denominator-driven, reported not retuned`,
     'CALIBRATION');
   check('polar peak lands on a reach (90-135deg near the global max)', maxIn90to135 >= 0.85 * globalMax,
     `max@90-135=${maxIn90to135.toFixed(2)} globalMax=${globalMax.toFixed(2)}`);
@@ -305,16 +307,18 @@ export function runAsserts(config, { slow = true } = {}) {
   // tripwire, not an assertion: it says something changed, never what).
   // TWA100/TWS10 (the polar's own fastest TWS10 row) moves by ~0.4-0.6%
   // for a +-2% area change — narrow enough that either direction lands
-  // outside this band. Re-anchored twice during the 2026-07-30 audit, both
-  // times to an intended change: F1 (flying-ama drag sign) raised it ~9.76 ->
-  // ~10.07, then block B (F4/F6/F7, docs/adr/0007) brought it to ~9.62 by
-  // removing the free power a fixed reference area was giving a brailed rig.
-  // The band tracks the model and stays just as narrow, keeping its tripwire
-  // value for the NEXT unintended shift.
+  // outside this band. Re-anchored three times during the 2026-07-30 audit,
+  // each time by an intended change and each time having done its job of
+  // flagging one: F1 (flying-ama drag sign) ~9.76 -> ~10.07; block B
+  // (docs/adr/0007) -> ~9.62, removing the free power a fixed reference area
+  // gave a brailed rig; F14 (crew ballast from the real buoyancy balance) ->
+  // ~9.20, since this row's optimum leans on crew ballast. The band tracks the
+  // model and stays just as narrow, keeping its value for the NEXT unintended
+  // shift.
   {
     const row10 = computePolar(config, { twsList: [10], twaFrom: 100, twaTo: 100, step: 1 })[0];
-    check('R15: reach speed at TWS=10, TWA=100 is within a narrow absolute band [9.58,9.66] m/s',
-      row10.bestSpeed >= 9.58 && row10.bestSpeed <= 9.66,
+    check('R15: reach speed at TWS=10, TWA=100 is within a narrow absolute band [9.16,9.24] m/s',
+      row10.bestSpeed >= 9.16 && row10.bestSpeed <= 9.24,
       `speed=${row10.bestSpeed.toFixed(4)} m/s (sheet=${row10.bestSheetAngle})`);
   }
   } // if (slow) — section 3
@@ -1257,8 +1261,16 @@ export function runAsserts(config, { slow = true } = {}) {
     const maxAmaFx = Math.abs(amaDrag(uRef, phiPressed, 0.35, 1, config).Fx);
     const staticRatio = staticAmaFx / hullFx;
     const maxRatio = maxAmaFx / hullFx;
-    check('R7-4a: ama/hull drag ratio at static immersion is in [0.05,0.15] (re-derived R9-3 for the physical formFactor range)',
-      staticRatio >= 0.05 && staticRatio <= 0.15, `ratio=${staticRatio.toFixed(3)}`);
+    // Static band re-derived again for F14 (work-order-2026-07-30): the crew's
+    // share of the float's buoyancy is now taken from the real balance
+    // (crewPos*crew.mass / ama.maxBuoyancy) instead of 1/3 of it, so at this
+    // reference condition (crewPos=0.35) the ama genuinely floats deeper.
+    // Re-measured across the same physical formFactor range round 9 used
+    // (ITTC/Prohaska 1.1-1.4): static 0.145-0.185. Band brackets that span
+    // with margin rather than being reverse-engineered from the one
+    // configured value — the discipline R9-3's own comment asks for.
+    check('R7-4a: ama/hull drag ratio at static immersion is in [0.10,0.22] (re-derived for F14 across the physical formFactor range)',
+      staticRatio >= 0.10 && staticRatio <= 0.22, `ratio=${staticRatio.toFixed(3)}`);
     check('R7-4a: ama/hull drag ratio at max immersion is in [0.15,0.45] (re-derived R9-3 for the physical formFactor range)',
       maxRatio >= 0.15 && maxRatio <= 0.45, `ratio=${maxRatio.toFixed(3)}`);
 

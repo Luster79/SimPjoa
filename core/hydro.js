@@ -204,7 +204,7 @@ export function hullSideForce(u, v, crewPosX, config) {
 //   crew-immersion term removed by F1; it returns with the corrected
 //   crew/ama-buoyancy coupling in F14.)
 export function amaDrag(u, phi, crewPos, end, config) {
-  const { ama, rho_w, stability } = config;
+  const { ama, crew, rho_w, stability } = config;
   const DEG = Math.PI / 180;
   // Immersion derived from HEEL WITH SIGN (F1, work-order-2026-07-30). The
   // ama is pressed DEEPER as the boat heels toward it (phi<0) and lifts CLEAR
@@ -217,18 +217,37 @@ export function amaDrag(u, phi, crewPos, end, config) {
   //     (the floor that keeps wetted surface from vanishing there);
   //   - pressed (phi<0) it grows to full submersion by phiSubmergeDeg;
   //   - flying (phi>0) it fades to zero wetted area by phiLiftoffDeg.
-  const restingImmersion = 0.3;
+  // restingImmersion is the ama floating on its OWN weight: ama.mass /
+  // ama.maxBuoyancy = 25/80 = 0.31, which is where the hand-picked 0.30 came
+  // from — derived here rather than repeated as a literal.
+  const restingImmersion = ama.mass / ama.maxBuoyancy;
+
+  // Crew weight the AMA actually carries (F14, work-order-2026-07-30).
+  // On a rigid platform, taking moments about the hull centreline, a crew at
+  // crewPos (fraction of ama.spacing outboard) puts crewPos*crew.mass onto
+  // the float. Expressed as a fraction of the float's own buoyancy, that is
+  // the extra immersion it must take. At crewPos=1.0 this is 90/80 = 1.125 —
+  // MORE than the ama can float, so it goes under, which is the physically
+  // right answer and why crewPos above maxBuoyancy/crew.mass = 0.889 is
+  // unusable on this boat.
+  //   Previously this was `crewPos * crewImmersionCoeff * (crew.mass /
+  // maxBuoyancy)` with crewImmersionCoeff = 0.30 — i.e. exactly 1/3 of the
+  // physical effect, and a coefficient the config comment admits was raised
+  // from 0.21 to keep a polar acceptance ratio in band. It is now derived,
+  // not tuned, and crewImmersionCoeff is deleted.
+  const crewOnAma = Math.max(0, crewPos) * crew.mass / ama.maxBuoyancy;
+
+  // The crew's weight only immerses the float while the float is in the
+  // water: once the rig is lifting it clear (phi past phiLiftoffDeg) the crew
+  // is being lifted with it. Same liftoff fade the resting term uses.
   const phiSub = stability.phiSubmergeDeg * DEG;
   const phiLift = stability.phiLiftoffDeg * DEG;
   const immersion = phi < 0
-    ? restingImmersion + (1.3 - restingImmersion) * Math.min(1, -phi / phiSub)
-    : restingImmersion * Math.max(0, 1 - phi / phiLift);
+    ? Math.min(1.3, restingImmersion + crewOnAma + (1.3 - restingImmersion) * Math.min(1, -phi / phiSub))
+    : Math.min(1.3, (restingImmersion + crewOnAma) * Math.max(0, 1 - phi / phiLift));
 
   // Crew to LEEWARD (crewPos<0) eases the windward ama's wetted area a little
-  // (unchanged from round 4). The old crew-PRESSES-ama immersion term is gone
-  // with F1: a crew standing on a FLYING ama immersed nothing, the same sign
-  // bug. The crew-ballast vs ama-buoyancy coupling returns, correctly derived
-  // from the real buoyancy balance, in F14.
+  // (unchanged from round 4).
   const outboardRelief = 1 - 0.15 * (Math.max(0, -crewPos) / 0.3);
   const Seff = ama.wettedSurface * immersion * outboardRelief;
   // Skin friction at the ama's own (shorter) length, same ITTC-57 line the
