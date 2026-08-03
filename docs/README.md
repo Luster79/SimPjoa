@@ -24,6 +24,7 @@ Append-only. Never edit an old ADR; supersede it with a new one.
 | 0006 | Residuary tail plateau — supersedes 0001's *tail calibration* only |
 | 0007 | Composite sail CD + brail-effective area — supersedes 0003's CD *form* only |
 | 0008 | Windage |
+| 0009 | Data contract for digitised sources — every file in `data/` has a reader, its own method, and the source's own definitions |
 
 ## Work orders — what to do
 

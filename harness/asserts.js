@@ -235,9 +235,15 @@ export function runAsserts(config, { slow = true } = {}) {
   // the D-5 sail detune now that the hull isn't hiding the sail's real
   // power. Per this round's "re-anchor, don't silently keep or edit to
   // pass" process rule: re-derived against (a) the polar's own SHAPE
-  // (data/driving_force_vs_AWA.csv: Cdf already 0.55 at AWA=30, i.e. 32%
-  // of the AWA=90 peak — "no progress" upwind was never meant to read as
-  // near-zero, just markedly reduced) and (b) realistic absolute speeds
+  // (data/driving_force_vs_AWA.csv: CR at AWA=30 is a sizeable fraction of
+  // the peak — "no progress" upwind was never meant to read as near-zero,
+  // just markedly reduced. The numbers this originally quoted, 0.55 at
+  // AWA=30 and 32% of the AWA=90 peak, came from a digitisation withdrawn
+  // in S4a as wrong by up to 0.41; re-extracted they are <=0.45 and <=29%
+  // of the true peak of 1.57 at 110-115deg. The argument survives the
+  // correction — the fraction is materially unchanged — but the source
+  // numbers did not, so they are restated here rather than left standing)
+  // and (b) realistic absolute speeds
   // for a 5.5m/250kg/12m2 proa (the whole-round symptom table's own
   // healthy boat/wind ratio, ~0.6-1.0, holding across TWS 4-10 once the
   // wall is gone — see ROUND9 decision doc). TWA-40's ratio (measured

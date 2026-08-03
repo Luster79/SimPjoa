@@ -124,3 +124,129 @@ emit an explicit header list, so the byte-gated `out/polar.csv` is unaffected.
 
 84/84 assertions pass; four tracked `xfail`s (`CALIBRATION` on close-hauled
 progress, `STEERING` on the trim-in claim, plus S1a and S1b).
+
+---
+
+## Stage 1 — resolving the source (S4a)
+
+The work order could not get the full text ("JPS blocks automated access") and
+therefore left three candidate explanations open for the apparent factor-two
+disagreement between Di Piazza's Figures 3 and 4. The paper is in fact
+publicly downloadable from the journal's own OJS instance, one redirect below
+the landing page:
+`thepolynesiansociety.org/index.php/JPS/article/download/109/pdf/590`.
+
+### What the paper says
+
+Figure 2's caption defines every symbol, verbatim:
+
+> C_T is the resultant of both C_L and C_D.
+> **C_R is the driving force coefficient that is C_T projected onto the heading.**
+> α is the incidence of the sail relative to the apparent wind.
+> β is the angle which represents the trim of the sail relative to the heading.
+> **θ is the angle formed by the apparent wind and the heading**; it
+> characterises the point of sail.
+
+So **θ is the apparent wind angle** and **C_R is the driving force** — the
+resultant is C_T, a different symbol. Both figures normalise on the sail
+surface S (Table 1; `C_L = 2L/(ρ·S·v²)`), so they are directly comparable.
+Each Figure 4 point is the best over trim: the paper computes C_R at 5°
+increments of β and plots the maximum, "which represents a sail adjusted per
+heading".
+
+All three of the work order's candidate explanations are eliminated. It also
+resolves the question the other way round from how it was posed:
+
+### The source is not inconsistent — our digitisation was wrong
+
+Under `CR = CL·sin θ − CD·cos θ`, Figure 4 is pinned analytically at two
+headings, and both are readable off Figure 3:
+
+| heading | prediction | Fig 3 | Fig 4 (measured) |
+|---|---|---|---|
+| θ = 90° | `CR = CLmax` | 1.38–1.42 | 1.45 |
+| θ = 180° | `CR = CDmax` | ~1.30 | 1.29 |
+
+Both hold. Figures 3 and 4 are mutually consistent, and the standard
+projection is the right reading of the source.
+
+The disagreement was in `driving_force_vs_AWA.csv`. Re-extracted from the
+publisher PDF at 400 DPI by pixel measurement — axes calibrated off the
+plotted axis lines, curve taken as the topmost mid-grey run of ≥3 px per
+column, the run-length test rejecting anti-aliased edges of the black in-plot
+annotations — against the round-10 hand reading:
+
+| θ | re-extracted | round-10 CSV | error |
+|---|---|---|---|
+| 30 | ≤0.45 | 0.50 | above the all-sail maximum |
+| 50 | ≤0.82 | 1.00 | ≥ +0.18 |
+| 70 | 1.19 | 1.30 | +0.11 |
+| 90 | 1.45 | 1.45 | 0.00 |
+| 105 | 1.55 | 1.52 | −0.03 |
+| 120 | 1.56 | 1.40 | **−0.16** |
+| 140 | 1.47 | 1.20 | **−0.27** |
+| 160 | 1.46 | 1.05 | **−0.41** |
+
+The largest error is eight times the source's own stated ±0.05, and the shape
+is wrong, not just the scale: the real Santa Cruz curve holds a plateau of
+1.45–1.57 from ~100° to ~165°, where the digitised version peaked at 105° and
+fell away on both sides. At θ=30 the old value exceeds the best of *any* of
+the ten sails, so it is impossible independently of which curve is Santa Cruz.
+
+Above 55° the extraction is unambiguous, because the paper itself says so:
+"at heading angles greater than 55°, one Oceanic lateen (*Santa Cruz*)
+surpasses them all" — Santa Cruz *is* the topmost curve. Below 55° the ten
+curves overlap and it cannot be isolated, so those rows are recorded as a
+strict upper bound over all sails rather than guessed.
+
+### What this does to the work order's Part II.1
+
+Part II.1 concluded that the model's driving-force curve has the wrong shape —
+"half the measured force close-hauled, 30 % too much on free courses" — and
+that the model's plateau to 160° contradicts a measurement that peaks sharply
+at 105°. That conclusion was drawn against the bad column. Against the actual
+figure:
+
+| θ | model | Fig 4 | model/Fig 4 |
+|---|---|---|---|
+| 30 | 0.233 | ≤0.45 | ≤0.52 |
+| 50 | 0.614 | ≤0.82 | ≤0.75 |
+| 70 | 1.030 | 1.19 | 0.87 |
+| 90 | 1.378 | 1.45 | 0.95 |
+| 105 | 1.552 | 1.55 | 1.00 |
+| 120 | 1.631 | 1.56 | 1.05 |
+| 140 | 1.580 | 1.47 | 1.07 |
+| 160 | 1.362 | 1.46 | 0.93 |
+| 180 | 1.098 | 1.29 | 0.85 |
+
+**The shape criticism does not survive.** The measured curve has a broad
+plateau, like the model's; the model's peak sits at 125° against the source's
+110–115°, and from θ=85° to 180° the two agree within ±9 %. The "30 % too much
+downwind" was an artefact of the digitisation.
+
+**The upwind gap is real and larger than reported.** The model makes 38–75 %
+of the measured driving force at θ=20–50°, and that is against an *upper
+bound* — the true Santa Cruz shortfall is at least that large.
+
+This has a direct consequence for stage 2. S6 introduces a minimum sheeting
+angle, which can only *reduce* achievable drive close-hauled — the direction
+in which the model is already short. S6 should therefore be expected to widen
+this gap rather than close it, and the `xfail:CALIBRATION` on close-hauled
+progress should be read with that in mind rather than as something S6 is
+likely to fix.
+
+### Files
+
+`data/driving_force_vs_AWA.csv` rewritten: resolved definitions quoted from
+the paper, extraction method, re-extracted curve at 5° spacing from 20° to
+180°, series labelled `SantaCruz` or `upper_bound_all_sails`. Section B of
+`data/dipiazza_2014_digitized.csv` withdrawn in place with a note; section A
+is untouched and is now *better* supported than before, since Figure 4's two
+pinned headings independently confirm its CLmax and CDmax. The Micronesia
+column is dropped — unverifiable by this method, unread, and from the bad
+pass. `docs/adr/0009` records the data contract this establishes.
+
+The comparison assertion is **not** added here: it is S4(b), staged for stage
+4, after S6 has fixed the physical trim range it should be measured against.
+The file therefore still has no reader — that is the one part of S4 that
+remains open, deliberately.

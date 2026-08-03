@@ -1,6 +1,6 @@
 # Input data for a crab-claw proa simulator
 
-*Last reviewed: 2026-07-19*
+*Last reviewed: 2026-08-02*
 
 ## Files
 
@@ -13,13 +13,14 @@
    Santa Cruz wind-tunnel anchors. `CONFIG.sail.aeroTableVersion`
    ('v1'|'v2') switches between them at runtime (boat-design tab).
 3. **driving_force_vs_AWA.csv** — driving force coefficient (CR) vs
-   heading angle theta, Santa Cruz + Micronesia (round 10, R10-2:
-   replaces the old Marchaj-anchor/estimated-shape version).
+   apparent wind angle theta, Santa Cruz. Re-extracted 2026-08-02
+   (S4a); carries the definitions of CR and theta quoted from the
+   paper, and the extraction method. Read its header before using it.
 4. **example_proa_parameters.csv** — example boat parameterisation
    (order of magnitude per Gary Dierking's designs: T2 / Wa'apa).
-5. **dipiazza_2014_digitized.csv** — raw digitized source for files 2
-   and 3 (see provenance below): section A (CL/CD polar anchors, no
-   alpha given) and section B (CR vs theta).
+5. **dipiazza_2014_digitized.csv** — raw digitized source for file 2
+   (see provenance below): section A (CL/CD polar anchors, no alpha
+   given). Its section B (CR vs theta) is withdrawn — see file 3.
 6. **flay_2025_hull_sideforce_digitized.csv** — digitized hull
    side-force (CS vs leeway) for U/V1/V2 slender hull forms, feeding
    `core/hydro.js`'s `hullSideForce()` (round 10, R10-3).
@@ -95,18 +96,29 @@ real camber the Santa Cruz sail had, so applying the theoretical
 camber-boost multiplier on top would double-count it. Re-enable
 camber>0 only when `aeroTableVersion` is switched back to 'v1'.
 
-### Driving force vs heading (file 3, round 10, R10-2)
+### Driving force vs heading (file 3, round 10 R10-2; re-extracted 2026-08-02, S4a)
 Replaces the round-0 estimated curve (single Marchaj anchor at AWA=90,
 ~1.7 for crab claw / ~0.9 for Bermuda, with the *shape* between anchors
-an unsourced estimate). Now Di Piazza et al. 2014's own measured CR vs
-heading theta (Fig 4, optimal trim beta) for Santa Cruz (8 points,
-theta 30-160deg) and Micronesia (4 points) — `dipiazza_2014_digitized.csv`
-section B. No measured Bermuda-rig equivalent exists in this source, so
-that comparison column is dropped rather than left as a stale estimate;
-Marchaj's own ~1.7-at-AWA-90 anchor is now a documented **upper-bound**
-literature comparison, not a calibration target (Di Piazza's own
-measured Santa Cruz peak is 1.52 at theta=105, ~11% below Marchaj's
-figure for a nominally similar rig).
+an unsourced estimate) with Di Piazza et al. 2014's own measured CR vs
+theta (Fig 4, best over trim). No measured Bermuda-rig equivalent exists
+in this source, so that comparison column is dropped rather than left as
+a stale estimate; Marchaj's own ~1.7-at-AWA-90 anchor is a documented
+**upper-bound** literature comparison, not a calibration target.
+
+**Round 10's values were wrong and are superseded.** They were read off
+the figure by eye and were too high close-hauled (theta=30: 0.50, above
+the 0.45 that is the best of *any* of the ten sails there) and much too
+low downwind (theta=160: 1.05 against 1.46 — an error of 0.41, eight
+times this source's stated +-0.05). They also had the wrong *shape*: a
+peak at 105deg falling away on both sides, where the real curve holds a
+plateau of ~1.45-1.57 from about 100 to 165deg. The file now carries a
+400 DPI pixel extraction, its own method, and the definitions of theta
+and CR quoted from the paper. See `docs/adr/0009` for the decision and
+`docs/findings-2026-08-02-steering-and-sources.md` for the comparison
+against the model.
+
+The paper's Santa Cruz peak is **1.57 at theta 110-115**, ~8% below
+Marchaj's figure for a nominally similar rig.
 
 ### Hull side force (file 6, round 10, R10-3)
 `flay_2025_hull_sideforce_digitized.csv` — Flay, Irwin & Viola 2025

@@ -13,16 +13,14 @@ Tonga,CLmax,0.88,0.60,
 Tahiti,LDmax_region,0.60,0.08,L/D ~7.5 abrupt 2D stall
 Tahiti,CLmax,0.98,0.35,sharp CL collapse after
 # section B: driving force coefficient CR vs heading theta (Fig 4, optimal trim beta)
-sail,theta_deg,CR
-SantaCruz,30,0.50
-SantaCruz,50,1.00
-SantaCruz,70,1.30
-SantaCruz,90,1.45
-SantaCruz,105,1.52
-SantaCruz,120,1.40
-SantaCruz,140,1.20
-SantaCruz,160,1.05
-Micronesia,50,0.70
-Micronesia,90,1.05
-Micronesia,110,1.15
-Micronesia,140,1.00
+# WITHDRAWN 2026-08-02 (S4a). This section was digitised by eye and was wrong:
+# checked against a 400 DPI pixel extraction it was too high close-hauled
+# (theta=30: 0.50 against an all-sail upper bound of 0.45 — above what ANY of
+# the ten sails achieves) and much too low downwind (theta=160: 1.05 against
+# 1.46, an error of 0.41, eight times the source's stated +-0.05). It had the
+# curve falling away past its peak where the real one holds a plateau to
+# ~165 deg. Superseded by data/driving_force_vs_AWA.csv, which carries the
+# re-extracted curve, the extraction method, and the resolved definitions of
+# theta and CR quoted from the paper. Section A (Fig 3) is unaffected — it is
+# independently confirmed by Fig 4's two analytically-pinned headings
+# (CR(90)=CLmax, CR(180)=CDmax).
