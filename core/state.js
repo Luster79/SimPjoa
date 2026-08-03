@@ -83,6 +83,12 @@ export function createDefaultControls() {
     brailWind: 0,
     crewPos: 0,
     crewPosX: 0, // fore-aft crew position, -1..1 (FIX_REQUEST_round4_roll_dof.md 1.5)
+    // tackX (S2, work-order-2026-08-02): fore-aft position of the rig's tack,
+    // -1..1, referenced to the ACTIVE bow (+1 = toward it). This is how an
+    // Oceanic lateen actually steers — see core/aero.js's xCE geometry and
+    // docs/adr/0011. 0 is the neutral setting, at which the model is
+    // identical to what it was before this control existed.
+    tackX: 0,
     shuntRequest: false,
   };
 }

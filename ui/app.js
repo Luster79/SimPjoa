@@ -71,6 +71,7 @@ const TRANSLATIONS = {
     // both so the split isn't only discoverable by reading the source.
     'tooltip.brailWindZones': (pct) => `0-${pct}%: trim (carrot) — sail keeps drawing · ${pct}-100%: power dump — spills power, panic/furl`,
     'h.steering': 'Steering & trim', 'lbl.rudder': 'Rudder', 'hint.rudder': 'A/D deflect, auto-centers on release',
+    'lbl.tackX': 'Tack (fore/aft)', 'hint.tackX': 'Forward bears away, aft points up. This is how a proa steers — the oar is a last resort.',
     'lbl.oarDeployed': 'Oar in the water', 'hint.oarDeployed': 'A steering oar, not a fixed rudder: normally shipped. Put it in the water to steer — it costs speed while it is down',
     'lbl.crewPos': 'Crew position', 'hint.crewPos': 'Drag the dot, or J/L (lateral), I/K (fore-aft)',
     'pad.ama': 'ama', 'pad.leeward': 'leeward', 'pad.aft': 'aft', 'pad.fwd': 'fwd',
@@ -138,6 +139,7 @@ const TRANSLATIONS = {
     'lbl.brailWind': 'Gejtawa nawietrzna', 'hint.brailWind': 'W wybiera, X luzuje',
     'tooltip.brailWindZones': (pct) => `0-${pct}%: trym (marchewka) — żagiel dalej ciągnie · ${pct}-100%: zrzut mocy — panika/refowanie`,
     'h.steering': 'Sterowanie i wyważenie', 'lbl.rudder': 'Ster', 'hint.rudder': 'A/D wychyla ster, centruje się po puszczeniu',
+    'lbl.tackX': 'Hals (przód/tył)', 'hint.tackX': 'Do przodu — odpadanie, do tyłu — ostrzenie. Tak steruje proa; wiosło to ostateczność.',
     'lbl.oarDeployed': 'Wiosło w wodzie', 'hint.oarDeployed': 'Ster to wiosło, nie stały ster — normalnie jest wyjęte. Włóż je do wody, żeby sterować — zanurzone kosztuje prędkość',
     'lbl.crewPos': 'Pozycja załogi', 'hint.crewPos': 'Przeciągnij kropkę, lub J/L (bok), I/K (wzdłuż)',
     'pad.ama': 'ama', 'pad.leeward': 'zawietrzna', 'pad.aft': 'rufa', 'pad.fwd': 'dziób',
@@ -249,6 +251,7 @@ const sliders = {
   sheet: document.getElementById('sheet'),
   brailLee: document.getElementById('brailLee'),
   brailWind: document.getElementById('brailWind'),
+  tackX: document.getElementById('tackX'),
   rudder: document.getElementById('rudder'),
 };
 const outs = {
@@ -257,6 +260,7 @@ const outs = {
   sheet: document.getElementById('sheetOut'),
   brailLee: document.getElementById('brailLeeOut'),
   brailWind: document.getElementById('brailWindOut'),
+  tackX: document.getElementById('tackXOut'),
   rudder: document.getElementById('rudderOut'),
   crewPos: document.getElementById('crewPosOut'),
   crewPosX: document.getElementById('crewPosXOut'),
@@ -340,6 +344,7 @@ function syncSlidersFromControls() {
   sliders.sheet.value = String(Math.round(controls.sheet / DEG));
   sliders.brailLee.value = String(Math.round(controls.brailLee * 100));
   sliders.brailWind.value = String(Math.round(controls.brailWind * 100));
+  sliders.tackX.value = String(controls.tackX);
   sliders.rudder.value = String(controls.rudder);
   updateCrewDot();
   refreshOutputs();
@@ -381,6 +386,7 @@ function refreshOutputs() {
   outs.sheet.textContent = `${Math.round(controls.sheet / DEG)}°`;
   outs.brailLee.textContent = `${Math.round(controls.brailLee * 100)}%`;
   outs.brailWind.textContent = `${Math.round(controls.brailWind * 100)}%`;
+  outs.tackX.textContent = controls.tackX.toFixed(2);
   outs.rudder.textContent = controls.rudder.toFixed(2);
   outs.crewPos.textContent = controls.crewPos.toFixed(2);
   outs.crewPosX.textContent = controls.crewPosX.toFixed(2);
@@ -391,6 +397,7 @@ sliders.windSpeed.addEventListener('input', () => { controls.windSpeed = Number(
 sliders.sheet.addEventListener('input', () => { controls.sheet = Number(sliders.sheet.value) * DEG; refreshOutputs(); });
 sliders.brailLee.addEventListener('input', () => { controls.brailLee = Number(sliders.brailLee.value) / 100; refreshOutputs(); });
 sliders.brailWind.addEventListener('input', () => { controls.brailWind = Number(sliders.brailWind.value) / 100; refreshOutputs(); });
+sliders.tackX.addEventListener('input', () => { controls.tackX = Number(sliders.tackX.value); refreshOutputs(); });
 sliders.rudder.addEventListener('input', () => { autoRudder = false; controls.rudder = Number(sliders.rudder.value); refreshOutputs(); });
 
 // Crew position 2D pad: one draggable dot standing in for the old crewPos
@@ -1771,7 +1778,11 @@ function drawBoat(state, forces, cam) {
     const halfChord = chord / 2;
     const ceBrailShift = dims.sail.ceBrailShift ?? 0.3;
     const halfChordEffX = halfChord * (1 - ceBrailShift * (controls.brailWind ?? 0));
-    const ceX = tackX - halfChordEffX * Math.cos(state.delta ?? 0);
+    // S2: the tack trim moves the CE for real (core/aero.js), so the drawn CE
+    // has to move with it — otherwise the marker contradicts the slider the
+    // user is dragging.
+    const tackTrim = state.end * (controls.tackX ?? 0) * (dims.sail.tackTravel ?? 0);
+    const ceX = tackX + tackTrim - halfChordEffX * Math.cos(state.delta ?? 0);
     const ceY = -state.end * halfChord * Math.sin(state.delta ?? 0);
     // Same effective CLR the side-view marker and the physics use, so the
     // green side-force vector originates from the true pivot (incl. the crew

@@ -221,6 +221,81 @@ export function runAsserts(config, { slow = true } = {}) {
       minWidth >= 15 && minOff >= 0.50, `${detail} -- worst width=${minWidth.toFixed(1)}deg worst off20=${(minOff * 100).toFixed(0)}%`);
   }
 
+  // --- 3c. Tack-position steering (S2, work-order-2026-08-02) ---
+  // The mechanism the model did not have. Before tackX, the helm lever
+  // (xCE - clrX) could not reach zero at ANY trim: `lead` (0.33 m) exceeds
+  // the whole trim-driven excursion (halfChordEff, 0.25 m), so the lever was
+  // positive by construction and the sail could only modulate the magnitude
+  // of a moment whose sign was fixed. Moving the tack is what a real Oceanic
+  // lateen steers with (Dierking; Proafile), and it moves the CE far enough
+  // to cross zero.
+  //
+  // Measured on a grid and reported as an aggregate — the method that
+  // exposed the sheet-trim claim — rather than at one operating point.
+  // Direction is the classical one and holds at every point measured: tack
+  // AFT points up, tack FORWARD bears away.
+  {
+    const tackTurn = (twa, tws, sheetDeg, crewPos, tackX) => {
+      const windDirFrom = HEADING0 + twa * DEG;
+      let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 1.0, v: 0, r: 0, phi: 0, p: 0,
+        delta: sheetDeg * DEG, end: 1, amaLoad: 0, abackTimer: 0, capsized: false,
+        shunt: { phase: 'none', progress: 0 } };
+      const controls = { windDirFrom, windSpeed: tws, sheet: sheetDeg * DEG, rudder: 0,
+        rudderUp: false, brailLee: 0, brailWind: 0, crewPos, crewPosX: 0, tackX: 0,
+        shuntRequest: false };
+      // Settle on course under the autopilot at the NEUTRAL tack, so the only
+      // thing that differs between the two runs is the tack move itself.
+      for (let i = 0; i < Math.round(30 / config.dt); i++) {
+        controls.rudder = headingHoldRudder(state, HEADING0, config);
+        state = integrate(state, controls, config, config.dt);
+      }
+      const headingBefore = state.heading;
+      controls.rudder = 0;
+      controls.tackX = tackX;
+      for (let i = 0; i < Math.round(10 / config.dt); i++) state = integrate(state, controls, config, config.dt);
+      // + = heading increased = TWA fell = pointing up.
+      return { turn: normalizeAngle(state.heading - headingBefore) / DEG, capsized: state.capsized };
+    };
+
+    const points = [[70, 6, 8, 0.3], [90, 6, 16, 0.3], [110, 6, 32, 0.3],
+      [70, 10, 16, 1.0], [90, 10, 20, 1.0], [110, 10, 28, 0.6]];
+    const rows = points.map(([twa, tws, sh, cw]) => {
+      const aft = tackTurn(twa, tws, sh, cw, -1);
+      const fwd = tackTurn(twa, tws, sh, cw, +1);
+      return { twa, tws, aft: aft.turn, fwd: fwd.turn, capsized: aft.capsized || fwd.capsized };
+    });
+    // The claim is DIFFERENTIAL — moving the tack aft points the boat up
+    // relative to moving it forward — so it is stated against the neutral
+    // helm the boat already has (S1a: it luffs up on its own), not as an
+    // absolute turn direction.
+    const good = rows.filter((r) => r.aft - r.fwd >= 2 && !r.capsized).length;
+    const worst = Math.min(...rows.map((r) => r.aft - r.fwd));
+    check('S2: moving the tack steers -- aft points up relative to forward, >=2deg over 10s, on a grid (TWA 70/90/110 x TWS 6/10)',
+      good === rows.length,
+      `${good}/${rows.length} points -- ` +
+      rows.map((r) => `TWS${r.tws}/TWA${r.twa}: aft${r.aft >= 0 ? '+' : ''}${r.aft.toFixed(0)} fwd${r.fwd >= 0 ? '+' : ''}${r.fwd.toFixed(0)} (spread ${(r.aft - r.fwd).toFixed(0)}deg)`).join(' ') +
+      ` -- worst spread=${worst.toFixed(1)}deg`);
+  }
+
+  // S2, structural half: the helm lever must CHANGE SIGN inside the
+  // available tack range, at every trim. This is the property the whole
+  // mechanism rests on and it is exact geometry, so it is checked directly
+  // rather than inferred from the turn rates above. Before tackX the lever
+  // was `lead - halfChordEff*cos(delta)` with lead=0.33 > halfChordEff=0.25,
+  // i.e. positive for every delta — a sail that can modulate the size of a
+  // yaw moment but never its direction. That, not "the claim is fragile",
+  // is why xfail:STEERING could not hold.
+  {
+    const halfChordEff = (config.sail.CEheight / 2 / 2) * (config.sail.ceSwingFraction ?? 0.5);
+    const lever = (deltaDeg, tackX) => config.hull.lead + tackX * (config.sail.tackTravel ?? 0)
+      - halfChordEff * Math.cos(deltaDeg * DEG);
+    const trims = [0, 15, 30, 45, 60, 75, 90];
+    const crossing = trims.filter((d) => lever(d, -1) < 0 && lever(d, +1) > 0);
+    check('S2: the helm lever (xCE - clrX) changes sign inside the tack range at every trim',
+      crossing.length === trims.length,
+      `${crossing.length}/${trims.length} trims cross zero -- at delta=0: ${lever(0, -1).toFixed(3)}m (tack aft) to ${lever(0, 1).toFixed(3)}m (fwd); at delta=90: ${lever(90, -1).toFixed(3)} to ${lever(90, 1).toFixed(3)} -- pre-S2 range was ${(config.hull.lead - halfChordEff).toFixed(3)}..${config.hull.lead.toFixed(3)}m, positive throughout`);
+  }
+
   // --- 3. Polar shape + speed anchor (TWS=6) --- (slow: computePolar sweep)
   if (slow) {
   const polar = computePolar(config, { twsList: [6], twaFrom: 40, twaTo: 170, step: 10 });
@@ -293,7 +368,7 @@ export function runAsserts(config, { slow = true } = {}) {
   // is 1.3% over a bound whose own wording is approximate ("~50deg").
   check('no meaningful progress below ~50deg TWA',
     bySpeed(40) < 0.55 * globalMax,
-    `speed(40)=${bySpeed(40).toFixed(2)} globalMax=${globalMax.toFixed(2)} ratio=${(bySpeed(40) / globalMax).toFixed(3)} -- block B + F14 cut globalMax 5.61->4.59 while speed(40) held (2.76->2.68), leaving this denominator-driven; S6's geometric sheeting floor then cut the NUMERATOR too (speed(40) 2.40->2.27, ratio 0.591->0.558), the first movement here that is not denominator-driven. Still failing, still reported not retuned`,
+    `speed(40)=${bySpeed(40).toFixed(2)} globalMax=${globalMax.toFixed(2)} ratio=${(bySpeed(40) / globalMax).toFixed(3)} -- block B + F14 cut globalMax 5.61->4.59 while speed(40) held (2.76->2.68), leaving this denominator-driven; S6's geometric sheeting floor then cut the NUMERATOR too (speed(40) 2.40->2.27, ratio 0.591->0.558), the first movement here that is not denominator-driven, and S2's tack trim gave part of it back (2.27->2.37, 0.558->0.583) by letting the boat null its helm and stop dragging the oar sideways. Still failing, still reported not retuned`,
     'CALIBRATION');
   check('polar peak lands on a reach (90-135deg near the global max)', maxIn90to135 >= 0.85 * globalMax,
     `max@90-135=${maxIn90to135.toFixed(2)} globalMax=${globalMax.toFixed(2)}`);
@@ -348,7 +423,7 @@ export function runAsserts(config, { slow = true } = {}) {
   // and S2/S3 are meant to remove it structurally by giving the model the
   // tack-position / leeboard steering a real proa has.
   {
-    const helmRelease = (row, oarUp) => {
+    const helmRelease = (row, oarUp, tackX = 0) => {
       const windDirFrom = HEADING0 + row.twa * DEG;
       const twaOf = (heading) => {
         const a = (((windDirFrom - heading) / DEG) % 360 + 360) % 360;
@@ -359,7 +434,7 @@ export function runAsserts(config, { slow = true } = {}) {
         shunt: { phase: 'none', progress: 0 } };
       const controls = { windDirFrom, windSpeed: row.tws, sheet: row.bestSheetAngle * DEG, rudder: 0,
         rudderUp: false, brailLee: 0, brailWind: row.bestBrailWind, crewPos: row.bestCrewPos,
-        crewPosX: 0, shuntRequest: false };
+        crewPosX: 0, tackX: 0, shuntRequest: false };
       for (let i = 0; i < Math.round(45 / config.dt); i++) {
         controls.rudder = headingHoldRudder(state, HEADING0, config);
         state = integrate(state, controls, config, config.dt);
@@ -368,6 +443,7 @@ export function runAsserts(config, { slow = true } = {}) {
       const speedBefore = Math.hypot(state.u, state.v);
       controls.rudder = 0;
       controls.rudderUp = oarUp;
+      controls.tackX = tackX;
       for (let i = 0; i < Math.round(60 / config.dt); i++) state = integrate(state, controls, config, config.dt);
       return {
         twa: row.twa, tws: row.tws,
@@ -391,7 +467,7 @@ export function runAsserts(config, { slow = true } = {}) {
       nWithin === deployed.length,
       `${nWithin}/${deployed.length} points within 15deg, worst=${worstExcursion.toFixed(1)}deg -- ` +
       deployed.map((d) => `TWS${d.tws}/TWA${d.twa}:${d.excursion.toFixed(0)}deg`).join(' ') +
-      ' -- FAILS EVERYWHERE. The criterion hull.lead was calibrated against no longer holds: F9 gave the oar real inflow-driven force and F10 removed the artificial yaw damping, and between them the boat lost its own directional stability. NOT to be fixed by re-picking lead (2.7cm knife edge) -- S2/S3 in work-order-2026-08-02 remove it structurally',
+      ' -- FAILS EVERYWHERE at the neutral tack. The criterion hull.lead was calibrated against no longer holds: F9 gave the oar real inflow-driven force and F10 removed the artificial yaw damping, and between them the boat lost its own directional stability. NOT fixed by re-picking lead (2.7cm knife edge). Left failing deliberately rather than redefined: S2 gave the boat a tack control that DOES hold every one of these points rudder-free -- see the S2 course-hold check below -- and this line is what the boat does when that control is left at neutral',
       'STEERING');
 
     // (b) Oar shipped — the state README.md and core/rudder.js both call the
@@ -408,6 +484,35 @@ export function runAsserts(config, { slow = true } = {}) {
       shipped.map((s) => `TWS${s.tws}/TWA${s.twa}:->TWA${s.twaAfter.toFixed(0)} v${(s.speedRatio * 100).toFixed(0)}%${s.capsized ? ' CAPSIZED' : ''}`).join(' ') +
       ' -- the boat has no directional stability of its own: the 0.15m2 blade on the stern supplies it, and almost all of that force comes from INFLOW (leeway + yaw rate), not from deflection. Structural, not a tuning gap; see work-order-2026-08-02 part I.3.1',
       'STEERING');
+
+    // (c) S2's payoff, and the reason S1a is left failing rather than
+    // redefined. S1a measures the boat at the SPEED-optimal trim with the
+    // tack at neutral, and there it still wanders 19-52deg. But the tack is
+    // now a control, and with it the helm can be balanced directly: at every
+    // one of these six points there is a tack setting that holds the course
+    // rudder-free, well inside round 10d's original 15deg/60s ceiling.
+    //   This is what "hull.lead stops being the knob" actually looks like.
+    // The old value is untouched; it simply no longer has to be right,
+    // because the boat can now trim out whatever bias it leaves.
+    //   Note what it does NOT fix: S1b (oar shipped) still fails at every
+    // point, and no tack setting rescues it. Balancing the helm removes a
+    // steady bias; it does not create directional STABILITY, which is what
+    // the shipped-oar case is missing. That is S3's job.
+    const tackTrials = [0.25, 0.5, 0.75];
+    const holders = grid.map((row) => {
+      const found = tackTrials
+        .map((t) => ({ t, ...helmRelease(row, false, t) }))
+        .filter((r) => r.excursion <= 15 && r.speedRatio >= 0.5 && !r.capsized);
+      return { twa: row.twa, tws: row.tws, found };
+    });
+    const nHeld = holders.filter((h) => h.found.length > 0).length;
+    check('S2: with the tack as a control, a rudder-free course hold exists at every operating point (round 10d H1 ceiling, 15deg/60s)',
+      nHeld === holders.length,
+      `${nHeld}/${holders.length} points -- ` +
+      holders.map((h) => {
+        const b = h.found.reduce((a, r) => (r.excursion < a.excursion ? r : a), h.found[0]);
+        return h.found.length ? `TWS${h.tws}/TWA${h.twa}: tackX=${b.t} exc=${b.excursion.toFixed(1)}deg v=${(b.speedRatio * 100).toFixed(0)}%` : `TWS${h.tws}/TWA${h.twa}: NONE`;
+      }).join(' '));
   }
 
   // Smoothness: an isolated >20% drop between adjacent TWA rows in 60-170

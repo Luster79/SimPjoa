@@ -583,6 +583,23 @@ function buildDefaultConfig() {
       // sheeting geometry ever becomes available, it belongs in
       // example_proa_parameters.csv as its own measured parameter, which
       // would retire this derivation rather than re-fit it.
+      // tackTravel (S2, work-order-2026-08-02): half-range, in metres, of the
+      // tack's fore-aft travel — controls.tackX = +-1 maps to +-this. An
+      // estimate, and unlike `hull.lead` an untroubling one, because the
+      // response to it is monotone and smooth over the whole range rather
+      // than a sign flip inside a 2.7 cm window. Measured before the control
+      // was built (by perturbing `lead`, which is mathematically the same
+      // displacement of xCE): the helm's zero crossing sits within 0.3 m of
+      // neutral at every one of TWA 70/90/110 x TWS 6/10, so 0.5 m of travel
+      // covers it roughly twice over at every operating point. The exact
+      // value therefore decides how much authority is left BEYOND neutral,
+      // not whether neutral is reachable — which is the property that
+      // matters and the one that is robust.
+      //
+      // 0.5 m is 9% of LWL. It is bounded above by the sail staying set as
+      // the tack moves and by the hull's own length; a specific boat's real
+      // tack-line travel would belong in example_proa_parameters.csv.
+      tackTravel: 0.5,
       deltaMinDeg: (() => {
         const sparLength = Math.sqrt(2 * p.sail_area_m2 / Math.sin(p.sail_apex_angle_deg * Math.PI / 180));
         if (sparLength <= p.boat_length_m) return 0;

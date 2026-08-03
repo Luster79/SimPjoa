@@ -504,7 +504,26 @@ export function sailForces(state, controls, config) {
   const yceBrailShift = config.sail.yceBrailShift ?? 0.6;
   const halfChordEff = halfChord * ceSwingFraction * (1 - ceBrailShift * brailWind);
   const halfChordEffY = halfChord * ceSwingFraction * (1 - yceBrailShift * brailWind);
-  const xCE = clrXNeutral + lead - halfChordEff * Math.cos(delta);
+  // tackX (S2, work-order-2026-08-02): the rig's own fore-aft position, the
+  // steering control this model did not have. On an Oceanic lateen the tack
+  // travels along the hull and the mast's rake is adjustable, so the CE moves
+  // longitudinally by a real distance — Dierking has the yard's heel sliding
+  // under the gunwale on an endless tack line, and Proafile notes that a
+  // fixed-halyard bridle "removes some of the flexibility of moving the
+  // centre of effort, both fore and aft and vertically", i.e. designers treat
+  // the movable CE as a feature they can choose to give up. Before this, the
+  // whole helm balance rested on the single constant `lead`, and the lever
+  // (xCE - clrX) could not reach zero at any trim: `lead` (0.33 m) exceeds
+  // the entire trim-driven excursion (halfChordEff, 0.25 m), so the
+  // expression was positive by construction.
+  //
+  // Sign: referenced to the ACTIVE bow, so it flips with `end`. At a shunt
+  // the tack walks to the new bow and the rake reverses with it; without the
+  // `end` factor the boat would come out of every shunt with its helm
+  // balance mirrored.
+  const tackTravel = config.sail.tackTravel ?? 0;
+  const tackOffset = state.end * (controls.tackX ?? 0) * tackTravel;
+  const xCE = clrXNeutral + lead + tackOffset - halfChordEff * Math.cos(delta);
   const yCE = -state.end * halfChordEffY * Math.sin(delta);
 
   // Heel-course coupling (pure geometry, FIX_REQUEST_round4_roll_dof.md

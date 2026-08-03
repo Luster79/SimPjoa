@@ -103,11 +103,11 @@ const HEADING_HOLD_TOLERANCE = 15 * DEG;
 // look flat, and maxSeconds raised 25->35 to give slow trims enough
 // runway to actually reach it (verified against the diagnostic's own
 // case: settles at t=29s, speed 7.382, within 0.02% of the 400s value).
-function simulateToSteady(config, twaDeg, tws, sheetDeg, crewPos, brailWind = 0, maxSeconds = 35) {
+function simulateToSteady(config, twaDeg, tws, sheetDeg, crewPos, brailWind = 0, tackX = 0, maxSeconds = 35) {
   const windDirFrom = HEADING0 + twaDeg * DEG;
   const controls = {
     windDirFrom, windSpeed: tws, sheet: sheetDeg * DEG, rudder: 0,
-    brailLee: 0, brailWind, crewPos, crewPosX: 0, shuntRequest: false,
+    brailLee: 0, brailWind, crewPos, crewPosX: 0, tackX, shuntRequest: false,
   };
 
   let state = makeInitialState(Math.min(Math.abs(sheetDeg) * DEG, Math.PI / 2));
@@ -162,6 +162,22 @@ const CREW_POS_SEARCH = [0, 0.3, 0.6, 1.0];
 // its middle.
 const BRAIL_SEARCH_DEEP = [0, 0.3, 0.6];
 
+// TACKX_SEARCH (S2, work-order-2026-08-02): the rig's fore-aft position is a
+// real trim, so the polar searches it — freezing it at 0 would have reported
+// a boat sailing with its helm permanently out of balance. Restricted to
+// close-hauled headings, and the restriction is measured, not assumed. Speed
+// gain of the best tackX over tackX=0, TWS 6: TWA 45 +3.45%, TWA 70 +0.92%,
+// TWA 90 +0.00%, TWA 110 +0.11%, and TWA 90 at TWS 10 +0.04%. Past ~70deg
+// the boat has little helm left for the tack to null out, and what is left
+// is inside the search's own noise.
+//   Negative (tack aft) is excluded for the same measured reason it is
+// included nowhere else: it LOSES close-hauled (TWA 45 -5.4%, TWA 70 -2.0%)
+// and its best showing anywhere is +0.11%, which is noise. It remains fully
+// available as a CONTROL — it is how the boat points up — it just never wins
+// a steady-state speed contest, which is the only question this sweep asks.
+const TACKX_SEARCH = [0, 0.5, 1];
+const TACKX_SEARCH_TWA_MAX = 70;
+
 // bestForHeading as a GENERATOR, yielding once per individual trial. A whole
 // heading is far too coarse a unit of work to hand a UI: measured 3-12.5s of
 // solid main-thread time per heading, so an interactive caller that only got
@@ -169,14 +185,17 @@ const BRAIL_SEARCH_DEEP = [0, 0.3, 0.6];
 // of them for the full sweep). One trial is ~10-100ms, which a caller can
 // batch to whatever frame budget it actually has. Node callers just drain it.
 function* bestForHeadingSteps(config, twaDeg, tws) {
-  let best = { speed: 0, sheet: 0, delta: 0, crewPos: 0, brailWind: 0 };
+  let best = { speed: 0, sheet: 0, delta: 0, crewPos: 0, brailWind: 0, tackX: 0 };
   const brailOptions = twaDeg >= 135 ? BRAIL_SEARCH_DEEP : [0];
+  const tackOptions = twaDeg <= TACKX_SEARCH_TWA_MAX ? TACKX_SEARCH : [0];
   for (let sheet = 4; sheet <= 88; sheet += 4) {
     for (const crewPos of CREW_POS_SEARCH) {
       for (const brailWind of brailOptions) {
-        const { speed, settled, deltaDeg } = simulateToSteady(config, twaDeg, tws, sheet, crewPos, brailWind);
-        if (settled && speed > best.speed) best = { speed, sheet, delta: deltaDeg, crewPos, brailWind };
-        yield;
+        for (const tackX of tackOptions) {
+          const { speed, settled, deltaDeg } = simulateToSteady(config, twaDeg, tws, sheet, crewPos, brailWind, tackX);
+          if (settled && speed > best.speed) best = { speed, sheet, delta: deltaDeg, crewPos, brailWind, tackX };
+          yield;
+        }
       }
     }
   }
@@ -199,6 +218,10 @@ function polarRow(config, twa, tws, best) {
     // header is written out explicitly in run_tests.js and ui/app.js, so the
     // byte-gated out/polar.csv is unaffected.
     bestCrewPos: best.crewPos,
+    // bestTackX (S2): like bestCrewPos, reported on the row but deliberately
+    // NOT added to the exported CSV header, which is written out explicitly
+    // in run_tests.js and ui/app.js.
+    bestTackX: best.tackX,
   };
 }
 

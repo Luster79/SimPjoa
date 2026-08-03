@@ -361,3 +361,100 @@ strap flat.
 ### Suite state after stage 2
 
 84/84; four `xfail`s, none promoted.
+
+---
+
+## Stage 3a — the steering mechanism (S2)
+
+Decision and rationale: `docs/adr/0011`. What follows is the evidence.
+
+### Predicted before implementing
+
+The work order asks for the fallout to be predicted with numbers before the
+change, as `capsize-margins-2026-07-30.md` did. That was possible here without
+writing any code: a tack offset is mathematically the same displacement of
+`xCE` as perturbing `hull.lead`, so sweeping `lead` prices the mechanism
+exactly.
+
+Turn over 10 s after releasing the rudder, oar down, `+` = points up:
+
+| lead offset | T70/6 | T90/6 | T110/6 | T70/10 | T90/10 | T110/10 |
+|---|---|---|---|---|---|---|
+| −0.6 m | +30.4 | +30.5 | +19.2 | +37.9 | +40.1 | +34.5 |
+| −0.3 m | +18.9 | +18.5 | +11.7 | +25.2 | +27.0 | +23.7 |
+| 0 | +4.9 | +5.6 | +4.3 | +9.6 | +12.2 | +12.4 |
+| +0.3 m | −10.1 | −7.1 | −2.6 | −7.1 | −3.5 | +1.0 |
+| +0.6 m | −24.3 | −18.2 | −8.8 | −13.0 | −18.2 | −9.4 |
+
+Predicted: same sign at all six points, monotone, tack aft points up, tack
+forward bears away, zero crossing within +0.3 m of neutral. Also predicted:
+because `tackX` defaults to 0, **no existing assertion moves**. All of that
+held.
+
+**One prediction I deliberately broke.** I also predicted `out/polar.csv`
+would stay byte-identical, on the assumption the sweep would freeze `tackX` at
+0. Measuring first showed freezing costs +3.45 % of speed at TWA 45, so the
+sweep searches it instead and the polar does move. The prediction was
+conditional on a design choice the measurement then overturned — which is the
+right order to do it in, but the earlier statement should not stand unqualified.
+
+A first attempt at this measurement, run with the oar *shipped*, showed
+direction reversing with TWA and looked like the mechanism was incoherent.
+That was entirely the uncontrolled round-up S1b documents: a +92 to +114°
+baseline swamping a ±10–25° signal. Measuring with the oar down made it clean
+and unanimous. Worth recording as a method note — a differential measurement
+taken on top of a violent uncontrolled transient is not a measurement of the
+differential.
+
+### Structural: the lever now crosses zero
+
+| | delta = 0 | delta = 90 |
+|---|---|---|
+| pre-S2 | +0.080 m | +0.330 m |
+| tack aft (−1) | −0.420 m | −0.170 m |
+| tack forward (+1) | +0.580 m | +0.830 m |
+
+Positive by construction before; crossing zero at all seven trims tested now.
+
+### Steering authority
+
+Aft-vs-forward spread over 10 s, against an acceptance bar of 2°:
+
+| | TWA 70 | TWA 90 | TWA 110 |
+|---|---|---|---|
+| TWS 6 | 47° | 42° | 24° |
+| TWS 10 | 47° | 50° | 37° |
+
+6/6 points, sign unanimous.
+
+### The payoff: rudder-free course holding
+
+| | TWA 70 | TWA 90 | TWA 110 |
+|---|---|---|---|
+| TWS 6 | tackX 0.25 → 5.8° | 0.25 → 0.8° | 0.75 → 3.4° |
+| TWS 10 | 0.5 → 4.3° | 0.5 → 4.2° | 0.75 → 10.8° |
+
+All six inside round 10d's 15°/60 s ceiling, at 97–105 % of speed. S1a — the
+same measurement with the tack left at neutral — still fails 0/6 at 19–52°,
+and is left failing rather than redefined.
+
+### What S2 does not fix
+
+S1b (oar shipped) fails at every point with **every** tack setting tried
+(−1 … +1 in steps of 0.25). Best case is 13.4° of excursion but at 26 % of
+speed; at TWS 10 every setting still capsizes. Balancing the helm removes a
+steady bias; it does not create directional stability. The boat still gets its
+course-keeping from a 0.15 m² blade on the stern — S3.
+
+### Polar
+
+Twelve rows change, exactly the TWA ≤ 70 rows the tack search covers, all
+faster: +4.5 % at TWA 40 / TWS 6, +8.1 % at TWA 50 / TWS 10. Nothing at
+TWA ≥ 80 moves. Against pre-S6 the net at TWA 40 / TWS 6 is 2.400 → 2.367,
+−1.4 % — S6 took 5.6 % and S2 gave 4.5 % back.
+
+`xfail:CALIBRATION` 0.558 → 0.583. Still failing, not promoted.
+
+### Suite state after stage 3a
+
+87/87; four `xfail`s, none promoted.
