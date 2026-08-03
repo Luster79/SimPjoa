@@ -965,3 +965,80 @@ conclusion happens to be right and the reasoning that produced it was wrong —
 it rested on the transcription error. The section above supersedes it. The
 earlier one is left in place, marked, because being right for the wrong reason
 is worth being able to see.
+
+---
+
+## AC-1/AC-4: two missing mechanisms supplied (2026-08-03)
+
+Decision: `docs/adr/0015`. Instructed to fix the imbalance, I found two of the
+manual's named mechanisms were not merely weak but **absent**, and both had
+been compensated for in the wrong place.
+
+### The ama made no waves
+
+`amaDrag` was skin friction only; the hull has had friction + a residuary hump
+since R9-1. The ama is shorter, so at any boat speed it sits at a *higher*
+Froude number — 0.68 vs the hull's 0.54 at 4 m/s. It was making no wave drag at
+8 knots.
+
+The history is the tell. Round 7 set `ama.formFactor = 3.3` — 2–3× any physical
+(1+k) — because it "was the minimum ama-drag authority that kept T1's
+crew-toward-ama steering leg correctly signed". Round 9 cut it to a physical
+1.2 and dropped the criterion. **Both were right about their own point.** The
+missing piece was never the form factor; half the float's resistance did not
+exist.
+
+Validation, against the project's own R7-1 anchor rather than against the new
+number:
+
+| ama drag / hull drag (u = 1.6) | R7-1 target | before | after |
+|---|---|---|---|
+| static immersion | 10–25 % | 9 % | 9 % |
+| maximum immersion | 50–80 % | 29 % | **38 %** |
+
+**Still short of the target at both ends.** The change moves toward the
+documented anchor, not past it, and never approaches parity at any speed from
+1.6 to 6 m/s.
+
+### The brail had no CE shift of its own
+
+The manual gives the brail its own mechanism and no trim dependence: spilling
+the leech takes area off the *back* of the sail, so the CE moves forward and
+the bow bears away. The model's only path from `brailWind` to `xCE` was
+shrinking the trim swing's amplitude — and ADR 0014 then multiplied that by
+`(1 − cos δ)`, collapsing it to **1.8 cm at δ = 40°**, exactly where AC-4 is
+measured. My own change had made it worse.
+
+The decisive test was zeroing the heel→yaw coupling: AC-4.2a stayed just as
+wrong. That is only possible if the brail's own mechanism was effectively
+absent and its bear-away was riding the heel term.
+
+`sail.ceBrailXShift = 0.167 m` (= chord/6, the centroid shift from spilling the
+rear third), independent of trim. **AC-4.2a 4/6 → 6/6, AC-4.2b 3/6 → 5/6**,
+AC-4.1 still 6/6.
+
+### AC-1 is still not satisfied
+
+With both mechanisms present and correctly scaled, the conflict survives: the
+crew group still needs `yawHeelSign = -1` and the brail group still needs `+1`.
+Strengthening each group's own mechanism was necessary and not sufficient.
+
+That sharpens the diagnosis rather than resolving it. The heel→yaw term puts
+the *entire* heel-to-yaw response in the rig —
+`yawHeelSign · end · CEheight · sin(φ) · Fx` — while the dominant real-world
+mechanism is the asymmetry of a heeled *hull*, which the model does not
+represent at all. The next step is a new term, not a re-scaling of this one.
+
+Left at `+1`, which the suite and polar are measured against.
+
+### Cost
+
+`out/polar.csv`: every row slower, median **−0.93 %**, worst −4.7 % at
+TWA 50 / TWS 10. A float that makes waves is slower than one that does not.
+
+Two assertions moved, both with reasons that are not "the number changed":
+the ama-drag band re-anchored on the R7-1 ratio evidence above; and `C-A`
+(dead-run release under 20°/min) demoted to `xfail` at 35.5°/min, because the
+manual prescribes the *paddle* for downwind steering — *"when the sail creates
+too much weather helm for weight-shift steering to be effective"* — so a
+released rudder on a dead run is not something the source claims is holdable.

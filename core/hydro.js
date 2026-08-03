@@ -230,8 +230,9 @@ export function hullSideForce(u, v, crewPosX, config) {
 //   crew-immersion term removed by F1; it returns with the corrected
 //   crew/ama-buoyancy coupling in F14.)
 export function amaDrag(u, phi, crewPos, end, config) {
-  const { ama, crew, rho_w, stability } = config;
+  const { ama, crew, rho_w, stability, hull, g } = config;
   const DEG = Math.PI / 180;
+  const uAbs = Math.abs(u);
   // Immersion derived from HEEL WITH SIGN (F1, work-order-2026-07-30). The
   // ama is pressed DEEPER as the boat heels toward it (phi<0) and lifts CLEAR
   // as it flies (phi>0). Earlier this took the UNSIGNED amaLoad from
@@ -290,7 +291,40 @@ export function amaDrag(u, phi, crewPos, end, config) {
   // this must satisfy — see harness/asserts.js and ARCHITECTURE's
   // calibration section for the derivation.
   const Cf = ittc57Cf(u, ama.length) * ama.formFactor;
-  const Fx = -Math.sign(u) * 0.5 * rho_w * Cf * Seff * u * u;
+
+  // Residuary (wave-making) resistance — AC-1 (2026-08-03). The ama had
+  // FRICTION ONLY, while the main hull has had friction + a bounded residuary
+  // hump since R9-1 (docs/adr/0001, 0006). That asymmetry is not defensible:
+  // the ama is a slender displacement body being dragged through the surface
+  // exactly like the hull, and it is SHORTER, so at any given boat speed it
+  // sits at a HIGHER Froude number. At u = 4 m/s the hull is at Fr 0.54 and
+  // the ama at Fr 0.68 — both past their hump, the ama further past it. A
+  // float that makes no waves at 8 knots is not a physical float.
+  //
+  // Same functional form and the same Fr shape parameters as the hull: this
+  // is the same phenomenon on a smaller body, not a new one, so inventing a
+  // second set of hump constants would be inventing precision. Scaled on the
+  // ama's own immersed wetted area (Seff), so it grows and fades with
+  // immersion exactly as the friction term does.
+  //
+  // This is also the honest home for authority that the project has twice put
+  // in the wrong place. Round 7 raised ama.formFactor to 3.3 — 2-3x any
+  // physical (1+k) — because it "was the minimum ama-drag authority that kept
+  // T1's crew-toward-ama steering leg correctly signed". Round 9 correctly
+  // refused that and cut it to a physical 1.2, and in doing so dropped the
+  // steering criterion as unphysical. The owner's manual (docs/sources/,
+  // ch. III) says the criterion is real and names this exact mechanism: "the
+  // ama sinks (creates drag) and rotates the canoe around". Both rounds were
+  // right about their own point; the missing piece was never the form factor,
+  // it was that half the float's resistance did not exist.
+  const FrAma = uAbs / Math.sqrt(g * ama.length);
+  const zAma = (FrAma - hull.residuaryFrPeak) / hull.residuaryFrWidth;
+  const gaussAma = Math.exp(-zAma * zAma);
+  const CrAma = ama.residuaryPeakCr * (FrAma > hull.residuaryFrPeak
+    ? hull.residuaryTailPlateau + (1 - hull.residuaryTailPlateau) * gaussAma
+    : gaussAma);
+
+  const Fx = -Math.sign(u) * 0.5 * rho_w * (Cf + CrAma) * Seff * u * u;
 
   const yAma = ama.spacing * end;
   const yawMoment = -yAma * Fx;

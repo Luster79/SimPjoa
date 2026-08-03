@@ -30,6 +30,7 @@ Append-only. Never edit an old ADR; supersede it with a new one.
 | 0012 | Leeboard as the movable lateral plane — **superseded by 0013** |
 | 0013 | Withdrawing the leeboard — it is a modern option, not this deep-V boat's fit; supersedes 0012 |
 | 0014 | Sheet steering follows the owner's manual, not the rigid-triangle geometry |
+| 0015 | The ama's missing wave drag and the brail's missing CE shift |
 
 ## Work orders — what to do
 

@@ -565,6 +565,15 @@ function buildDefaultConfig() {
       mass: p.ama_mass_kg,                 // 25 kg — resists lifting when windward (normal case)
       spacing: p.beam_overall_m,           // 2.5 m (hull-ama spacing, "B")
       wettedSurface: 0.6,                  // m^2 — tunable estimate, fully immersed
+      // residuaryPeakCr (AC-1, 2026-08-03): the ama's wave-making resistance,
+      // which it simply did not have — see core/hydro.js's amaDrag for why
+      // that was the real gap behind two rounds of putting steering authority
+      // into the form factor instead. Set EQUAL to the hull's 0.006: same
+      // phenomenon, same slender-body order of magnitude, and the ama is the
+      // stubbier body of the two (formFactor 1.2 vs the hull's fine entry), so
+      // equal is the conservative choice rather than a flattering one. The Fr
+      // hump shape (peak, width, tail plateau) is shared with the hull outright.
+      residuaryPeakCr: 0.006,
       // formFactor: round 7, R7-1. The ama is a slender float trailing
       // fore-aft through the water like a second, smaller hull — NOT a
       // bluff cross-flow body — so its drag is ITTC-57 skin friction at
@@ -646,6 +655,11 @@ function buildDefaultConfig() {
       // 0.5 m is 9% of LWL. It is bounded above by the sail staying set as
       // the tack moves and by the hull's own length; a specific boat's real
       // tack-line travel would belong in example_proa_parameters.csv.
+      // ceBrailXShift (AC-4, 2026-08-03): metres the CE moves FORWARD at full
+      // windward brail, as its own mechanism rather than as a modulation of
+      // the trim swing. chord/6 = (CEheight/2)/6 = 0.167 m — the centroid
+      // shift from spilling the rear third of the chord. See core/aero.js.
+      ceBrailXShift: 0.167,
       tackTravel: 0.5,
       deltaMinDeg: (() => {
         const sparLength = Math.sqrt(2 * p.sail_area_m2 / Math.sin(p.sail_apex_angle_deg * Math.PI / 180));

@@ -552,7 +552,27 @@ export function sailForces(state, controls, config) {
   const swing = easeMovesCEAft
     ? -halfChordEff * (1 - Math.cos(delta))
     : -halfChordEff * Math.cos(delta);
-  const xCE = clrXNeutral + lead + tackOffset + swing;
+
+  // The windward ("breaking") brail's own CE shift — AC-4, 2026-08-03.
+  // The manual gives this its own mechanism and states no dependence on trim:
+  // "Pull this brailing line, which hides behind the sail, unless it deform
+  // the sailcloth and continue to make rear part of the sail, breaking over to
+  // lee. More you let the wind to spill over rear part of sail, more the bow
+  // shall turn off the wind." Spilling the leech removes area from the BACK of
+  // the sail, so the centre of effort moves FORWARD, giving lee helm.
+  //
+  // It had no such term. The only path the brail had to xCE was shrinking
+  // `halfChordEff`, i.e. modulating the TRIM swing's amplitude — which the
+  // AC-3 reformulation then multiplied by (1 - cos delta), collapsing it to
+  // almost nothing at exactly the close trims AC-4 is measured at (1.8 cm at
+  // delta=40deg). That is why the brail's bear-away was riding the heel->yaw
+  // coupling instead: measured, zeroing that coupling left AC-4.2a just as
+  // wrong, which is only possible if the brail's own mechanism was absent.
+  //
+  // Sized from the geometry rather than fitted: spilling the rear third of a
+  // chord moves the remaining area's centroid forward by about chord/6.
+  const ceBrailXShift = (config.sail.ceBrailXShift ?? 0) * brailWind;
+  const xCE = clrXNeutral + lead + tackOffset + swing + ceBrailXShift;
   const yCE = -state.end * halfChordEffY * Math.sin(delta);
 
   // Heel-course coupling (pure geometry, FIX_REQUEST_round4_roll_dof.md
