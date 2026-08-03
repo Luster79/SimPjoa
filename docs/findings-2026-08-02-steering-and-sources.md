@@ -673,3 +673,83 @@ And **AC-5.4b was recorded as a FAIL on the strength of reading the code**:
 unable to flip at a shunt. It is a boat-frame quantity and the boat frame
 itself flips, so it does. Measuring it turned the FAIL into a PASS. Second time
 in this work order that reading beat measuring and reading was wrong.
+
+---
+
+## AC-3 accepted: the manual's sheet-steering direction (2026-08-03)
+
+The owner ruled the manual correct. Decision and rationale: `docs/adr/0014`.
+The change is one line in `core/aero.js` — the CE now moves **aft** as the sail
+is eased, written as `−halfChordEff·(1 − cos δ)` so the lever's range is
+untouched and `hull.lead` is not retuned.
+
+### What it fixed
+
+| | before | after |
+|---|---|---|
+| sheet-steering tally (16-point grid) | weather 7 / lee 4 / capsized 5 | **weather 0 / lee 10** / capsized 6 |
+| AC-3.2 easing points up | 1/6 | **6/6** |
+| AC-4.1 main brail alone changes nothing | 3/6 | **6/6** |
+| AC-1.2 crew off the ama points up (direction) | 1/6 | **6/6** |
+
+The sheet-steering assertion is **promoted out of `xfail` to a real pass**. It
+had never held generally in *either* direction; it now holds in the manual's
+direction at every non-capsized point on the grid it has always used.
+
+AC-4.1 was not touched. It fell out of the CE geometry being right — which is
+the strongest single piece of evidence for the change, because nothing was
+aimed at it.
+
+### What it cost
+
+**One operating point of rudder-free course holding.** ADR 0011's payoff
+assertion held 6/6 and now holds 5/6, losing TWA 110 / TWS 6. Demoted to
+`xfail` with its numbers rather than softened to "≥5 of 6" — the claim is that
+a proa can be sailed on trim alone, and 5 of 6 is not that.
+
+TWA 110 is the same broad-course corner where the withdrawn leeboard also ran
+out of authority. Twice is a lead, not a coincidence: whatever the model is
+missing on broad courses, it is not the lateral plane.
+
+**The polar moves everywhere, by very little.** All 41 rows, since helm balance
+and therefore rudder drag change at every heading. Median 0.00 %, mean
++0.23 %, range −0.6 % to +2.8 %; close-hauled gains most (TWA 40 / TWS 10
++2.8 %), fast reaching loses a little (TWA 100 / TWS 10 −0.6 %).
+
+### R15 retired into an invariant (S7)
+
+The change moved R15 to 8.4656 against its [8.47, 8.55] band — a 0.004 m/s
+miss, and the **eighth** re-anchoring of that tripwire in two audits. Rather
+than move it a ninth time, it is replaced with what it was meant to guard, per
+S7:
+
+- **structural**: the reach is the fastest point of sail and beats close-hauled
+  by ≥1.8× (measured **2.38×**);
+- **physical**: the boat/wind speed ratio is inside the 0.6–1.0 band the
+  round-9 comment derived it from in the first place (measured **0.847**).
+
+Neither needs re-anchoring when the model moves a percent, and both still catch
+a 20 % modelling error. That is one of S7's two named targets done.
+
+### What still disagrees
+
+**AC-1.1** — crew moving *toward* the ama should also point the bow up; the
+model bears away at 5 of 6. Now an isolated, well-posed disagreement rather
+than one blurred by a broken sheet response. The manual is specific that
+AC-1.1 and AC-1.2 turn the boat the same way by *different* mechanisms; the
+model reproduces one of the two.
+
+**AC-4.2b** — the breaking brail's effect should grow monotonically with how
+far it is pulled; 4/6 after the change, 6/6 before. A real, small regression,
+recorded rather than traded away.
+
+### Method note
+
+Two more probe defects of my own, both caught by reading numbers rather than
+verdicts. AC-1.1's crew excursion was `min(1.0, base + 0.3)` against the base,
+which at the three TWS 10 points (crew already at 1.0) clamped to no movement
+and reported a confident `+0.0` — a no-op dressed as a measurement. And S2's
+course-hold searched `tackX ∈ [0.25, 0.75]`; when the reversal moved the
+neutral helm, that window missed it at 5 of 6 points and reported a failure
+that was about the window, not the boat. It is an *existence* search and now
+covers the whole control range.

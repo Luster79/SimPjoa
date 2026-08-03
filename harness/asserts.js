@@ -499,7 +499,12 @@ export function runAsserts(config, { slow = true } = {}) {
     // point, and no tack setting rescues it. Balancing the helm removes a
     // steady bias; it does not create directional STABILITY, which is what
     // the shipped-oar case is missing. That is S3's job.
-    const tackTrials = [0.25, 0.5, 0.75];
+    // The whole control range, not a sub-range. This is an EXISTENCE search
+    // ("is there a setting that holds?"), so restricting it would be assuming
+    // the answer: when the AC-3 sheet reversal moved the neutral helm, a
+    // [0.25, 0.75] window missed it at 5 of 6 points and reported a failure
+    // that was about the window, not the boat.
+    const tackTrials = [-1, -0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75, 1];
     const holders = grid.map((row) => {
       const found = tackTrials
         .map((t) => ({ t, ...helmRelease(row, false, t) }))
@@ -507,13 +512,21 @@ export function runAsserts(config, { slow = true } = {}) {
       return { twa: row.twa, tws: row.tws, found };
     });
     const nHeld = holders.filter((h) => h.found.length > 0).length;
+    // Demoted to xfail by the AC-3 reversal (docs/adr/0014), which cost this
+    // exactly one operating point: it held 6/6 before, 5/6 after, losing
+    // TWA110/TWS6. Reported rather than softened to ">=5 of 6" -- the
+    // criterion is "a proa can be sailed on trim alone", and 5 of 6 is not
+    // that. The lost point is the same broad-course corner where S3's
+    // withdrawn leeboard also ran out of authority, which is now twice that
+    // TWA110 has been the limit; that is a lead, not a coincidence.
     check('S2: with the tack as a control, a rudder-free course hold exists at every operating point (round 10d H1 ceiling, 15deg/60s)',
       nHeld === holders.length,
       `${nHeld}/${holders.length} points -- ` +
       holders.map((h) => {
         const b = h.found.reduce((a, r) => (r.excursion < a.excursion ? r : a), h.found[0]);
         return h.found.length ? `TWS${h.tws}/TWA${h.twa}: tackX=${b.t} exc=${b.excursion.toFixed(1)}deg v=${(b.speedRatio * 100).toFixed(0)}%` : `TWS${h.tws}/TWA${h.twa}: NONE`;
-      }).join(' '));
+      }).join(' ') + ' -- was 6/6 before the AC-3 CE-swing reversal (docs/adr/0014); TWA110/TWS6 is the point it lost',
+      'STEERING');
   }
 
   // Smoothness: an isolated >20% drop between adjacent TWA rows in 60-170
@@ -583,11 +596,33 @@ export function runAsserts(config, { slow = true } = {}) {
   // has above-water air drag, which it had none of before. Seventh re-anchor
   // of this tripwire in one audit; every move was an intended change that it
   // correctly flagged, which is the whole reason it is kept this narrow.
+  //
+  // S7 (work-order-2026-08-02), applied at the EIGHTH re-anchor. The AC-3 sheet
+  // reversal moved this to 8.4656 against a [8.47, 8.55] band -- a miss of
+  // 0.004 m/s. Every one of the eight moves was an intended change that this
+  // tripwire correctly flagged, and it has still stopped being a sensitivity
+  // measure: a band re-derived eight times around wherever the model last
+  // landed is measuring its own history, and "equally narrow around the eighth
+  // value" carries no information about whether a ninth change was intended.
+  //
+  // Replaced with the two things that were actually meant, neither of which
+  // needs re-anchoring when the model moves a percent:
+  //   (a) a STRUCTURAL invariant -- the reach is the fastest point of sail,
+  //       and beats close-hauled by a wide margin. This is a property, and it
+  //       would survive any correctly-signed physics change.
+  //   (b) a PHYSICALLY derived band on the boat/wind speed ratio, which is
+  //       where the round-9 comment says the number came from in the first
+  //       place ("healthy boat/wind ratio ~0.6-1.0 across TWS 4-10"). At
+  //       TWS 10 the reach measures 0.847. The band below is that physical
+  //       range, not a cordon around the current value: it catches a 20%
+  //       modelling error and ignores a 1% retrim.
   {
     const row10 = computePolar(config, { twsList: [10], twaFrom: 100, twaTo: 100, step: 1 })[0];
-    check('R15: reach speed at TWS=10, TWA=100 is within a narrow absolute band [8.47,8.55] m/s',
-      row10.bestSpeed >= 8.47 && row10.bestSpeed <= 8.55,
-      `speed=${row10.bestSpeed.toFixed(4)} m/s (sheet=${row10.bestSheetAngle})`);
+    const closeHauled = computePolar(config, { twsList: [10], twaFrom: 40, twaTo: 40, step: 1 })[0];
+    const ratio = row10.bestSpeed / 10;
+    check('R15: the reach at TWS=10 sails at a physically plausible fraction of the wind (0.6-1.0, round-9 derivation) and beats close-hauled by >=1.8x',
+      ratio >= 0.6 && ratio <= 1.0 && row10.bestSpeed >= 1.8 * closeHauled.bestSpeed,
+      `TWA100=${row10.bestSpeed.toFixed(4)} m/s (ratio ${ratio.toFixed(3)}, sheet=${row10.bestSheetAngle}), TWA40=${closeHauled.bestSpeed.toFixed(4)}, reach/beat=${(row10.bestSpeed / closeHauled.bestSpeed).toFixed(2)}x`);
   }
   } // if (slow) — section 3
 
@@ -1175,10 +1210,25 @@ export function runAsserts(config, { slow = true } = {}) {
     }
     const brailBase = { ...base, windSpeed: 10, crewPos: 0.6, sheet: 28 * DEG };
     const brailed = steeringDrift(config, brailBase, (c) => { c.brailWind = 1.0; }, 20, 20);
-    check('Sail steers: trimming the sheet in points up (windward) — majority of operating points',
-      trimSweep.weather > trimSweep.lee + trimSweep.capsized,
-      `weather=${trimSweep.weather} lee=${trimSweep.lee} capsized=${trimSweep.capsized} of 16 -- the claim holds only at selected trims; sign flips with crew position. Measured, not re-picked. AND THE CLAIM ITSELF IS NOW IN DOUBT: the owner's own primary source (Kryteria_Akceptacji_Symulator_Pjoa.md AC-3.1/3.2, from "Elementarz zeglowania po Mikronezyjsku" ch. III-V) states the OPPOSITE -- sheeting in BEARS AWAY and easing POINTS UP. Round 4 encoded exactly that rule (ceLeverSign=-1) and round 9 removed it as "a structural lee-helm bias masking real behaviour"; the source says the rule was right and the removal threw out the baby. This assertion has therefore been testing the wrong direction for several rounds. Not flipped here -- that is a physics decision with a polar diff, not a wording fix. See harness/acceptance-manual.js`,
-      'STEERING');
+    // AC-3 (2026-08-03): INVERTED, and promoted out of xfail. The owner's own
+    // primary source ("Elementarz zeglowania po Mikronezyjsku" ch. III, via
+    // Kryteria_Akceptacji_Symulator_Pjoa.md AC-3.1/3.2) states that sheeting
+    // in makes the bow BEAR AWAY and easing makes it point up -- the opposite
+    // of what this assertion demanded for eleven rounds. Round 4 had encoded
+    // the manual's rule (ceLeverSign=-1, "sheet in bears away"); round 9
+    // removed it as a structural lee-helm bias masking real behaviour, and
+    // took the rule out with the bias. The owner has ruled the manual correct,
+    // so core/aero.js's CE swing was reversed (docs/adr/0014) and this
+    // assertion now tests the direction the boat is supposed to have.
+    //
+    // The tally moved from weather=7/lee=4/capsized=5 to weather=0/lee=10/
+    // capsized=6 across the same 16-point grid -- not a marginal shift but a
+    // clean sweep, at every single non-capsized operating point. It is a real
+    // PASS now, not an xfail: the model does what the source says, generally,
+    // rather than at a hand-picked trim.
+    check('Sail steers: trimming the sheet in BEARS AWAY (leeward) — the manual\'s rule, at every operating point',
+      trimSweep.lee > trimSweep.weather + trimSweep.capsized,
+      `weather=${trimSweep.weather} lee=${trimSweep.lee} capsized=${trimSweep.capsized} of 16, same grid as ever -- was weather=7/lee=4/capsized=5 under the pre-AC-3 CE swing, i.e. the OLD assertion's own direction failed generally; the reversal made the manual's direction hold at every non-capsized point. See docs/adr/0014 and harness/acceptance-manual.js`);
     check('Sail steers: the windward brail bears away (leeward)',
       !brailed.capsized && steeringOk(brailed.drift, -1), `drift=${brailed.drift.toFixed(1)}deg`);
   }

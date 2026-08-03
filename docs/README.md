@@ -29,6 +29,7 @@ Append-only. Never edit an old ADR; supersede it with a new one.
 | 0011 | Tack position as a steering control — the helm lever can finally reach zero |
 | 0012 | Leeboard as the movable lateral plane — **superseded by 0013** |
 | 0013 | Withdrawing the leeboard — it is a modern option, not this deep-V boat's fit; supersedes 0012 |
+| 0014 | Sheet steering follows the owner's manual, not the rigid-triangle geometry |
 
 ## Work orders — what to do
 
@@ -36,7 +37,7 @@ Append-only. Never edit an old ADR; supersede it with a new one.
 |---|---|
 | `work-order-2026-07-22.md` | Nearly complete. Open: **R13** (monoliths), **R10** (lint/types). |
 | `work-order-2026-07-30-physics-audit.md` | **Complete** — F1-F16 all executed. |
-| `work-order-2026-08-02-steering-and-sources.md` | In progress. Stages 0-3a done (S5, S1, S4a, S6, S2). **S3 was implemented and then withdrawn — see ADR 0013.** Open: **S4b**, **S7**, **S8**. |
+| `work-order-2026-08-02-steering-and-sources.md` | In progress. Stages 0-3a done (S5, S1, S4a, S6, S2). **S3 was implemented and then withdrawn — see ADR 0013.** Open: **S4b**, **S7** (R15 done; the rest outstanding), **S8**. |
 
 ## Findings — evidence for what was done
 

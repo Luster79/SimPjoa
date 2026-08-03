@@ -523,7 +523,36 @@ export function sailForces(state, controls, config) {
   // balance mirrored.
   const tackTravel = config.sail.tackTravel ?? 0;
   const tackOffset = state.end * (controls.tackX ?? 0) * tackTravel;
-  const xCE = clrXNeutral + lead + tackOffset - halfChordEff * Math.cos(delta);
+  // Which way the CE travels as the sail is EASED (AC-3, work-order-2026-08-02
+  // acceptance run; docs/adr/0014).
+  //
+  //   'geometric' (the model up to 2026-08-03): the sail is a rigid triangle
+  //     pivoting about a tack at the bow, so easing swings its centroid
+  //     FORWARD, toward the pivot -> easing bears away, sheeting in points up.
+  //   'manual' (default now): the owner's primary source says the opposite --
+  //     "Elementarz zeglowania po Mikronezyjsku" ch. III, AC-3.1/3.2: sheeting
+  //     in makes the bow bear away, easing makes it point up. So the CE moves
+  //     AFT as the sail is eased.
+  //
+  // These cannot both be right and I cannot resolve it from first principles:
+  // the rigid-triangle argument is sound for a flat plate on a pivot, and a
+  // crab claw is neither -- its centre of pressure migrates along the yard as
+  // the leading-edge vortex develops, which is a real effect the rigid
+  // geometry ignores. The manual is a practitioner's description of THIS boat
+  // and the owner has chosen it as the authority. Recorded as a decision, with
+  // the losing side kept switchable rather than deleted, because the evidence
+  // is genuinely one-sided in provenance and not in physics.
+  //
+  // Written as (1 - cos) rather than by flipping the sign, so the lever's
+  // RANGE is untouched: it still runs `lead - halfChordEff` .. `lead`, only
+  // the mapping from delta is reversed. That matters -- S2's whole result is
+  // that the lever crosses zero inside the tack range, and re-centring it by
+  // hand would have put that at risk. `hull.lead` is not retuned.
+  const easeMovesCEAft = (config.sail.ceSwingMode ?? 'manual') === 'manual';
+  const swing = easeMovesCEAft
+    ? -halfChordEff * (1 - Math.cos(delta))
+    : -halfChordEff * Math.cos(delta);
+  const xCE = clrXNeutral + lead + tackOffset + swing;
   const yCE = -state.end * halfChordEffY * Math.sin(delta);
 
   // Heel-course coupling (pure geometry, FIX_REQUEST_round4_roll_dof.md

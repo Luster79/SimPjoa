@@ -111,10 +111,18 @@ function record(id, claim, verdict, detail) {
 }
 
 // tally(rows, predicate) -> "n/6" plus the per-point numbers.
+// tally — counts points where the DIRECTION is right, and reports separately
+// how many of those capsized inside the measurement window. Folding the two
+// together (as an earlier version did) hides the more interesting case: a
+// criterion whose direction the model gets right everywhere while sailing
+// itself over. Capsized points do not count toward the verdict, but they are
+// named, and the direction-only count is printed beside it.
 function tally(rows, predicate) {
+  const dirOk = rows.filter(predicate).length;
   const ok = rows.filter((r) => predicate(r) && !r.capsized).length;
+  const caps = rows.filter((r) => r.capsized).length;
   const detail = rows.map((r) => `T${r.point.twa}/${r.point.tws}:${r.diff >= 0 ? '+' : ''}${r.diff.toFixed(1)}${r.capsized ? 'C' : ''}`).join(' ');
-  return { ok, n: rows.length, detail };
+  return { ok, n: rows.length, detail: detail + (caps ? `  [direction correct at ${dirOk}/${rows.length}; ${caps} point(s) capsized inside the window, marked C]` : '') };
 }
 
 export function runAcceptance(config) {
@@ -126,9 +134,15 @@ export function runAcceptance(config) {
     // Excursion kept small and symmetric (+-0.3 about the point's own trim):
     // a full swing to crewPos=1.0 or -0.3 capsizes the boat at TWS 10, and a
     // measurement taken through a capsize is not a measurement of steering.
+    // The pair is built so the 0.3 excursion is always REAL. An earlier
+    // version used min(1.0, base+0.3) against the base, which at the TWS 10
+    // points (crew already at 1.0) clamped to no movement at all and reported
+    // a confident +0.0 for three of the six points -- a no-op dressed as a
+    // measurement.
+    const hi = (base) => Math.min(1.0, base + 0.3);
     const rows = differential(config,
-      (c) => { c.crewPos = Math.min(1.0, c.crewPos + 0.3); },
-      (c) => { });
+      (c) => { c.crewPos = hi(c.crewPos); },
+      (c) => { c.crewPos = hi(c.crewPos) - 0.3; });
     const t = tally(rows, (r) => r.diff > 0);
     record('AC-1.1', 'crew toward the ama -> bow points UP',
       t.ok === t.n ? 'PASS' : (t.ok === 0 ? 'FAIL' : 'PARTIAL'),
@@ -140,9 +154,10 @@ export function runAcceptance(config) {
   // righting moment). The direction claim is what is testable here; whether
   // the model distinguishes the two mechanisms internally is checked below.
   {
+    const lo = (base) => Math.max(-0.3, base - 0.3);
     const rows = differential(config,
-      (c) => { c.crewPos = Math.max(-0.3, c.crewPos - 0.3); },
-      (c) => { });
+      (c) => { c.crewPos = lo(c.crewPos); },
+      (c) => { c.crewPos = lo(c.crewPos) + 0.3; });
     const t = tally(rows, (r) => r.diff > 0);
     record('AC-1.2', 'crew away from the ama -> bow ALSO points UP',
       t.ok === t.n ? 'PASS' : (t.ok === 0 ? 'FAIL' : 'PARTIAL'),
@@ -155,9 +170,10 @@ export function runAcceptance(config) {
   // must be a local minimum of the turn.
   {
     const rows = GRID.map((point) => {
-      const mid = probe(config, point, null);
-      const toAma = probe(config, point, (c) => { c.crewPos = Math.min(1.0, c.crewPos + 0.3); });
-      const away = probe(config, point, (c) => { c.crewPos = Math.max(-0.3, c.crewPos - 0.3); });
+      const centre = Math.min(0.7, Math.max(0.0, point.crew));
+      const mid = probe(config, point, (c) => { c.crewPos = centre; });
+      const toAma = probe(config, point, (c) => { c.crewPos = centre + 0.3; });
+      const away = probe(config, point, (c) => { c.crewPos = centre - 0.3; });
       return { point, diff: Math.min(toAma.turn, away.turn) - mid.turn,
         capsized: mid.capsized || toAma.capsized || away.capsized };
     });
@@ -368,6 +384,10 @@ export function runAcceptance(config) {
       ended = state.end;
     }
     const flipped = ended !== endBefore;
+    record('AC-5.4a', 'a shunt swaps which end is the bow',
+      flipped ? 'PASS' : 'FAIL',
+      `eased to ${speedAtRequest.toFixed(2)} m/s (lockout ${config.shunt.speedLockout}), then end ${endBefore} -> ${ended}, phase=${state.shunt.phase}`);
+
     // Does the crew's fore-aft lever follow the new bow? Measured, not read
     // off the source: `clrXPosition()` carries no `end` term, which LOOKS like
     // the crew's reference cannot flip -- but it works in the BOAT frame, and
