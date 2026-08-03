@@ -957,6 +957,15 @@ function buildDefaultConfig() {
       mass: p.ama_mass_kg,                 // 25 kg — resists lifting when windward (normal case)
       spacing: p.beam_overall_m,           // 2.5 m (hull-ama spacing, "B")
       wettedSurface: 0.6,                  // m^2 — tunable estimate, fully immersed
+      // residuaryPeakCr (AC-1, 2026-08-03): the ama's wave-making resistance,
+      // which it simply did not have — see core/hydro.js's amaDrag for why
+      // that was the real gap behind two rounds of putting steering authority
+      // into the form factor instead. Set EQUAL to the hull's 0.006: same
+      // phenomenon, same slender-body order of magnitude, and the ama is the
+      // stubbier body of the two (formFactor 1.2 vs the hull's fine entry), so
+      // equal is the conservative choice rather than a flattering one. The Fr
+      // hump shape (peak, width, tail plateau) is shared with the hull outright.
+      residuaryPeakCr: 0.006,
       // formFactor: round 7, R7-1. The ama is a slender float trailing
       // fore-aft through the water like a second, smaller hull — NOT a
       // bluff cross-flow body — so its drag is ITTC-57 skin friction at
@@ -1038,6 +1047,11 @@ function buildDefaultConfig() {
       // 0.5 m is 9% of LWL. It is bounded above by the sail staying set as
       // the tack moves and by the hull's own length; a specific boat's real
       // tack-line travel would belong in example_proa_parameters.csv.
+      // ceBrailXShift (AC-4, 2026-08-03): metres the CE moves FORWARD at full
+      // windward brail, as its own mechanism rather than as a modulation of
+      // the trim swing. chord/6 = (CEheight/2)/6 = 0.167 m — the centroid
+      // shift from spilling the rear third of the chord. See core/aero.js.
+      ceBrailXShift: 0.167,
       tackTravel: 0.5,
       deltaMinDeg: (() => {
         const sparLength = Math.sqrt(2 * p.sail_area_m2 / Math.sin(p.sail_apex_angle_deg * Math.PI / 180));
@@ -2011,7 +2025,27 @@ function sailForces(state, controls, config) {
   const swing = easeMovesCEAft
     ? -halfChordEff * (1 - Math.cos(delta))
     : -halfChordEff * Math.cos(delta);
-  const xCE = clrXNeutral + lead + tackOffset + swing;
+
+  // The windward ("breaking") brail's own CE shift — AC-4, 2026-08-03.
+  // The manual gives this its own mechanism and states no dependence on trim:
+  // "Pull this brailing line, which hides behind the sail, unless it deform
+  // the sailcloth and continue to make rear part of the sail, breaking over to
+  // lee. More you let the wind to spill over rear part of sail, more the bow
+  // shall turn off the wind." Spilling the leech removes area from the BACK of
+  // the sail, so the centre of effort moves FORWARD, giving lee helm.
+  //
+  // It had no such term. The only path the brail had to xCE was shrinking
+  // `halfChordEff`, i.e. modulating the TRIM swing's amplitude — which the
+  // AC-3 reformulation then multiplied by (1 - cos delta), collapsing it to
+  // almost nothing at exactly the close trims AC-4 is measured at (1.8 cm at
+  // delta=40deg). That is why the brail's bear-away was riding the heel->yaw
+  // coupling instead: measured, zeroing that coupling left AC-4.2a just as
+  // wrong, which is only possible if the brail's own mechanism was absent.
+  //
+  // Sized from the geometry rather than fitted: spilling the rear third of a
+  // chord moves the remaining area's centroid forward by about chord/6.
+  const ceBrailXShift = (config.sail.ceBrailXShift ?? 0) * brailWind;
+  const xCE = clrXNeutral + lead + tackOffset + swing + ceBrailXShift;
   const yCE = -state.end * halfChordEffY * Math.sin(delta);
 
   // Heel-course coupling (pure geometry, FIX_REQUEST_round4_roll_dof.md
@@ -2306,8 +2340,9 @@ function hullSideForce(u, v, crewPosX, config) {
 //   crew-immersion term removed by F1; it returns with the corrected
 //   crew/ama-buoyancy coupling in F14.)
 function amaDrag(u, phi, crewPos, end, config) {
-  const { ama, crew, rho_w, stability } = config;
+  const { ama, crew, rho_w, stability, hull, g } = config;
   const DEG = Math.PI / 180;
+  const uAbs = Math.abs(u);
   // Immersion derived from HEEL WITH SIGN (F1, work-order-2026-07-30). The
   // ama is pressed DEEPER as the boat heels toward it (phi<0) and lifts CLEAR
   // as it flies (phi>0). Earlier this took the UNSIGNED amaLoad from
@@ -2366,7 +2401,40 @@ function amaDrag(u, phi, crewPos, end, config) {
   // this must satisfy — see harness/asserts.js and ARCHITECTURE's
   // calibration section for the derivation.
   const Cf = ittc57Cf(u, ama.length) * ama.formFactor;
-  const Fx = -Math.sign(u) * 0.5 * rho_w * Cf * Seff * u * u;
+
+  // Residuary (wave-making) resistance — AC-1 (2026-08-03). The ama had
+  // FRICTION ONLY, while the main hull has had friction + a bounded residuary
+  // hump since R9-1 (docs/adr/0001, 0006). That asymmetry is not defensible:
+  // the ama is a slender displacement body being dragged through the surface
+  // exactly like the hull, and it is SHORTER, so at any given boat speed it
+  // sits at a HIGHER Froude number. At u = 4 m/s the hull is at Fr 0.54 and
+  // the ama at Fr 0.68 — both past their hump, the ama further past it. A
+  // float that makes no waves at 8 knots is not a physical float.
+  //
+  // Same functional form and the same Fr shape parameters as the hull: this
+  // is the same phenomenon on a smaller body, not a new one, so inventing a
+  // second set of hump constants would be inventing precision. Scaled on the
+  // ama's own immersed wetted area (Seff), so it grows and fades with
+  // immersion exactly as the friction term does.
+  //
+  // This is also the honest home for authority that the project has twice put
+  // in the wrong place. Round 7 raised ama.formFactor to 3.3 — 2-3x any
+  // physical (1+k) — because it "was the minimum ama-drag authority that kept
+  // T1's crew-toward-ama steering leg correctly signed". Round 9 correctly
+  // refused that and cut it to a physical 1.2, and in doing so dropped the
+  // steering criterion as unphysical. The owner's manual (docs/sources/,
+  // ch. III) says the criterion is real and names this exact mechanism: "the
+  // ama sinks (creates drag) and rotates the canoe around". Both rounds were
+  // right about their own point; the missing piece was never the form factor,
+  // it was that half the float's resistance did not exist.
+  const FrAma = uAbs / Math.sqrt(g * ama.length);
+  const zAma = (FrAma - hull.residuaryFrPeak) / hull.residuaryFrWidth;
+  const gaussAma = Math.exp(-zAma * zAma);
+  const CrAma = ama.residuaryPeakCr * (FrAma > hull.residuaryFrPeak
+    ? hull.residuaryTailPlateau + (1 - hull.residuaryTailPlateau) * gaussAma
+    : gaussAma);
+
+  const Fx = -Math.sign(u) * 0.5 * rho_w * (Cf + CrAma) * Seff * u * u;
 
   const yAma = ama.spacing * end;
   const yawMoment = -yAma * Fx;
@@ -3523,14 +3591,14 @@ const MS_TO_KN = 1.9438;
 // recording's codeVersion is meaningful (harness/replay.js warns on
 // mismatch) for a downloaded bundle without requiring a build step for
 // plain `python3 -m http.server` development.
-const CODE_VERSION = "b8356ad";
+const CODE_VERSION = "a5326dd";
 // BUILD_TIME: same pattern as CODE_VERSION above — tools/bundle.js
 // replaces this with the COMMIT's timestamp (not wall-clock build time),
 // so it stays stable across re-bundling the same commit and always
 // matches CODE_VERSION's hash. Shown in the bottom-right version footer
 // so a bug report/recording can be tied to an exact, dated build without
 // having to separately ask "which commit was this."
-const BUILD_TIME = "2026-08-03T22:00:41+02:00";
+const BUILD_TIME = "2026-08-03T22:55:42+02:00";
 
 // ---------------------------------------------------------------------
 // i18n — EN/PL. Static labels are marked with data-i18n="key" in
