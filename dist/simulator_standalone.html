@@ -842,42 +842,39 @@ function buildDefaultConfig() {
       clrDepth: 0.35,                     // m — tunable estimate, same status as lateralArea
       crewForeAftTrimCoeff: 0.15,          // tunable ("k_trim") — fraction of half-length the CLR shifts per unit crewPosX (FIX_REQUEST_round4_roll_dof.md 1.5)
       crewTrimSign: 1,                     // +-1 — flips the crewPosX->CLR-shift direction; verified empirically against the 1.6 coupling-sign test (forward crew -> luff), see ARCHITECTURE doc
-      // yawHeelSign: +-1, flips the heel->yaw coupling direction (aero.js
-      // yawMomentHeel). Was "verified empirically against the 1.6
-      // coupling-sign test (crew toward ama -> bear away)" -- a target the
-      // owner's primary source contradicts (docs/sources/, ch. III: "if crew
-      // moves toward outrigger, the canoe turns to WINDWARD ... because the
-      // ama sinks (creates drag) and rotates the canoe around").
+      // yawHeelSign: scales AND signs the heel->yaw coupling (aero.js
+      // yawMomentHeel). SET TO 0 — the term is DISABLED, and that needs its
+      // own justification because it is not a claim that the physics is zero.
       //
-      // LEFT AT +1, AND THAT IS A REPORTED CONFLICT, NOT AN ENDORSEMENT.
-      // This one sign governs two groups of criteria that the manual states
-      // separately and that want opposite values. Measured across the whole
-      // acceptance grid (harness/acceptance-manual.js):
+      // The term models one half of a cancelling pair. Heeling swings the
+      // rig's CE to leeward by CEheight*sin(phi), which is what this computes;
+      // it also makes the immersed HULL asymmetric, which produces an opposing
+      // yaw moment and is the dominant real-world heel-to-yaw mechanism. The
+      // model has the rig half and not the hull half. **A partial model of a
+      // cancelling pair has an essentially arbitrary sign**, and this one's
+      // sign was calibrated (round 4's "1.6 coupling-sign test") against a
+      // rule the owner's manual contradicts — see docs/sources/ ch. III.
       //
-      //   criterion                              +1      0      -1
-      //   AC-1.1 crew to ama -> points up       1/6    5/6    5/6
-      //   AC-1.2 crew to hull -> bears away     0/6    4/6    4/6
-      //   AC-4.1 main brail alone: no course    6/6    5/6    1/6
-      //   AC-4.2a breaking brail -> bears away  6/6    1/6    1/6
-      //   AC-4.2b ... and grows with the pull   4/6    1/6    0/6
+      // Measured, with both of the manual's own named mechanisms now present
+      // (ama residuary drag for crew position, ceBrailXShift for the brail —
+      // docs/adr/0015), across the whole acceptance grid:
       //
-      // Every one of those five is stated explicitly in the manual, so no
-      // value of this sign satisfies the source. Zeroing the coupling does not
-      // resolve it either: it fixes the crew group and leaves the brail group
-      // just as wrong, which shows the brail's bear-away is currently RIDING
-      // this term rather than coming from the mechanism the manual names for
-      // it (spilling the leech moves the CE forward -> lee helm).
+      //   criterion                              +1     0     -1
+      //   AC-1.1 crew to ama -> points up       2/6   5/6   5/6
+      //   AC-1.2 crew to hull -> bears away     1/6   4/6   4/6
+      //   AC-4.2a breaking brail -> bears away  6/6   6/6   1/6
+      //   AC-4.2b ... and grows with the pull   5/6   6/6   0/6
       //
-      // So the defect is one of relative MAGNITUDE, not of sign: the heel->yaw
-      // coupling is strong enough to dominate both groups and force them to
-      // share a direction, while the two mechanisms the manual actually names
-      // -- the ama's drag for crew position, the CE shift for the brail -- are
-      // present but too weak to govern their own criteria. Fixing it means
-      // rebalancing those three against each other, which is a multi-parameter
-      // change with a polar diff behind it and an owner's decision in front of
-      // it, not a knob to turn here. +1 is kept because it is what the current
-      // suite and polar were measured against.
-      yawHeelSign: 1,
+      // At +1 and -1 this term DOMINATES both groups and forces them to share
+      // a direction, so no sign satisfies the source. At 0 each of the two
+      // mechanisms the manual names governs its own criterion, which is what
+      // the source describes. Including half of an opposing pair is worse than
+      // including neither.
+      //
+      // Restore a nonzero value only together with the hull's own heeled-yaw
+      // term, so the pair is modelled rather than one side of it. Kept as a
+      // live parameter, not deleted, for exactly that.
+      yawHeelSign: 0,
       ceLeverSign: 1,                     // +-1 (aero.js xCE/yCE yaw-lever sign) — round 10 (R10-4, docs/adr/0004): CURRENTLY THE IDENTITY, not an active flip. Round 5-7 used -1 to match the old (now-retired) "sheet in bears away" manual rule; the round-9 lead fix (0.15->0.05*LWL) removed the structural lee-helm bias that rule was masking, and the naive, unflipped r x F derivation now matches the boat's real (standard, non-inverted) steering direction on its own — see aero.js's own comment at this line for the full history
       // lead: round 7, D-6 (ROUND7_DECISION.md). Classical yacht-design
       // "lead" — the CE-CLR longitudinal separation — order 5-25% of
@@ -1049,9 +1046,21 @@ function buildDefaultConfig() {
       // tack-line travel would belong in example_proa_parameters.csv.
       // ceBrailXShift (AC-4, 2026-08-03): metres the CE moves FORWARD at full
       // windward brail, as its own mechanism rather than as a modulation of
-      // the trim swing. chord/6 = (CEheight/2)/6 = 0.167 m — the centroid
-      // shift from spilling the rear third of the chord. See core/aero.js.
-      ceBrailXShift: 0.167,
+      // the trim swing. See core/aero.js for why it has to be its own term.
+      //
+      // Expressed in the same scaled chord the rest of the CE machinery uses
+      // (chord = CEheight/2 = 1.0 m), NOT in the rig's real streamwise extent
+      // (~5 m), so it stays consistent with ceSwingFraction and halfChord.
+      // chord/3 is the centroid shift from spilling the REAR HALF of the
+      // chord, which is what the manual describes at a full pull: "pull this
+      // brailing line ... unless it deform the sailcloth and continue to make
+      // rear part of the sail, breaking over to lee".
+      //
+      // Sensitivity checked rather than assumed: AC-4.2a/b reach 6/6 anywhere
+      // from 0.3 to 0.8 and collapse below ~0.25, so this sits at the
+      // conservative edge of a broad plateau rather than on a peak. A value
+      // picked to maximise the tally would have been 0.6.
+      ceBrailXShift: 0.333,
       tackTravel: 0.5,
       deltaMinDeg: (() => {
         const sparLength = Math.sqrt(2 * p.sail_area_m2 / Math.sin(p.sail_apex_angle_deg * Math.PI / 180));
@@ -3591,14 +3600,14 @@ const MS_TO_KN = 1.9438;
 // recording's codeVersion is meaningful (harness/replay.js warns on
 // mismatch) for a downloaded bundle without requiring a build step for
 // plain `python3 -m http.server` development.
-const CODE_VERSION = "a5326dd";
+const CODE_VERSION = "31ef780";
 // BUILD_TIME: same pattern as CODE_VERSION above — tools/bundle.js
 // replaces this with the COMMIT's timestamp (not wall-clock build time),
 // so it stays stable across re-bundling the same commit and always
 // matches CODE_VERSION's hash. Shown in the bottom-right version footer
 // so a bug report/recording can be tied to an exact, dated build without
 // having to separately ask "which commit was this."
-const BUILD_TIME = "2026-08-03T22:55:42+02:00";
+const BUILD_TIME = "2026-08-03T23:14:02+02:00";
 
 // ---------------------------------------------------------------------
 // i18n — EN/PL. Static labels are marked with data-i18n="key" in
