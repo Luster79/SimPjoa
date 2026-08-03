@@ -874,6 +874,25 @@ function buildDefaultConfig() {
       // opposite, structural lee-helm regime) — see
       // ROUND10d_helm_balance_findings.md for the full before/after
       // moment-budget table and the re-run D-6/T3/T4 differential numbers.
+      //
+      // S1 (work-order-2026-08-02): the round-10d test described above was
+      // later dropped from the suite, and this value — whose ONLY
+      // justification was that measurement — outlived it. The measurement is
+      // back, as harness/asserts.js's S1a/S1b, and now runs on a grid
+      // (TWA 70/90/110 x TWS 6/10) rather than at the single operating point
+      // the original used. It no longer passes anywhere: 21-52deg of
+      // excursion against the 15deg ceiling. That is NOT a call to re-pick
+      // lead. Nothing about this constant changed; F9 (the oar's real
+      // inflow-driven force) and F10 (removal of the artificial yaw damping)
+      // did, and between them the hull was left with no directional
+      // stability of its own for lead to balance against. Searching this
+      // 2.7cm knife-edge window again would only re-create the same
+      // fragility one audit further on. S2/S3 of that work order remove the
+      // problem structurally, by giving the model the movable tack / mast
+      // rake and leeboard that a real proa steers with; lead is meant to
+      // become an OUTCOME of that geometry rather than the single free knob
+      // holding the whole balance. Until then S1a/S1b are xfail:STEERING
+      // with their numbers, deliberately not tuned green.
       lead: 0.06 * p.boat_length_m,
     },
 
@@ -3205,6 +3224,14 @@ function polarRow(config, twa, tws, best) {
     deltaAngle: best.delta,
     bestCamberUse: config.sail.camber,
     bestBrailWind: best.brailWind,
+    // bestCrewPos (S1, work-order-2026-08-02): the search has always covered
+    // crew position across its full range (CREW_POS_SEARCH) but never
+    // reported which one won, so no caller could reproduce "the boat at its
+    // polar-optimal trim" — the operating point S1's helm-balance assertions
+    // are defined at. Deliberately NOT added to the exported CSV: that
+    // header is written out explicitly in run_tests.js and ui/app.js, so the
+    // byte-gated out/polar.csv is unaffected.
+    bestCrewPos: best.crewPos,
   };
 }
 
@@ -3314,14 +3341,14 @@ const MS_TO_KN = 1.9438;
 // recording's codeVersion is meaningful (harness/replay.js warns on
 // mismatch) for a downloaded bundle without requiring a build step for
 // plain `python3 -m http.server` development.
-const CODE_VERSION = "a761e81";
+const CODE_VERSION = "24548f5";
 // BUILD_TIME: same pattern as CODE_VERSION above — tools/bundle.js
 // replaces this with the COMMIT's timestamp (not wall-clock build time),
 // so it stays stable across re-bundling the same commit and always
 // matches CODE_VERSION's hash. Shown in the bottom-right version footer
 // so a bug report/recording can be tied to an exact, dated build without
 // having to separately ask "which commit was this."
-const BUILD_TIME = "2026-08-02T21:59:33+02:00";
+const BUILD_TIME = "2026-08-03T08:12:44+02:00";
 
 // ---------------------------------------------------------------------
 // i18n — EN/PL. Static labels are marked with data-i18n="key" in
