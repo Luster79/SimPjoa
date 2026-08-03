@@ -421,6 +421,14 @@ const CONFIG_VERSION = '1.0.0';
 // Minimal CSV parser (handles quoted fields with embedded commas, "" escapes)
 // ---------------------------------------------------------------------
 function parseCSV(text) {
+  // Strip whole-line `#` comments before parsing (S4b, docs/adr/0009). ADR
+  // 0009 makes a self-describing header — extraction method, the source's own
+  // definitions — mandatory on every digitised file, so a parser that treats
+  // the first `#` line as the column header cannot read the files the contract
+  // requires. Verified safe for the three files already read
+  // (crab_claw_CL_CD_polhamus, crab_claw_CL_CD_v2, example_proa_parameters):
+  // none of them contains a `#` line.
+  text = text.split('\n').filter((line) => !line.trimStart().startsWith('#')).join('\n');
   const rows = [];
   let row = [];
   let field = '';
@@ -3480,14 +3488,14 @@ const MS_TO_KN = 1.9438;
 // recording's codeVersion is meaningful (harness/replay.js warns on
 // mismatch) for a downloaded bundle without requiring a build step for
 // plain `python3 -m http.server` development.
-const CODE_VERSION = "ac7f837";
+const CODE_VERSION = "3f1a801";
 // BUILD_TIME: same pattern as CODE_VERSION above — tools/bundle.js
 // replaces this with the COMMIT's timestamp (not wall-clock build time),
 // so it stays stable across re-bundling the same commit and always
 // matches CODE_VERSION's hash. Shown in the bottom-right version footer
 // so a bug report/recording can be tied to an exact, dated build without
 // having to separately ask "which commit was this."
-const BUILD_TIME = "2026-08-03T20:23:02+02:00";
+const BUILD_TIME = "2026-08-03T20:43:10+02:00";
 
 // ---------------------------------------------------------------------
 // i18n — EN/PL. Static labels are marked with data-i18n="key" in
