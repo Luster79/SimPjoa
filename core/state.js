@@ -89,6 +89,12 @@ export function createDefaultControls() {
     // docs/adr/0011. 0 is the neutral setting, at which the model is
     // identical to what it was before this control existed.
     tackX: 0,
+    // leeboard (S3): raised by default, like the steering oar, so the boat's
+    // default configuration is exactly what it was before the board existed
+    // and any change is attributable to lowering it. leeboardX is its
+    // fore-aft trim, -1..1, referenced to the active bow like tackX.
+    leeboardDown: false,
+    leeboardX: 0,
     shuntRequest: false,
   };
 }

@@ -458,3 +458,85 @@ TWA ≥ 80 moves. Against pre-S6 the net at TWA 40 / TWS 6 is 2.400 → 2.367,
 ### Suite state after stage 3a
 
 87/87; four `xfail`s, none promoted.
+
+---
+
+## Stage 3b — the leeboard (S3)
+
+Decision and rationale: `docs/adr/0012`. Evidence below.
+
+### It is a CLR control
+
+Signed drift over 60 s with the rudder released, board down, sail trim fixed,
+`+` = points up:
+
+| point | lbX −1 | −0.5 | 0 | +0.5 | +1 |
+|---|---|---|---|---|---|
+| TWA 70 / TWS 6 | −14 | +10 | +30 | +48 | +50 |
+| TWA 90 / TWS 6 | −13 | +18 | +38 | +56 | +68 |
+| TWA 110 / TWS 6 | +33 | +43 | +52 | +60 | +67 |
+| TWA 70 / TWS 10 | −0 | +12 | +34 | +34 | +54 |
+| TWA 90 / TWS 10 | +9 | +27 | +47 | +61 | +68 |
+| TWA 110 / TWS 10 | +34 | +46 | +62 | +76 | +71 |
+
+Monotone everywhere, 64–86° of authority. The **sign reverses** inside the
+board's travel at 3 of the 6 points; at TWA 110 and at TWA 90 / TWS 10 it only
+reduces the drift.
+
+### It is paid for
+
+| point | board up | board down | cost |
+|---|---|---|---|
+| TWA 45 / TWS 6 | 2.495 | 2.290 | −8.2 % |
+| TWA 70 / TWS 6 | 3.456 | 3.194 | −7.6 % |
+| TWA 90 / TWS 6 | 3.952 | 3.539 | −10.5 % |
+| TWA 110 / TWS 6 | 4.020 | 3.586 | −10.8 % |
+| TWA 90 / TWS 10 | 7.993 | 6.812 | −14.8 % |
+
+At TWA 90 / TWS 6 the board contributes −62 N of drag against 217 N of side
+force; raised it contributes exactly 0 N. Asserted, not merely noted — a board
+that bought stability for free would be a modelling error.
+
+Because it loses everywhere, the polar does not search it, and **`out/polar.csv`
+is byte-identical across this change** — verified, not assumed.
+
+### It is a trim, not a cure
+
+The board's neutral is amidships, which is *forward* of the hull's own CLR.
+Lowering it and leaving it centred therefore makes the boat round up **harder**:
+excursion 54° → 115° at TWA 90 / TWS 6. That is why the assertion is
+differential.
+
+An earlier version of this measurement reported unsigned excursion and made
+the board look simply harmful. Signing it showed the drift crossing zero.
+Second method note of this work order: an absolute-value metric cannot detect
+the sign change that is the whole point of the control.
+
+### What the pair achieves — and where it stops
+
+S1b's case (oar shipped, rudder released), with board down and both board and
+tack trimmed, searching `leeboardX` ∈ [−1, 1] and `tackX` ∈ [0, 1]:
+
+| point | best trim | excursion | speed | |
+|---|---|---|---|---|
+| TWA 70 / TWS 6 | lbX −0.5, tack +1 | 5.4° | 98 % | **holds** |
+| TWA 90 / TWS 6 | lbX −0.5, tack +1 | 23.9° | 88 % | — |
+| TWA 110 / TWS 6 | lbX −1, tack +1 | 42.3° | 73 % | — |
+| TWA 70 / TWS 10 | lbX −1, tack +1 | 2.8° | 109 % | **holds** |
+| TWA 90 / TWS 10 | lbX −1, tack +1 | 10.0° | 97 % | **holds** |
+| TWA 110 / TWS 10 | lbX −1, tack +1 | 37.0° | 77 % | — |
+
+**3 of 6 hold**, against 0 of 6 before. **All three TWS 10 capsizes are gone**
+and speed retention goes from 0 % to 60–109 %. For the first time the boat can
+sail a close reach with no steering oar in the water at all.
+
+It stops at TWA 110, and the optima are **pinned at the limits of both trim
+ranges** — the model is out of steering authority on broad courses. Reported,
+not fixed by widening `tackTravel` or `leeboard.travel` until the number turns
+green: those are physical estimates, and stretching them to satisfy a test is
+the practice this work order exists to stop. S1b stays `xfail`, its detail now
+recording both what the pair buys and what it does not.
+
+### Suite state after stage 3b
+
+89/89; four `xfail`s, none promoted. `out/polar.csv` byte-identical.

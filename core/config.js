@@ -883,6 +883,39 @@ function buildDefaultConfig() {
       coeff: 2.1,
     },
 
+    // leeboard (S3, work-order-2026-08-02, docs/adr/0012): the movable half
+    // of the lateral plane. Dierking gives leeboards as one of the standard
+    // steering fits for these canoes; Proafile describes a large amidships
+    // board that can be rotated fore and aft. The foil coefficients are the
+    // SAME derivation as the oar's above (Helmbold low-AR slope, stalling
+    // blade, CD0 + k*CL^2) and are shared deliberately — it is the same kind
+    // of surface in the same kind of flow, so inventing a second set of
+    // numbers would be inventing precision.
+    leeboard: {
+      // area: an ESTIMATE, and labelled one. Sailing canoes carry a lateral
+      // plane of order 4-5% of sail area in a board; 12 m^2 of sail puts that
+      // at 0.5-0.6 m^2. 0.5 m^2 is a board roughly 1.0 x 0.5 m, which is what
+      // a person can ship and lower over the gunwale single-handed. It sits
+      // ON TOP of the hull's own 1.8 m^2 rather than replacing part of it —
+      // Flay's measured CS(leeway) curve describes the hull and stays with
+      // the hull (docs/adr/0004).
+      area: 0.5,
+      // neutralX: amidships. Proafile's "large leeboard on the midships
+      // section" — and the point of the control is the excursion around it,
+      // not the offset itself.
+      neutralX: 0,
+      // travel: half-range of the board's fore-aft excursion, in metres. A
+      // board pivoting about its head through +-20-25deg with ~1 m of
+      // immersed depth moves its centre of pressure about this far, which is
+      // the mechanism Proafile describes ("can be rotated fore and aft")
+      // rather than a board that physically slides along the gunwale.
+      travel: 0.4,
+      stallAngleDeg: 22,
+      CD0: 0.02,
+      inducedK: 0.35,
+      coeff: 2.1,
+    },
+
     // P4 (docs/work-order-2026-07-22.md; docs/diagnostic-2026-07-22-
     // residuary-hump.md Result 6): the shipped speedLockout=4 m/s (7.8kn)
     // and 5.0s total sequence let a proa shunt near full reach speed —

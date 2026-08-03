@@ -277,6 +277,78 @@ export function runAsserts(config, { slow = true } = {}) {
       ` -- worst spread=${worst.toFixed(1)}deg`);
   }
 
+  // --- 3d. Leeboard: the movable half of the lateral plane (S3) ---
+  // S2 gave the rig a fore-aft position; this gives the LATERAL PLANE one.
+  // Together they are the classical CE/CLR pair, and separately neither is
+  // the whole balance. Before S3 the entire lateral plane was the hull, at a
+  // CLR the sailor could not move (clrXPosition(): a fixed fraction of half
+  // length, plus a phenomenological shift from crew fore-aft position).
+  //
+  // Two things are checked, and the second matters as much as the first:
+  // the board must be a real control, and it must be PAID FOR. Extra lateral
+  // area is extra drag; a board that bought directional stability for free
+  // would be a modelling error, not a feature.
+  {
+    const boardDrift = (twa, tws, sheetDeg, crewPos, leeboardX) => {
+      const windDirFrom = HEADING0 + twa * DEG;
+      let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 1.0, v: 0, r: 0, phi: 0, p: 0,
+        delta: sheetDeg * DEG, end: 1, amaLoad: 0, abackTimer: 0, capsized: false,
+        shunt: { phase: 'none', progress: 0 } };
+      const controls = { windDirFrom, windSpeed: tws, sheet: sheetDeg * DEG, rudder: 0,
+        rudderUp: false, brailLee: 0, brailWind: 0, crewPos, crewPosX: 0, tackX: 0,
+        leeboardDown: true, leeboardX: 0, shuntRequest: false };
+      for (let i = 0; i < Math.round(45 / config.dt); i++) {
+        controls.rudder = headingHoldRudder(state, HEADING0, config);
+        state = integrate(state, controls, config, config.dt);
+      }
+      const headingBefore = state.heading;
+      controls.rudder = 0;
+      controls.leeboardX = leeboardX;
+      for (let i = 0; i < Math.round(60 / config.dt); i++) state = integrate(state, controls, config, config.dt);
+      return normalizeAngle(state.heading - headingBefore) / DEG;
+    };
+
+    const pts = [[70, 6, 8, 0.3], [90, 6, 16, 0.3], [110, 6, 32, 0]];
+    const rows = pts.map(([twa, tws, sh, cw]) => ({
+      twa, tws, aft: boardDrift(twa, tws, sh, cw, -1), fwd: boardDrift(twa, tws, sh, cw, +1),
+    }));
+    // Direction is the classical one: lateral plane moved AFT pulls the
+    // combined CLR aft, which reduces weather helm. The board's own neutral
+    // sits amidships, FORWARD of the hull's own CLR, so leaving it at 0 makes
+    // the boat round up harder rather than less — the board is a trim, not a
+    // cure, and this check is differential for that reason.
+    const spreads = rows.map((r) => r.fwd - r.aft);
+    const worst = Math.min(...spreads);
+    check('S3: the leeboard is a CLR control -- moving it forward vs aft changes the rudder-free drift by >=20deg/60s at every point',
+      worst >= 20,
+      rows.map((r) => `TWS${r.tws}/TWA${r.twa}: aft${r.aft >= 0 ? '+' : ''}${r.aft.toFixed(0)} fwd${r.fwd >= 0 ? '+' : ''}${r.fwd.toFixed(0)} (spread ${(r.fwd - r.aft).toFixed(0)}deg)`).join(' ') +
+      ` -- worst spread=${worst.toFixed(0)}deg. Sign of the drift reverses within the board's travel at the two closer-winded points; at TWA110 it only reduces it`);
+
+    // Paid for, not free. Lowering 0.5 m2 of extra foil must cost speed.
+    {
+      const settledSpeed = (down) => {
+        const windDirFrom = HEADING0 + 90 * DEG;
+        let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 1.0, v: 0, r: 0, phi: 0, p: 0,
+          delta: 16 * DEG, end: 1, amaLoad: 0, abackTimer: 0, capsized: false,
+          shunt: { phase: 'none', progress: 0 } };
+        const controls = { windDirFrom, windSpeed: 6, sheet: 16 * DEG, rudder: 0, rudderUp: false,
+          brailLee: 0, brailWind: 0, crewPos: 0.3, crewPosX: 0, tackX: 0,
+          leeboardDown: down, leeboardX: 0, shuntRequest: false };
+        for (let i = 0; i < Math.round(45 / config.dt); i++) {
+          controls.rudder = headingHoldRudder(state, HEADING0, config);
+          state = integrate(state, controls, config, config.dt);
+        }
+        const f = computeForces(state, controls, config);
+        return { speed: Math.hypot(state.u, state.v), boardFx: f.breakdown.leeboard.Fx, boardFy: f.breakdown.leeboard.Fy };
+      };
+      const up = settledSpeed(false), down = settledSpeed(true);
+      const cost = 1 - down.speed / up.speed;
+      check('S3: the leeboard is paid for -- lowering it costs speed and produces real drag, not free directional stability',
+        cost > 0.02 && down.boardFx < 0 && Math.abs(down.boardFy) > 50 && up.boardFx === 0,
+        `TWA90/TWS6: ${up.speed.toFixed(3)} -> ${down.speed.toFixed(3)} m/s (${(cost * 100).toFixed(1)}% cost), board Fx=${down.boardFx.toFixed(1)}N Fy=${down.boardFy.toFixed(0)}N; raised board contributes exactly ${up.boardFx}N`);
+    }
+  }
+
   // S2, structural half: the helm lever must CHANGE SIGN inside the
   // available tack range, at every trim. This is the property the whole
   // mechanism rests on and it is exact geometry, so it is checked directly
@@ -482,7 +554,7 @@ export function runAsserts(config, { slow = true } = {}) {
       nSailing === shipped.length,
       `${nSailing}/${shipped.length} points still sailing, ${nCapsized} capsized -- ` +
       shipped.map((s) => `TWS${s.tws}/TWA${s.twa}:->TWA${s.twaAfter.toFixed(0)} v${(s.speedRatio * 100).toFixed(0)}%${s.capsized ? ' CAPSIZED' : ''}`).join(' ') +
-      ' -- the boat has no directional stability of its own: the 0.15m2 blade on the stern supplies it, and almost all of that force comes from INFLOW (leeway + yaw rate), not from deflection. Structural, not a tuning gap; see work-order-2026-08-02 part I.3.1',
+      ' -- measured with BOTH new controls at neutral and the board raised. The boat has no directional stability of its own: the 0.15m2 blade on the stern supplies it, and almost all of that force comes from INFLOW (leeway + yaw rate), not from deflection. S3 changed this from hopeless to partial: with the board DOWN and board+tack trimmed, 3 of these 6 points hold inside 15deg (TWA70 at both winds, TWA90 at TWS10) and NONE of the three TWS10 capsizes remains, speed retention going 0% -> 60-97%. TWA110 still fails at 37-42deg, with both trims pinned at their limits -- the model is out of authority on broad courses, reported rather than papered over by widening a travel range. See docs/adr/0012',
       'STEERING');
 
     // (c) S2's payoff, and the reason S1a is left failing rather than
