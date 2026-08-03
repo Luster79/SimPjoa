@@ -181,6 +181,46 @@ export function runAsserts(config, { slow = true } = {}) {
       speed >= 0.35 && speed <= 0.8, `speed=${speed.toFixed(4)} m/s (u=${state.u.toFixed(4)} v=${state.v.toFixed(4)})`);
   }
 
+  // --- 2b. Sheeting tolerance (S5, work-order-2026-08-02) ---
+  // Dierking (Building Outrigger Sailing Canoes) on the Oceanic lateen: it
+  // "is very forgiving of incorrect sheeting angles and holds power at a
+  // point where a more conventional rig would have stalled." This is one of
+  // the few properties where the model agrees with the literature WITHOUT
+  // having been calibrated to it — and, until now, nothing guarded it, so
+  // block B could have destroyed it silently. Guarded as a PROPERTY (the
+  // curve is broad) rather than as the measured numbers, per S7's rule.
+  //
+  // Measured at TWS 6, upright, no brails, driving force = boat-frame Fx as
+  // a function of yard angle: the >=90%-of-peak band is 20.0-23.0deg wide
+  // and 20deg off the optimum leaves 63-87%. The thresholds below sit well
+  // clear of both, so this fails on a qualitative collapse of the curve's
+  // breadth, not on ordinary drift.
+  {
+    const sheetBase = { t: 0, x: 0, y: 0, heading: 0, u: 0, v: 0, r: 0, phi: 0, p: 0, end: 1, amaLoad: 0,
+      abackTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
+    const rows = [];
+    for (const awa of [50, 70, 90, 110]) {
+      const controls = { windDirFrom: awa * DEG, windSpeed: 6, sheet: 0, rudder: 0, rudderUp: true,
+        brailLee: 0, brailWind: 0, crewPos: 0, crewPosX: 0, shuntRequest: false };
+      const drive = (deltaDeg) => sailForces({ ...sheetBase, delta: deltaDeg * DEG }, controls, config).Fx;
+      let peak = -Infinity, dOpt = 0;
+      for (let d = 0; d <= 90; d += 0.5) {
+        const fx = drive(d);
+        if (fx > peak) { peak = fx; dOpt = d; }
+      }
+      let lo = dOpt, hi = dOpt;
+      while (lo > 0 && drive(lo - 0.5) >= 0.9 * peak) lo -= 0.5;
+      while (hi < 90 && drive(hi + 0.5) >= 0.9 * peak) hi += 0.5;
+      const off = Math.min(drive(Math.min(90, dOpt + 20)), drive(Math.max(0, dOpt - 20))) / peak;
+      rows.push({ awa, dOpt, width: hi - lo, off });
+    }
+    const minWidth = Math.min(...rows.map((r) => r.width));
+    const minOff = Math.min(...rows.map((r) => r.off));
+    const detail = rows.map((r) => `AWA${r.awa}: opt=${r.dOpt}deg width=${r.width.toFixed(1)}deg off20=${(r.off * 100).toFixed(0)}%`).join('; ');
+    check('S5: Oceanic lateen is forgiving of sheeting angle -- >=90%-of-peak drive band >=15deg wide, and 20deg off optimum keeps >=50% (Dierking)',
+      minWidth >= 15 && minOff >= 0.50, `${detail} -- worst width=${minWidth.toFixed(1)}deg worst off20=${(minOff * 100).toFixed(0)}%`);
+  }
+
   // --- 3. Polar shape + speed anchor (TWS=6) --- (slow: computePolar sweep)
   if (slow) {
   const polar = computePolar(config, { twsList: [6], twaFrom: 40, twaTo: 170, step: 10 });
@@ -269,6 +309,87 @@ export function runAsserts(config, { slow = true } = {}) {
     check('polar: bestSheetAngle and the settled delta coincide on driving (taut-sheet) rows',
       drivingRows.length > 0 && worstGap <= 4.5,
       `worstGap=${worstGap.toFixed(2)}deg over ${drivingRows.length} rows`);
+  }
+
+  // --- 3b. Helm balance with the rudder released (S1, work-order-2026-08-02) ---
+  // Restores the measurement that `hull.lead = 0.06*L` was actually chosen
+  // by. Round 10d picked that value specifically against a "rudder-free
+  // release at the polar-optimal beam reach" test with a <=15deg/60s
+  // criterion (it measured 7.2deg then). That test was later dropped from
+  // the suite and the value stayed — the constant whose only justification
+  // was a measurement outlived the measurement. config.js's comment at
+  // hull.lead describes it in the present tense, so it had to point at
+  // something that runs.
+  //
+  // Measured on a GRID (TWA 70/90/110 x TWS 6/10) and reported as an
+  // aggregate, not at one hand-picked operating point — the method that
+  // exposed the trim-in steering claim. Both checks fail today, on every
+  // point, and are tagged xfail rather than tuned: the work order's
+  // acceptance explicitly forbids re-picking `lead` to satisfy them, because
+  // the balance is a knife edge in a 2.7cm window (config.js at hull.lead)
+  // and S2/S3 are meant to remove it structurally by giving the model the
+  // tack-position / leeboard steering a real proa has.
+  {
+    const helmRelease = (row, oarUp) => {
+      const windDirFrom = HEADING0 + row.twa * DEG;
+      const twaOf = (heading) => {
+        const a = (((windDirFrom - heading) / DEG) % 360 + 360) % 360;
+        return a > 180 ? 360 - a : a;
+      };
+      let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 1.0, v: 0, r: 0, phi: 0, p: 0,
+        delta: row.bestSheetAngle * DEG, end: 1, amaLoad: 0, abackTimer: 0, capsized: false,
+        shunt: { phase: 'none', progress: 0 } };
+      const controls = { windDirFrom, windSpeed: row.tws, sheet: row.bestSheetAngle * DEG, rudder: 0,
+        rudderUp: false, brailLee: 0, brailWind: row.bestBrailWind, crewPos: row.bestCrewPos,
+        crewPosX: 0, shuntRequest: false };
+      for (let i = 0; i < Math.round(45 / config.dt); i++) {
+        controls.rudder = headingHoldRudder(state, HEADING0, config);
+        state = integrate(state, controls, config, config.dt);
+      }
+      const headingBefore = state.heading;
+      const speedBefore = Math.hypot(state.u, state.v);
+      controls.rudder = 0;
+      controls.rudderUp = oarUp;
+      for (let i = 0; i < Math.round(60 / config.dt); i++) state = integrate(state, controls, config, config.dt);
+      return {
+        twa: row.twa, tws: row.tws,
+        excursion: Math.abs(normalizeAngle(state.heading - headingBefore)) / DEG,
+        twaAfter: twaOf(state.heading),
+        speedRatio: speedBefore > 0 ? Math.hypot(state.u, state.v) / speedBefore : 0,
+        capsized: state.capsized,
+      };
+    };
+
+    const grid = [
+      ...[70, 90, 110].map((twa) => polar.find((r) => r.twa === twa && r.tws === 6)),
+      ...computePolar(config, { twsList: [10], twaFrom: 70, twaTo: 110, step: 20 }),
+    ].filter(Boolean);
+
+    // (a) Oar in the water but centered — the old H1 criterion.
+    const deployed = grid.map((row) => helmRelease(row, false));
+    const worstExcursion = Math.max(...deployed.map((d) => d.excursion));
+    const nWithin = deployed.filter((d) => d.excursion <= 15 && !d.capsized).length;
+    check('S1a: oar deployed, rudder released at the polar-optimal trim -- heading excursion <=15deg over 60s (round 10d H1 criterion, on a grid)',
+      nWithin === deployed.length,
+      `${nWithin}/${deployed.length} points within 15deg, worst=${worstExcursion.toFixed(1)}deg -- ` +
+      deployed.map((d) => `TWS${d.tws}/TWA${d.twa}:${d.excursion.toFixed(0)}deg`).join(' ') +
+      ' -- FAILS EVERYWHERE. The criterion hull.lead was calibrated against no longer holds: F9 gave the oar real inflow-driven force and F10 removed the artificial yaw damping, and between them the boat lost its own directional stability. NOT to be fixed by re-picking lead (2.7cm knife edge) -- S2/S3 in work-order-2026-08-02 remove it structurally',
+      'STEERING');
+
+    // (b) Oar shipped — the state README.md and core/rudder.js both call the
+    // rig's NORMAL one ("its normal resting state is shipped ... not
+    // centered"), and since the F9/F10 pair it is the state the boat cannot
+    // sail in at all: it rounds up into irons within seconds from every
+    // course, and at TWS 10 it rounds up hard enough to capsize.
+    const shipped = grid.map((row) => helmRelease(row, true));
+    const nSailing = shipped.filter((s) => s.twaAfter >= 45 && s.speedRatio >= 0.5 && !s.capsized).length;
+    const nCapsized = shipped.filter((s) => s.capsized).length;
+    check('S1b: oar SHIPPED (its documented resting state), rudder released -- boat does not round up into irons and keeps >=50% of its speed',
+      nSailing === shipped.length,
+      `${nSailing}/${shipped.length} points still sailing, ${nCapsized} capsized -- ` +
+      shipped.map((s) => `TWS${s.tws}/TWA${s.twa}:->TWA${s.twaAfter.toFixed(0)} v${(s.speedRatio * 100).toFixed(0)}%${s.capsized ? ' CAPSIZED' : ''}`).join(' ') +
+      ' -- the boat has no directional stability of its own: the 0.15m2 blade on the stern supplies it, and almost all of that force comes from INFLOW (leeway + yaw rate), not from deflection. Structural, not a tuning gap; see work-order-2026-08-02 part I.3.1',
+      'STEERING');
   }
 
   // Smoothness: an isolated >20% drop between adjacent TWA rows in 60-170

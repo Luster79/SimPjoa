@@ -1,6 +1,6 @@
 # docs/ — index
 
-*Last reviewed: 2026-07-30*
+*Last reviewed: 2026-08-02*
 
 `ARCHITECTURE_physics_core_EN.md` in the repo root is the context map for the
 code. This file is the map for everything in `docs/`, which is now large enough
@@ -31,6 +31,7 @@ Append-only. Never edit an old ADR; supersede it with a new one.
 |---|---|
 | `work-order-2026-07-22.md` | Nearly complete. Open: **R13** (monoliths), **R10** (lint/types). |
 | `work-order-2026-07-30-physics-audit.md` | **Complete** — F1-F16 all executed. |
+| `work-order-2026-08-02-steering-and-sources.md` | In progress. Stage 0 (S5, S1) done. Open: **S4**, **S6**, **S2+S3** (the core), **S7**, **S8**. |
 
 ## Findings — evidence for what was done
 
@@ -38,6 +39,7 @@ Append-only. Never edit an old ADR; supersede it with a new one.
 |---|---|
 | `findings-2026-07-22-work-order.md` | Execution of the 07-22 order |
 | `findings-2026-07-30-physics-audit.md` | Execution of the physics audit, with the measured numbers behind every change |
+| `findings-2026-08-02-steering-and-sources.md` | Execution of the 08-02 order, stage by stage |
 | `capsize-margins-2026-07-30.md` | Margin sweep run as a precondition for the audit's block D |
 | `diagnostic-2026-07-22-residuary-hump.md` | The investigation that produced the 07-22 physics items |
 

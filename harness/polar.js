@@ -191,6 +191,14 @@ function polarRow(config, twa, tws, best) {
     deltaAngle: best.delta,
     bestCamberUse: config.sail.camber,
     bestBrailWind: best.brailWind,
+    // bestCrewPos (S1, work-order-2026-08-02): the search has always covered
+    // crew position across its full range (CREW_POS_SEARCH) but never
+    // reported which one won, so no caller could reproduce "the boat at its
+    // polar-optimal trim" — the operating point S1's helm-balance assertions
+    // are defined at. Deliberately NOT added to the exported CSV: that
+    // header is written out explicitly in run_tests.js and ui/app.js, so the
+    // byte-gated out/polar.csv is unaffected.
+    bestCrewPos: best.crewPos,
   };
 }
 

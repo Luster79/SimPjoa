@@ -490,6 +490,25 @@ function buildDefaultConfig() {
       // opposite, structural lee-helm regime) — see
       // ROUND10d_helm_balance_findings.md for the full before/after
       // moment-budget table and the re-run D-6/T3/T4 differential numbers.
+      //
+      // S1 (work-order-2026-08-02): the round-10d test described above was
+      // later dropped from the suite, and this value — whose ONLY
+      // justification was that measurement — outlived it. The measurement is
+      // back, as harness/asserts.js's S1a/S1b, and now runs on a grid
+      // (TWA 70/90/110 x TWS 6/10) rather than at the single operating point
+      // the original used. It no longer passes anywhere: 21-52deg of
+      // excursion against the 15deg ceiling. That is NOT a call to re-pick
+      // lead. Nothing about this constant changed; F9 (the oar's real
+      // inflow-driven force) and F10 (removal of the artificial yaw damping)
+      // did, and between them the hull was left with no directional
+      // stability of its own for lead to balance against. Searching this
+      // 2.7cm knife-edge window again would only re-create the same
+      // fragility one audit further on. S2/S3 of that work order remove the
+      // problem structurally, by giving the model the movable tack / mast
+      // rake and leeboard that a real proa steers with; lead is meant to
+      // become an OUTCOME of that geometry rather than the single free knob
+      // holding the whole balance. Until then S1a/S1b are xfail:STEERING
+      // with their numbers, deliberately not tuned green.
       lead: 0.06 * p.boat_length_m,
     },
 
