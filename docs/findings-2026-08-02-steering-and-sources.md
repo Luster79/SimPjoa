@@ -461,9 +461,22 @@ TWA ≥ 80 moves. Against pre-S6 the net at TWA 40 / TWS 6 is 2.400 → 2.367,
 
 ---
 
-## Stage 3b — the leeboard (S3)
+## Stage 3b — the leeboard (S3), WITHDRAWN
 
-Decision and rationale: `docs/adr/0012`. Evidence below.
+**This stage was reverted. See `docs/adr/0013`.** The premise — that a movable
+leeboard is standard on these canoes — came from the work order and was written
+into ADR 0012 without being checked. Checked afterwards: Proafile lists a
+pivoting leeboard among *modern* proa options, while saying the traditional
+boat is "steered on all reaching and windward courses with no rudder, paddle,
+or steering oar at all" by moving CE against CLR; and Dierking's deep-V hulls —
+which is the hull this project models, anchored on Flay's V2 "proa-like" 70°
+keel — need no foil or board at all.
+
+The measurements below are real and are kept, because they are still evidence,
+but they answer a question about a **leeboard-equipped boat**, not about this
+one. The one result that must be withdrawn outright is flagged at the end.
+
+Original section follows.
 
 ### It is a CLR control
 
@@ -537,6 +550,23 @@ green: those are physical estimates, and stretching them to satisfy a test is
 the practice this work order exists to stop. S1b stays `xfail`, its detail now
 recording both what the pair buys and what it does not.
 
-### Suite state after stage 3b
+### WITHDRAWN: what this means after the revert
 
-89/89; four `xfail`s, none promoted. `out/polar.csv` byte-identical.
+The "3 of 6 hold with the oar shipped" result **required the board down** and
+does not survive its removal. Without a board, no tack setting holds a
+rudder-free course with the oar *shipped* at any operating point. S1b's
+assertion detail is corrected accordingly.
+
+What does survive, and is unaffected: S2's own result, that with the oar **down
+but centred** there is a tack setting holding the course at all six points
+(0.8–10.8° over 60 s). That is the traditional steering method, and the fact
+that every one of those holds sits at a *forward* tack setting independently
+reproduces Proafile's "shifting the sail forward of center is important to
+maintain helm balance with a traditional proa".
+
+`out/polar.csv` was byte-identical across both the addition and the removal —
+the sweep never searched the board.
+
+### Suite state after the revert
+
+79/79 fast / 87/87 full; four `xfail`s, none promoted.

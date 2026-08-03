@@ -27,7 +27,8 @@ Append-only. Never edit an old ADR; supersede it with a new one.
 | 0009 | Data contract for digitised sources — every file in `data/` has a reader, its own method, and the source's own definitions |
 | 0010 | Geometric sheeting floor (`sail.deltaMinDeg`) — the rig will not strap flat |
 | 0011 | Tack position as a steering control — the helm lever can finally reach zero |
-| 0012 | Leeboard as the movable lateral plane — pairs with 0011 to make a real CE/CLR balance |
+| 0012 | Leeboard as the movable lateral plane — **superseded by 0013** |
+| 0013 | Withdrawing the leeboard — it is a modern option, not this deep-V boat's fit; supersedes 0012 |
 
 ## Work orders — what to do
 
@@ -35,7 +36,7 @@ Append-only. Never edit an old ADR; supersede it with a new one.
 |---|---|
 | `work-order-2026-07-22.md` | Nearly complete. Open: **R13** (monoliths), **R10** (lint/types). |
 | `work-order-2026-07-30-physics-audit.md` | **Complete** — F1-F16 all executed. |
-| `work-order-2026-08-02-steering-and-sources.md` | In progress. Stages 0-3 done (S5, S1, S4a, S6, S2, S3). Open: **S4b**, **S7**, **S8**. Note: S2 and S3 got ADRs 0011 and 0012 separately rather than one shared 0011, so S8's ADR will be 0013. |
+| `work-order-2026-08-02-steering-and-sources.md` | In progress. Stages 0-3a done (S5, S1, S4a, S6, S2). **S3 was implemented and then withdrawn — see ADR 0013.** Open: **S4b**, **S7**, **S8**. |
 
 ## Findings — evidence for what was done
 

@@ -137,7 +137,6 @@ changes.
       aero.js        — sail aerodynamics (Polhamus + camber + brails)
       hydro.js       — hull and ama resistance, side force, yaw damping
       rudder.js      — steering oar (active end depends on current tack)
-      leeboard.js    — lowerable leeboard: the MOVABLE half of the lateral plane (S3, docs/adr/0012)
       stability.js   — heel moment balance, ama load, aback
       shunt.js       — shunt-sequence state machine
       sheet.js       — one-sided sheet constraint: delta_align, effectiveDeltaMax, sheetStep (round 5)
@@ -236,9 +235,6 @@ changes.
       tackX,            // -1..1 rig fore-aft position, referenced to the ACTIVE bow (S2,
                         // docs/adr/0011). THE proa steering control: it moves xCE, and it
                         // is what lets the helm lever (xCE - clrX) reach zero at all
-      leeboardDown,     // bool — leeboard lowered. DEFAULTS TO FALSE, like the oar: the
-                        // boat's default configuration is the pre-S3 one
-      leeboardX,        // -1..1 leeboard fore-aft trim, active-bow-referenced (S3)
       shuntRequest      // bool (rising edge starts the sequence)
     }
 
@@ -458,22 +454,6 @@ cross-check at startup as required by the main prompt. Fixed schema version: a
       // water, not centered. createDefaultControls() therefore defaults it
       // to rudderUp=TRUE (shipped); the UI's checkbox reads the other way
       // round ("oar in the water") because that is how a sailor acts on it.
-
-### leeboard.js — the movable lateral plane (S3, docs/adr/0012)
-    leeboardForce(state, controls, config) -> { Fx, Fy, yawMoment }
-      // Same foil form as rudder.js (stalling low-AR blade, CD0 + k*CL^2,
-      // flow frame) and the same coefficients — same kind of surface in the
-      // same kind of flow. One structural difference: NO deflection term. A
-      // leeboard is lowered, not steered, so its AoA is the local flow angle
-      // alone. Like the oar it sees v + r*leverArm, so it damps yaw as well
-      // as making side force.
-      // Zero unless controls.leeboardDown. Flay's CS(leeway) curve stays with
-      // the HULL (docs/adr/0004); the board is ADDITIONAL area, hence
-      // additional drag — measured at 7.6-14.8% of speed, asserted so it can
-      // never become free stability.
-    leeboardX(state, controls, config) -> [m from CG, +fwd]
-      // neutralX + end*controls.leeboardX*travel. Active-bow-referenced, like
-      // the tack: a shunting proa swaps which end is the bow.
 
 ### stability.js — roll as a 4th DOF (FIX_REQUEST_round4_roll_dof.md Part 1;
 ### supersedes the round-3 static heelMoment/restoringCapacity model)
