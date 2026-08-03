@@ -941,6 +941,37 @@ function buildDefaultConfig() {
       area: p.sail_area_m2,                // 12 m^2
       apexAngleDeg: p.sail_apex_angle_deg,  // 50 deg (45-60 valid range)
       CEheight: p.CE_height_m,              // 2.0 m
+      // deltaMinDeg (S6, work-order-2026-08-02): the closest the SHEET can
+      // hold the yard to the centreline. A rig cannot be strapped flat just
+      // because the optimizer would like it to be: on an Oceanic lateen the
+      // tack is at the bow and the boom runs aft, so the sheet has to reach
+      // the clew from a point on the hull. Derived, not chosen —
+      // example_proa_parameters.csv fixes all three inputs:
+      //   spar length from the sail's own area and apex angle, treating the
+      //   sail as the triangle the aero table already models it as:
+      //     A = 0.5*L^2*sin(apex)  ->  L = sqrt(2A/sin(apex)) = 5.60 m
+      //   the clew must come within reach of the sternmost sheeting point,
+      //   a distance hull.length from the tack:
+      //     L*cos(deltaMin) <= hull.length  ->  deltaMin = acos(L_hull/L)
+      // At 12 m2 / 50 deg / 5.5 m that is 10.7 deg. A boom shorter than the
+      // hull imposes nothing and the expression correctly returns 0.
+      //
+      // ILL-CONDITIONED, and deliberately left visible rather than rounded
+      // into a tidy literal: L (5.60 m) and hull.length (5.5 m) are within
+      // 2% of each other, so acos() is evaluated where its slope is
+      // steepest. Sail area 11 m2 gives L=5.36 m and deltaMin=0; 13 m2 gives
+      // 19.3 deg. The VALUE is therefore a weak claim about this particular
+      // boat, even though the CONSTRAINT is a solid claim about the rig
+      // type. Do not tune it — measure what it costs and report that (see
+      // docs/findings-2026-08-02, stage 2). If a specific boat's real
+      // sheeting geometry ever becomes available, it belongs in
+      // example_proa_parameters.csv as its own measured parameter, which
+      // would retire this derivation rather than re-fit it.
+      deltaMinDeg: (() => {
+        const sparLength = Math.sqrt(2 * p.sail_area_m2 / Math.sin(p.sail_apex_angle_deg * Math.PI / 180));
+        if (sparLength <= p.boat_length_m) return 0;
+        return Math.acos(p.boat_length_m / sparLength) * 180 / Math.PI;
+      })(),
       // camber/CD0/s: round 10 (R10-1, docs/adr/0003) retune. aero.js never
       // reads the aeroTable's own CD column (only CL) — CD is recomputed
       // at RUNTIME from CD0/s below, so switching the CL table to the v2
@@ -2719,13 +2750,20 @@ function deltaAlign(state, controls) {
 // 3: this is what lets the yard swing freely to flip sides during a
 // shunt), and closed back to the commanded controls.sheet once 'sheet'
 // starts hauling it back in.
+// S6 (work-order-2026-08-02): the ceiling has a FLOOR of
+// config.sail.deltaMinDeg — the rig cannot be sheeted closer to the
+// centreline than its own geometry allows (see config.js for the
+// derivation). This bounds the SHEET, not the yard: a sheet is a rope, so it
+// can only ever stop the yard swinging OUT. The wind is still free to push
+// the yard inside deltaMin — that is the luffing/backwinded regime the
+// header describes, and it is unchanged.
 function effectiveDeltaMax(state, controls, config) {
   const commanded = clamp(Math.abs(controls.sheet ?? 0), 0, Math.PI / 2);
   const phase = state.shunt?.phase;
   if (phase === 'ease' || phase === 'transfer' || phase === 'swap') {
     return config.sail.deltaMaxReleaseDeg * DEG__b7;
   }
-  return commanded;
+  return Math.max(commanded, (config.sail.deltaMinDeg ?? 0) * DEG__b7);
 }
 
 // sheetStep(state, controls, config, dt) -> { delta } patch. delta relaxes
@@ -3341,14 +3379,14 @@ const MS_TO_KN = 1.9438;
 // recording's codeVersion is meaningful (harness/replay.js warns on
 // mismatch) for a downloaded bundle without requiring a build step for
 // plain `python3 -m http.server` development.
-const CODE_VERSION = "abc26c6";
+const CODE_VERSION = "c8793f2";
 // BUILD_TIME: same pattern as CODE_VERSION above — tools/bundle.js
 // replaces this with the COMMIT's timestamp (not wall-clock build time),
 // so it stays stable across re-bundling the same commit and always
 // matches CODE_VERSION's hash. Shown in the bottom-right version footer
 // so a bug report/recording can be tied to an exact, dated build without
 // having to separately ask "which commit was this."
-const BUILD_TIME = "2026-08-03T15:36:53+02:00";
+const BUILD_TIME = "2026-08-03T16:07:13+02:00";
 
 // ---------------------------------------------------------------------
 // i18n — EN/PL. Static labels are marked with data-i18n="key" in
@@ -3660,6 +3698,23 @@ function updateBrailZoneUI() {
   sliders.brailWind.title = t('tooltip.brailWindZones', pct);
 }
 
+// S6 (work-order-2026-08-02): the sheet slider's lower bound is the rig's
+// own geometric one (config.js sail.deltaMinDeg), not 0. Without this the
+// bottom ~11deg of the slider's travel is a dead zone — the sheet cannot
+// hold the yard in there, so dragging through it changes nothing on screen
+// and reads as a broken control rather than as a rig that will not strap
+// flat. Read from CONFIG for the same reason as the brail zones above: a
+// boat-design change to area or apex angle moves it.
+function updateSheetRangeUI() {
+  const minDeg = Math.ceil(dims.sail.deltaMinDeg ?? 0);
+  sliders.sheet.min = String(minDeg);
+  if (controls.sheet < minDeg * DEG__b12) {
+    controls.sheet = minDeg * DEG__b12;
+    sliders.sheet.value = String(minDeg);
+    refreshOutputs();
+  }
+}
+
 function refreshOutputs() {
   outs.windDir.textContent = `${Math.round(controls.windDirFrom / DEG__b12)}°`;
   outs.windSpeed.textContent = controls.windSpeed.toFixed(1);
@@ -3837,6 +3892,7 @@ oarDeployedCheckbox.addEventListener('change', () => {
 syncSlidersFromControls();
 syncOarUI();   // the oar starts SHIPPED, so the checkbox and the disabled slider must say so
 updateBrailZoneUI();
+updateSheetRangeUI();
 
 // ---------------------------------------------------------------------
 // Keyboard
@@ -6110,6 +6166,7 @@ function applyBoatPatch(patch) {
   }
   dims = validated;
   updateBrailZoneUI();
+  updateSheetRangeUI();
   renderCrewPad(); // hull/ama/spacing/crew-range may all have changed
   sim.setConfig(patch);
   sim.reset();
@@ -6126,6 +6183,7 @@ document.getElementById('btnApplyBoat').addEventListener('click', () => {
 document.getElementById('btnResetBoatDefaults').addEventListener('click', () => {
   dims = createConfig();
   updateBrailZoneUI();
+  updateSheetRangeUI();
   renderCrewPad();
   buildBoatPanel();
 });
