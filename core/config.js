@@ -29,6 +29,14 @@ export const CONFIG_VERSION = '1.0.0';
 // Minimal CSV parser (handles quoted fields with embedded commas, "" escapes)
 // ---------------------------------------------------------------------
 export function parseCSV(text) {
+  // Strip whole-line `#` comments before parsing (S4b, docs/adr/0009). ADR
+  // 0009 makes a self-describing header — extraction method, the source's own
+  // definitions — mandatory on every digitised file, so a parser that treats
+  // the first `#` line as the column header cannot read the files the contract
+  // requires. Verified safe for the three files already read
+  // (crab_claw_CL_CD_polhamus, crab_claw_CL_CD_v2, example_proa_parameters):
+  // none of them contains a `#` line.
+  text = text.split('\n').filter((line) => !line.trimStart().startsWith('#')).join('\n');
   const rows = [];
   let row = [];
   let field = '';

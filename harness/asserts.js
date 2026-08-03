@@ -9,7 +9,7 @@ import { tableCL, sailForces } from '../core/aero.js';
 import { integrate, computeForces } from '../core/integrator.js';
 import { computeAmaLoad, updateAback, rollRestoreMoment, crewRollMoment, rollDampingMoment } from '../core/stability.js';
 import { amaDrag, hullResistance, hullSideForce } from '../core/hydro.js';
-import { createConfig, configFromRecordingSnapshot } from '../core/config.js';
+import { createConfig, configFromRecordingSnapshot, parseCSV } from '../core/config.js';
 import { computePolar, headingHoldRudder } from './polar.js';
 import { createSimulator } from '../core/simulator.js';
 import { scenarioSquall, scenarioShunt, scenarioAback, scenarioStop, scenarioBackwindSlam, scenarioThroughGybeAback } from './scenarios.js';
@@ -294,6 +294,91 @@ export function runAsserts(config, { slow = true } = {}) {
     check('S2: the helm lever (xCE - clrX) changes sign inside the tack range at every trim',
       crossing.length === trims.length,
       `${crossing.length}/${trims.length} trims cross zero -- at delta=0: ${lever(0, -1).toFixed(3)}m (tack aft) to ${lever(0, 1).toFixed(3)}m (fwd); at delta=90: ${lever(90, -1).toFixed(3)} to ${lever(90, 1).toFixed(3)} -- pre-S2 range was ${(config.hull.lead - halfChordEff).toFixed(3)}..${config.hull.lead.toFixed(3)}m, positive throughout`);
+  }
+
+  // --- 2c. Driving-force curve vs Di Piazza Fig 4 (S4b, docs/adr/0009) ---
+  // The reader that file never had. ADR 0009's contract is that nothing sits
+  // in data/ without one, and `driving_force_vs_AWA.csv` was the case that
+  // motivated the contract: digitised in round 10, described in the data
+  // README, cited in an assertion comment as justification for a threshold,
+  // and loaded by no code at all — which is exactly how it stayed wrong by up
+  // to 0.41 (eight times the source's own stated uncertainty) until S4a
+  // re-extracted it.
+  //
+  // The model's CR is computed the way the paper computes it: the best over
+  // trim at each apparent wind angle, non-dimensionalised on the same sail
+  // area, with theta the apparent wind angle (all three resolved from the full
+  // text in S4a and quoted in the file's own header).
+  //
+  // Only the series=SantaCruz rows are compared. The theta<55 rows are an
+  // upper bound over all ten sails, not a Santa Cruz measurement, so scoring
+  // the model against them would be scoring it against the wrong boat.
+  {
+    const csvPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'data', 'driving_force_vs_AWA.csv');
+    const rows = parseCSV(readFileSync(csvPath, 'utf8')).filter((r) => r.series === 'SantaCruz');
+    const q = 0.5 * config.rho_air * config.sail.area * 36; // 6 m/s reference
+    const driveBase = { t: 0, x: 0, y: 0, heading: 0, u: 0, v: 0, r: 0, phi: 0, p: 0, end: 1,
+      amaLoad: 0, abackTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
+    const compared = rows.map((r) => {
+      const theta = Number(r.theta_deg);
+      const controls = { windDirFrom: theta * DEG, windSpeed: 6, sheet: 0, rudder: 0, rudderUp: true,
+        brailLee: 0, brailWind: 0, crewPos: 0, crewPosX: 0, tackX: 0, shuntRequest: false };
+      let peak = -Infinity;
+      for (let d = 0; d <= 90; d += 0.5) {
+        peak = Math.max(peak, sailForces({ ...driveBase, delta: d * DEG }, controls, config).Fx);
+      }
+      return { theta, model: peak / q, lit: Number(r.CR) };
+    });
+    // Band: the source's own stated +-0.05 plus an explicit +-0.10 of trim
+    // margin, since the model's achievable trim range is bounded by
+    // sail.deltaMinDeg (S6) where the wind tunnel's was not.
+    const BAND = 0.15;
+    const within = compared.filter((c) => Math.abs(c.model - c.lit) <= BAND);
+    const worst = compared.reduce((a, c) => (Math.abs(c.model - c.lit) > Math.abs(a.model - a.lit) ? c : a), compared[0]);
+    const table = compared.filter((c) => c.theta % 20 === 0 || c.theta === 55 || c.theta === 175)
+      .map((c) => `${c.theta}:${c.model.toFixed(2)}/${c.lit.toFixed(2)}`).join(' ');
+    check('S4b: driving-force curve matches Di Piazza Fig 4 (Santa Cruz) within +-0.15 across theta 55-180',
+      rows.length > 0 && within.length === compared.length,
+      `${within.length}/${compared.length} points in band; worst theta=${worst.theta} model=${worst.model.toFixed(3)} lit=${worst.lit.toFixed(3)} (${(worst.model - worst.lit >= 0 ? '+' : '')}${(worst.model - worst.lit).toFixed(3)}) -- model/lit at theta ${table} -- the model is short close-hauled and long on the broad reach; agreement is within +-9% from theta 85 to 180 and degrades below it, which is the same close-hauled deficit xfail:CALIBRATION tracks from the other side. Reported, not retuned; see docs/findings-2026-08-02 stage 1`,
+      'CALIBRATION');
+  }
+
+  // --- 2d. The rest of ADR 0009's contract: every data file has a reader ---
+  // S4b gave driving_force_vs_AWA.csv one. A grep of data/ against the
+  // execution path then found two more files that had none:
+  // flay_2025_hull_sideforce_digitized.csv (no reference in any code at all)
+  // and dipiazza_2014_digitized.csv (referenced only from a COMMENT in
+  // core/aero.js, which is the same "documented but unread" pathology one
+  // level down). Both hold the measurements that config.js's fitted constants
+  // were derived FROM, so the natural reader is the one that checks the fit
+  // still passes through the measurements.
+  {
+    const dataDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'data');
+
+    // Flay CS(leeway) — the V2 hull (70deg keel, the paper's proa-like case)
+    // is what core/hydro.js's hullSideForceCoeff is anchored on (docs/adr/0004).
+    const flay = parseCSV(readFileSync(path.join(dataDir, 'flay_2025_hull_sideforce_digitized.csv'), 'utf8'))
+      .filter((r) => r.hull === 'V2');
+    const csModel = (lambdaDeg) => config.hull.csV2A * lambdaDeg + config.hull.csV2B * lambdaDeg * lambdaDeg;
+    const flayRows = flay.map((r) => ({ lam: Number(r.leeway_deg), lit: Number(r.CS), model: csModel(Number(r.leeway_deg)) }));
+    const flayWorst = flayRows.reduce((a, c) => (Math.abs(c.model - c.lit) > Math.abs(a.model - a.lit) ? c : a), flayRows[0]);
+    check('data contract: hullSideForceCoeff still passes through Flay 2025 V2 measurements (+-0.02, source states +-0.01)',
+      flayRows.length >= 4 && flayRows.every((r) => Math.abs(r.model - r.lit) <= 0.02),
+      flayRows.map((r) => `${r.lam}deg:${r.model.toFixed(3)}/${r.lit.toFixed(3)}`).join(' ') +
+      ` -- worst |model-lit|=${Math.abs(flayWorst.model - flayWorst.lit).toFixed(4)} at ${flayWorst.lam}deg`);
+
+    // Di Piazza section A — the four Santa Cruz (CL, CD) anchors the v2 aero
+    // table was fitted to. Checked through the same runtime path aero.js uses
+    // (tableCL + the config's own CD reconstruction), not against a copy of
+    // the fit's own output.
+    const dpRows = parseCSV(readFileSync(path.join(dataDir, 'dipiazza_2014_digitized.csv'), 'utf8'))
+      .filter((r) => r.sail === 'SantaCruz' && r.CL && r.point);
+    let clMaxModel = -Infinity;
+    for (let a = 20; a <= 80; a += 0.5) clMaxModel = Math.max(clMaxModel, tableCL(config.sail.apexAngleDeg, a, config));
+    const clMaxLit = Math.max(...dpRows.map((r) => Number(r.CL)));
+    check('data contract: the aero table still reproduces Di Piazza section A CLmax (+-0.05, the source\'s stated uncertainty)',
+      dpRows.length >= 4 && Math.abs(clMaxModel - clMaxLit) <= 0.05,
+      `model CLmax=${clMaxModel.toFixed(3)} vs digitized ${clMaxLit.toFixed(3)} over ${dpRows.length} Santa Cruz anchors read from the file`);
   }
 
   // --- 3. Polar shape + speed anchor (TWS=6) --- (slow: computePolar sweep)

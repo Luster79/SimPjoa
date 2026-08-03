@@ -753,3 +753,65 @@ course-hold searched `tackX ∈ [0.25, 0.75]`; when the reversal moved the
 neutral helm, that window missed it at 5 of 6 points and reported a failure
 that was about the window, not the boat. It is an *existence* search and now
 covers the whole control range.
+
+---
+
+## Stage 4a — S4b, and closing ADR 0009's contract (2026-08-03)
+
+S4b was the last open piece of S4, deliberately staged until the source was
+resolved (stage 1) and the trim range was physical (stage 2).
+
+### The reader that file never had
+
+`driving_force_vs_AWA.csv` now has an assertion that loads it. The model's CR
+is computed the way the paper computes it — best over trim at each apparent
+wind angle, same reference area — with θ, CR and the trim maximisation all
+taken from the definitions S4a quoted out of the full text.
+
+Only the `series=SantaCruz` rows are scored. The θ<55 rows are an upper bound
+over all ten sails, so scoring the model against them would be scoring it
+against the wrong boat.
+
+**19 of 26 points inside ±0.15** (the source's own ±0.05 plus ±0.10 of trim
+margin, since the model's achievable trim is bounded by `sail.deltaMinDeg` and
+the wind tunnel's was not). Worst is θ=175, model 1.13 against 1.34.
+
+| θ | 55 | 80 | 100 | 120 | 140 | 160 | 180 |
+|---|---|---|---|---|---|---|---|
+| model | 0.72 | 1.22 | 1.51 | 1.63 | 1.58 | 1.36 | 1.10 |
+| Di Piazza | 0.92 | 1.34 | 1.52 | 1.56 | 1.47 | 1.46 | 1.29 |
+
+`xfail:CALIBRATION` with the table, per ADR 0009 — the band is not widened to
+fit. Short close-hauled, long on the broad reach, weak again right at the run;
+the close-hauled end is the same deficit the older `xfail:CALIBRATION` tracks
+from the other side.
+
+### Two more files had no reader
+
+Running ADR 0009's own acceptance (`grep` the whole of `data/` against the
+execution path) found the contract was still broken in two places:
+
+- `flay_2025_hull_sideforce_digitized.csv` — **no reference in any code at all**.
+- `dipiazza_2014_digitized.csv` — referenced only from a *comment* in
+  `core/aero.js`. That is the same "documented but unread" pathology one level
+  down, and it is precisely what ADR 0009 was written about.
+
+Both hold the measurements that `config.js`'s fitted constants were derived
+*from*, so the natural reader is one that checks the fit still passes through
+the measurements. Both now have one, and both pass with room:
+
+- Flay V2 CS(leeway): worst |model − measured| = **0.0020** against a 0.02
+  tolerance (the source states ±0.01).
+- Di Piazza section A CLmax: model **1.378** vs digitised **1.380**, checked
+  through the same runtime path `aero.js` uses rather than against a copy of
+  the fit's own output.
+
+`parseCSV` now skips whole-line `#` comments. ADR 0009 makes a self-describing
+header mandatory on every digitised file, so a parser that reads the first `#`
+line as the column header could not read the files the contract requires.
+Verified safe for the three files already loaded — none contains a `#` line.
+
+**Every file in `data/` now has a reader on the execution path.** That was
+ADR 0009's stated acceptance and it is the first time it actually holds.
+
+`out/polar.csv` byte-identical — no physics changed.
