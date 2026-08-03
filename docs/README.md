@@ -25,6 +25,7 @@ Append-only. Never edit an old ADR; supersede it with a new one.
 | 0007 | Composite sail CD + brail-effective area — supersedes 0003's CD *form* only |
 | 0008 | Windage |
 | 0009 | Data contract for digitised sources — every file in `data/` has a reader, its own method, and the source's own definitions |
+| 0010 | Geometric sheeting floor (`sail.deltaMinDeg`) — the rig will not strap flat |
 
 ## Work orders — what to do
 
@@ -32,7 +33,7 @@ Append-only. Never edit an old ADR; supersede it with a new one.
 |---|---|
 | `work-order-2026-07-22.md` | Nearly complete. Open: **R13** (monoliths), **R10** (lint/types). |
 | `work-order-2026-07-30-physics-audit.md` | **Complete** — F1-F16 all executed. |
-| `work-order-2026-08-02-steering-and-sources.md` | In progress. Stage 0 (S5, S1) done. Open: **S4**, **S6**, **S2+S3** (the core), **S7**, **S8**. |
+| `work-order-2026-08-02-steering-and-sources.md` | In progress. Stages 0-2 done (S5, S1, S4a, S6). Open: **S2+S3** (the core), **S4b**, **S7**, **S8**. |
 
 ## Findings — evidence for what was done
 

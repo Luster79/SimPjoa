@@ -358,6 +358,23 @@ function updateBrailZoneUI() {
   sliders.brailWind.title = t('tooltip.brailWindZones', pct);
 }
 
+// S6 (work-order-2026-08-02): the sheet slider's lower bound is the rig's
+// own geometric one (config.js sail.deltaMinDeg), not 0. Without this the
+// bottom ~11deg of the slider's travel is a dead zone — the sheet cannot
+// hold the yard in there, so dragging through it changes nothing on screen
+// and reads as a broken control rather than as a rig that will not strap
+// flat. Read from CONFIG for the same reason as the brail zones above: a
+// boat-design change to area or apex angle moves it.
+function updateSheetRangeUI() {
+  const minDeg = Math.ceil(dims.sail.deltaMinDeg ?? 0);
+  sliders.sheet.min = String(minDeg);
+  if (controls.sheet < minDeg * DEG) {
+    controls.sheet = minDeg * DEG;
+    sliders.sheet.value = String(minDeg);
+    refreshOutputs();
+  }
+}
+
 function refreshOutputs() {
   outs.windDir.textContent = `${Math.round(controls.windDirFrom / DEG)}°`;
   outs.windSpeed.textContent = controls.windSpeed.toFixed(1);
@@ -535,6 +552,7 @@ oarDeployedCheckbox.addEventListener('change', () => {
 syncSlidersFromControls();
 syncOarUI();   // the oar starts SHIPPED, so the checkbox and the disabled slider must say so
 updateBrailZoneUI();
+updateSheetRangeUI();
 
 // ---------------------------------------------------------------------
 // Keyboard
@@ -2808,6 +2826,7 @@ function applyBoatPatch(patch) {
   }
   dims = validated;
   updateBrailZoneUI();
+  updateSheetRangeUI();
   renderCrewPad(); // hull/ama/spacing/crew-range may all have changed
   sim.setConfig(patch);
   sim.reset();
@@ -2824,6 +2843,7 @@ document.getElementById('btnApplyBoat').addEventListener('click', () => {
 document.getElementById('btnResetBoatDefaults').addEventListener('click', () => {
   dims = createConfig();
   updateBrailZoneUI();
+  updateSheetRangeUI();
   renderCrewPad();
   buildBoatPanel();
 });

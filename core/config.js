@@ -557,6 +557,37 @@ function buildDefaultConfig() {
       area: p.sail_area_m2,                // 12 m^2
       apexAngleDeg: p.sail_apex_angle_deg,  // 50 deg (45-60 valid range)
       CEheight: p.CE_height_m,              // 2.0 m
+      // deltaMinDeg (S6, work-order-2026-08-02): the closest the SHEET can
+      // hold the yard to the centreline. A rig cannot be strapped flat just
+      // because the optimizer would like it to be: on an Oceanic lateen the
+      // tack is at the bow and the boom runs aft, so the sheet has to reach
+      // the clew from a point on the hull. Derived, not chosen —
+      // example_proa_parameters.csv fixes all three inputs:
+      //   spar length from the sail's own area and apex angle, treating the
+      //   sail as the triangle the aero table already models it as:
+      //     A = 0.5*L^2*sin(apex)  ->  L = sqrt(2A/sin(apex)) = 5.60 m
+      //   the clew must come within reach of the sternmost sheeting point,
+      //   a distance hull.length from the tack:
+      //     L*cos(deltaMin) <= hull.length  ->  deltaMin = acos(L_hull/L)
+      // At 12 m2 / 50 deg / 5.5 m that is 10.7 deg. A boom shorter than the
+      // hull imposes nothing and the expression correctly returns 0.
+      //
+      // ILL-CONDITIONED, and deliberately left visible rather than rounded
+      // into a tidy literal: L (5.60 m) and hull.length (5.5 m) are within
+      // 2% of each other, so acos() is evaluated where its slope is
+      // steepest. Sail area 11 m2 gives L=5.36 m and deltaMin=0; 13 m2 gives
+      // 19.3 deg. The VALUE is therefore a weak claim about this particular
+      // boat, even though the CONSTRAINT is a solid claim about the rig
+      // type. Do not tune it — measure what it costs and report that (see
+      // docs/findings-2026-08-02, stage 2). If a specific boat's real
+      // sheeting geometry ever becomes available, it belongs in
+      // example_proa_parameters.csv as its own measured parameter, which
+      // would retire this derivation rather than re-fit it.
+      deltaMinDeg: (() => {
+        const sparLength = Math.sqrt(2 * p.sail_area_m2 / Math.sin(p.sail_apex_angle_deg * Math.PI / 180));
+        if (sparLength <= p.boat_length_m) return 0;
+        return Math.acos(p.boat_length_m / sparLength) * 180 / Math.PI;
+      })(),
       // camber/CD0/s: round 10 (R10-1, docs/adr/0003) retune. aero.js never
       // reads the aeroTable's own CD column (only CL) — CD is recomputed
       // at RUNTIME from CD0/s below, so switching the CL table to the v2

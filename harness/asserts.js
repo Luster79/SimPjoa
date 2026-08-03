@@ -293,7 +293,7 @@ export function runAsserts(config, { slow = true } = {}) {
   // is 1.3% over a bound whose own wording is approximate ("~50deg").
   check('no meaningful progress below ~50deg TWA',
     bySpeed(40) < 0.55 * globalMax,
-    `speed(40)=${bySpeed(40).toFixed(2)} globalMax=${globalMax.toFixed(2)} ratio=${(bySpeed(40) / globalMax).toFixed(3)} -- block B + F14 cut globalMax 5.61->4.59 while speed(40) held (2.76->2.68); denominator-driven, reported not retuned`,
+    `speed(40)=${bySpeed(40).toFixed(2)} globalMax=${globalMax.toFixed(2)} ratio=${(bySpeed(40) / globalMax).toFixed(3)} -- block B + F14 cut globalMax 5.61->4.59 while speed(40) held (2.76->2.68), leaving this denominator-driven; S6's geometric sheeting floor then cut the NUMERATOR too (speed(40) 2.40->2.27, ratio 0.591->0.558), the first movement here that is not denominator-driven. Still failing, still reported not retuned`,
     'CALIBRATION');
   check('polar peak lands on a reach (90-135deg near the global max)', maxIn90to135 >= 0.85 * globalMax,
     `max@90-135=${maxIn90to135.toFixed(2)} globalMax=${globalMax.toFixed(2)}`);
@@ -309,12 +309,24 @@ export function runAsserts(config, { slow = true } = {}) {
   // "best" trim can't be luffing — see harness/polar.js's simulateToSteady
   // settled criterion). Checked on the rows that actually drive (bestSpeed
   // above a floor), tolerant of the sheet search's own 4deg grid step.
+  //
+  // S6 (work-order-2026-08-02) added a THIRD case the original premise did
+  // not have. Below sail.deltaMinDeg the sheet is no longer what binds — the
+  // rig's own geometry is, and the yard sits at deltaMin however hard the
+  // sheet is hauled. Close-hauled rows then legitimately report
+  // bestSheetAngle=4 with a settled delta of 10.7 (measured gap 6.70deg).
+  // The quantity that must still coincide with the settled delta is the
+  // EFFECTIVE ceiling, so that is what is compared. This is the assertion's
+  // original intent, not a widened band: the tolerance is unchanged at
+  // 4.5deg, and the check still fails if the yard settles anywhere the
+  // constraint chain does not put it.
   {
     const drivingRows = polar.filter((r) => r.bestSpeed > 0.5);
-    const worstGap = Math.max(...drivingRows.map((r) => Math.abs(r.bestSheetAngle - r.deltaAngle)), 0);
-    check('polar: bestSheetAngle and the settled delta coincide on driving (taut-sheet) rows',
+    const effectiveCeiling = (r) => Math.max(r.bestSheetAngle, config.sail.deltaMinDeg ?? 0);
+    const worstGap = Math.max(...drivingRows.map((r) => Math.abs(effectiveCeiling(r) - r.deltaAngle)), 0);
+    check('polar: the effective sheet ceiling (sheet, floored by the rig geometry) and the settled delta coincide on driving rows',
       drivingRows.length > 0 && worstGap <= 4.5,
-      `worstGap=${worstGap.toFixed(2)}deg over ${drivingRows.length} rows`);
+      `worstGap=${worstGap.toFixed(2)}deg over ${drivingRows.length} rows (deltaMin=${(config.sail.deltaMinDeg ?? 0).toFixed(1)}deg)`);
   }
 
   // --- 3b. Helm balance with the rudder released (S1, work-order-2026-08-02) ---

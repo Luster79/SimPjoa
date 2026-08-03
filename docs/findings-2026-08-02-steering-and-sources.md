@@ -250,3 +250,114 @@ The comparison assertion is **not** added here: it is S4(b), staged for stage
 4, after S6 has fixed the physical trim range it should be measured against.
 The file therefore still has no reader — that is the one part of S4 that
 remains open, deliberately.
+
+---
+
+## Stage 2 — the trim range (S6)
+
+Full detail and the decision itself are in `docs/adr/0010`. The measurements:
+
+### The premise, tested first
+
+The work order's case for S6 was that `bestSheetAngle` sat on the search
+grid's lowest value (4°), so "the optimizer is pinned against the grid
+constraint, not against physics — it would like to sheet in harder." Extending
+the grid down to 0.5° shows it would, and that it gains almost nothing by it:
+
+| TWA | 4° grid | fine grid | gain |
+|---|---|---|---|
+| 40 | 4° → 2.400 m/s | 1.5° → 2.411 m/s | +0.5 % |
+| 45 | 4° → 2.630 | 3.0° → 2.631 | +0.0 % |
+| 50 | 4° → 2.823 | 4.5° → 2.824 | +0.0 % |
+| 55 | 4° → 2.992 | 6.0° → 2.998 | +0.2 % |
+
+The objective is nearly flat below ~6°. The grid edge was costing at most
+0.5 % of speed, and at TWA 45/50 the unconstrained optimum lies inside the
+grid regardless. **The missing constraint was real; the symptom that pointed
+at it was not itself doing damage.** Worth recording, because it means S6
+could not have been the explanation for the close-hauled `xfail` — and it was
+not (below).
+
+### The constraint
+
+`deltaMin = acos(hull.length / L)` with `L = sqrt(2A/sin(apex)) = 5.60 m`,
+giving **10.7°**. Derived from three parameters already in
+`example_proa_parameters.csv`, with nothing fitted. It floors the sheet
+ceiling, not the yard — the wind can still push the yard inside it (luffing),
+which is unchanged.
+
+The derivation is **ill-conditioned** and is documented as such at the
+parameter: L and `hull.length` are within 2 %, so 11 m² of sail would give 0°
+and 13 m² would give 19.3°. The constraint is a solid claim about the rig
+type; the value is a weak claim about this boat.
+
+### What it cost
+
+Ten rows of `out/polar.csv` change — exactly those whose settled delta was
+below 10.70°. TWA ≥ 80 is untouched at every wind.
+
+| TWA (TWS 6) | before | after | change |
+|---|---|---|---|
+| 40 | 2.400 | 2.267 | −5.6 % |
+| 50 | 2.823 | 2.763 | −2.1 % |
+| 60 | 3.159 | 3.142 | −0.5 % |
+| 70 | 3.450 | 3.456 | +0.2 % |
+
+TWA 70 gets marginally *faster* at TWS 4 and 6: 8° was not the optimum there
+either, and being pushed to 10.7° helped.
+
+### Upwind VMG, re-measured
+
+| TWA | speed | VMG | AWA |
+|---|---|---|---|
+| 35 | 1.912 | 1.566 | 26.8° |
+| 40 | 2.267 | 1.736 | 29.3° |
+| **45** | **2.532** | **1.791** | **32.1°** |
+| 50 | 2.763 | 1.776 | 34.8° |
+| 55 | 2.963 | 1.700 | 37.5° |
+
+The optimum stays at TWA 45 (VMG 1.859 → 1.791, −3.7 %). The apparent wind
+angle there stays at the bottom edge of Di Piazza's measured range —
+31.7° → 32.1°, against a lowest measured point of 30°. **S6 does not lift the
+model out of that extrapolation zone**: the boat slowed roughly in proportion
+to the trim it lost, so the apparent wind angle barely moved. The work order
+expected S6 to address this; measured, it does not.
+
+### The close-hauled xfail
+
+`no meaningful progress below ~50deg TWA` moves 0.591 → 0.558 against its 0.55
+bound. Still failing, not promoted, not retuned. This is the first movement in
+that ratio driven by its *numerator* — every previous one came from
+`globalMax` shifting underneath it.
+
+And it moves in the direction stage 1 predicted, for the reason stage 1 gave:
+the model was already short of measured driving force close-hauled, and a
+sheeting floor can only reduce it further. **S6 widens the gap to Di Piazza
+rather than closing it.** That was stated before the change was made.
+
+### Assertion premise widened (not the band)
+
+`polar: bestSheetAngle and the settled delta coincide` assumed two cases —
+sheet-bound and luffing. There is now a third, geometry-bound, in which
+`bestSheetAngle = 4` with a settled delta of 10.7 is correct (measured gap
+6.70°). It now compares the settled delta against the *effective* ceiling. The
+4.5° tolerance is unchanged, so the check still fails if the yard settles
+anywhere the constraint chain does not put it.
+
+### No mast-shadow term
+
+The work order offered one as a separate item. With `deltaMin = 10.7°` a
+trimmed yard never enters the narrow small-delta band such a term would act
+on — only a luffing one does, where the sail already makes ~no lift and
+carries flogging drag. It would have no consumer, so it is not added.
+
+### UI
+
+The sheet slider's lower bound now comes from `sail.deltaMinDeg`. Without it
+the bottom ~11° of the slider's travel is a dead zone that changes nothing on
+screen, which reads as a broken control rather than as a rig that will not
+strap flat.
+
+### Suite state after stage 2
+
+84/84; four `xfail`s, none promoted.
