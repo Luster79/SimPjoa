@@ -44,7 +44,8 @@ Append-only. Never edit an old ADR; supersede it with a new one.
 |---|---|
 | `findings-2026-07-22-work-order.md` | Execution of the 07-22 order |
 | `findings-2026-07-30-physics-audit.md` | Execution of the physics audit, with the measured numbers behind every change |
-| `findings-2026-08-02-steering-and-sources.md` | Execution of the 08-02 order, stage by stage |
+| `findings-2026-08-02-steering-and-sources.md` | Execution of the 08-02 order, stage by stage, plus the acceptance-criteria run |
+| `acceptance-manual-2026-08-03.txt` | Raw output of `harness/acceptance-manual.js` against the owner's primary source |
 | `capsize-margins-2026-07-30.md` | Margin sweep run as a precondition for the audit's block D |
 | `diagnostic-2026-07-22-residuary-hump.md` | The investigation that produced the 07-22 physics items |
 

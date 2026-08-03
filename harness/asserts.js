@@ -1177,7 +1177,7 @@ export function runAsserts(config, { slow = true } = {}) {
     const brailed = steeringDrift(config, brailBase, (c) => { c.brailWind = 1.0; }, 20, 20);
     check('Sail steers: trimming the sheet in points up (windward) — majority of operating points',
       trimSweep.weather > trimSweep.lee + trimSweep.capsized,
-      `weather=${trimSweep.weather} lee=${trimSweep.lee} capsized=${trimSweep.capsized} of 16 -- the claim holds only at selected trims; sign flips with crew position. Measured, not re-picked; see comment`,
+      `weather=${trimSweep.weather} lee=${trimSweep.lee} capsized=${trimSweep.capsized} of 16 -- the claim holds only at selected trims; sign flips with crew position. Measured, not re-picked. AND THE CLAIM ITSELF IS NOW IN DOUBT: the owner's own primary source (Kryteria_Akceptacji_Symulator_Pjoa.md AC-3.1/3.2, from "Elementarz zeglowania po Mikronezyjsku" ch. III-V) states the OPPOSITE -- sheeting in BEARS AWAY and easing POINTS UP. Round 4 encoded exactly that rule (ceLeverSign=-1) and round 9 removed it as "a structural lee-helm bias masking real behaviour"; the source says the rule was right and the removal threw out the baby. This assertion has therefore been testing the wrong direction for several rounds. Not flipped here -- that is a physics decision with a polar diff, not a wording fix. See harness/acceptance-manual.js`,
       'STEERING');
     check('Sail steers: the windward brail bears away (leeward)',
       !brailed.capsized && steeringOk(brailed.drift, -1), `drift=${brailed.drift.toFixed(1)}deg`);

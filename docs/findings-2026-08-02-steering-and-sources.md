@@ -570,3 +570,106 @@ the sweep never searched the board.
 ### Suite state after the revert
 
 79/79 fast / 87/87 full; four `xfail`s, none promoted.
+
+---
+
+## Acceptance criteria from the owner's primary source (2026-08-03)
+
+`Kryteria_Akceptacji_Symulator_Pjoa.md` — criteria drawn from *„Elementarz
+żeglowania po Mikronezyjsku"* (pjoa.eu, ch. III–V) — is the first **primary
+source about this specific boat** the project has had. Everything before it was
+either generic yacht theory, wind-tunnel data on model sails, or towing-tank
+data on other hulls.
+
+Measured by `harness/acceptance-manual.js` (a report, not a build gate — see
+its header for why). Full output: `docs/acceptance-manual-2026-08-03.txt`.
+
+**12 PASS, 7 PARTIAL, 0 FAIL, 2 not representable.**
+
+### The headline: the manual contradicts a long-standing assertion
+
+**AC-3.1: sheeting in makes the bow bear away. AC-3.2: easing makes it point
+up.** The suite's `xfail:STEERING` asserts the *opposite* — "trimming the sheet
+in points up (windward)".
+
+This is not a new disagreement, it is an old one that was resolved the wrong
+way. Round 4 encoded exactly the manual's rule (`ceLeverSign = -1`, commented
+as "sheet in bears away"). Round 9 removed it, on the reasoning that a
+structural lee-helm bias at `lead = 0.15·L` had been masking the boat's real
+behaviour. The primary source says the rule was right and the removal threw it
+out along with the bias.
+
+Measured today, the model does neither cleanly: sheeting in bears away at only
+1 of 6 points, easing points up at 1 of 6. So the model does not support its
+own assertion *or* the manual — it has almost no coherent sheet-steering
+response at all, which is the same conclusion S2 reached structurally (the
+helm lever could not change sign).
+
+Recorded on the assertion. **Not flipped** — reversing it is a physics decision
+with a polar diff behind it, not a wording change.
+
+### What passes
+
+| | criterion | result |
+|---|---|---|
+| AC-2.1 | crew forward → points up | 6/6, +9 to +18° |
+| AC-2.2 | crew aft → bears away | 6/6, −9 to −20° |
+| AC-2.3 | crew aft + breaking brail beats crew aft alone | 2/2 |
+| AC-4.2a | breaking brail → bears away | 6/6, −3 to −12° |
+| AC-4.2b | effect grows with degree of breaking | 6/6, monotone |
+| AC-4.3 | the "carrot" helps hold a deep course | 2/2 |
+| AC-5.2 | paddle authority grows with speed | 4× speed → **16.0×** moment, exactly V² |
+| AC-5.3 | backwind detected and signalled | `abackTimer` rises, UI banner fires |
+| AC-5.4a | a shunt swaps which end is the bow | passes once eased below the 2.6 m/s lockout |
+| AC-5.4b | the crew's fore/aft reference swaps with the bow | passes |
+| AC-6.1 | nothing turns the boat instantly | every control slammed at once → 0.03°/s in one step |
+| AC-6.3 | controls combine rather than exclude | crew aft −16°, tack fwd −24°, together −37° |
+
+The crew fore-aft group (AC-2.x) is the strongest agreement in the whole set —
+6/6 with clean margins, in both directions, at both winds.
+
+### What is partial
+
+- **AC-1.1/1.2/1.3** (crew athwartships): the manual says moving the crew
+  *either* way laterally turns the bow toward the wind, by two different
+  mechanisms. The model mostly bears away for both, 1/6 each. A real
+  disagreement, and the most surprising one — the two-mechanism claim is
+  specific enough that it is unlikely to be a translation artefact.
+- **AC-3.3**: the luffing sail gives a weaker response than the drawing one at
+  4/6 points, which is the right direction but not the clean absence of
+  response the criterion describes.
+- **AC-4.1**: the main brail alone should be purely preparatory and change
+  nothing; measured it moves the bow up to 3.6°. Small, but not zero.
+
+### Not representable
+
+- **AC-4.4** (mast raked upright reinforces the carrot) — no mast-rake DOF;
+  `sail.CEheight` is a constant 2.0 m.
+- **AC-5.1** (halyard to the masthead, shroud tightened, both reduce weather
+  helm) — neither line exists as a control. `controls.tackX` moves the CE
+  fore-aft but is the tack line, not either of these.
+
+Both are the same gap: **the model has no vertical CE and no rigging tension.**
+That is now the largest single block of criteria it cannot answer.
+
+### Two method notes
+
+The first run of this harness produced 5 FAILs. Three were **my measurement
+defects, not model defects**, and all three were caught by looking at the
+numbers rather than the verdicts:
+
+- **AC-5.4a** requested a shunt at 3.95 m/s against a 2.6 m/s lockout. The
+  model refused, correctly — the literature is unanimous that a proa comes to a
+  near stop and the crew carries the yard end to end. Easing the sheet first,
+  as a crew would, it passes.
+- **AC-1.x** swung the crew right across the boat, which capsizes it at TWS 10.
+  A measurement taken through a capsize is not a measurement of steering.
+- **AC-5.2** read a yaw *rate* at fixed deflection, which saturates within
+  seconds, and reported 13.8 → 14.5 °/s across a 4× speed range: almost flat,
+  and meaningless. The oar's own yaw *moment* gives 16.0× for 4× — textbook V².
+
+And **AC-5.4b was recorded as a FAIL on the strength of reading the code**:
+`clrXPosition()` has no `end` term, so the crew's fore/aft reference looked
+unable to flip at a shunt. It is a boat-frame quantity and the boat frame
+itself flips, so it does. Measuring it turned the FAIL into a PASS. Second time
+in this work order that reading beat measuring and reading was wrong.

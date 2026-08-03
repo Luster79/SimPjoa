@@ -1,0 +1,68 @@
+
+Acceptance criteria — Kryteria_Akceptacji_Symulator_Pjoa.md
+(+turn = bow points UP / toward the wind; -turn = bears away)
+
+AC-1.1    PARTIAL              crew toward the ama -> bow points UP
+          1/6 points -- T70/6:-2.9 T90/6:-2.3 T110/6:+0.5 T70/10:+0.0 T90/10:+0.0 T110/10:-1.4
+
+AC-1.2    PARTIAL              crew away from the ama -> bow ALSO points UP
+          1/6 points -- T70/6:-1.1C T90/6:-0.3C T110/6:+7.0 T70/10:-3.7C T90/10:-5.4C T110/10:-6.8C
+
+AC-1.3    PARTIAL              centred crew is the neutral point (both directions turn the same way)
+          1/6 points -- min(both sides) - centred, T70/6:-2.9C T90/6:-2.3C T110/6:+0.5 T70/10:-3.7C T90/10:-5.4C T110/10:-6.8C
+
+AC-2.1    PASS                 crew FORWARD -> bow points UP
+          6/6 points -- T70/6:+16.5 T90/6:+15.1 T110/6:+8.9 T70/10:+18.1 T90/10:+16.5 T110/10:+12.7
+
+AC-2.2    PASS                 crew AFT -> bow BEARS AWAY
+          6/6 points -- T70/6:-19.3 T90/6:-16.3 T110/6:-9.0 T70/10:-19.7 T90/10:-19.1 T110/10:-14.0
+
+AC-2.3    PASS                 crew aft + breaking brail beats crew aft alone (beam wind)
+          2/2 beam points -- T90/6:-2.3 T90/10:-8.5
+
+AC-3.1    PARTIAL              sheet IN -> bow BEARS AWAY
+          1/6 points -- T70/6:+0.0 T90/6:+1.1 T110/6:-0.2 T70/10:-3.2C T90/10:-7.6C T110/10:-7.1C
+
+AC-3.2    PARTIAL              sheet EASED -> bow points UP
+          1/6 points -- T70/6:-2.2 T90/6:-2.1 T110/6:+0.2 T70/10:-5.1 T90/10:-5.0 T110/10:-3.6
+
+AC-3.3    PARTIAL              a luffing sail does not give the textbook sheet response
+          4/6 points -- (drawing response - luffing response) T70/6:+0.0 T90/6:+0.7 T110/6:-1.3 T70/10:+3.2 T90/10:+7.6 T110/10:+5.1
+
+AC-4.1    PARTIAL              main brail alone (preparatory step) does NOT change course
+          3/6 points within +-3deg -- T70/6:-2.6 T90/6:-2.6 T110/6:-0.6 T70/10:-3.1 T90/10:-3.6 T110/10:-3.4
+
+AC-4.2a   PASS                 breaking brail -> bow BEARS AWAY
+          6/6 points -- T70/6:-7.0 T90/6:-6.5 T110/6:-3.3 T70/10:-11.5 T90/10:-11.5 T110/10:-8.7
+
+AC-4.2b   PASS                 the effect grows with the degree of breaking (monotone)
+          6/6 points -- (heavy - light) T70/6:-2.1 T90/6:-1.8 T110/6:-1.4 T70/10:-5.8 T90/10:-5.2 T110/10:-2.9
+
+AC-4.3    PASS                 the "carrot" helps hold a deep course / bears away
+          2/2 deep points -- T150/6:-3.0 T165/6:-1.2
+
+AC-4.4    NOT REPRESENTABLE    mast raked more upright reinforces the carrot
+          the model has no mast-rake DOF: sail.CEheight is a constant 2.0 m and there is no shroud/backstay control
+
+AC-5.1    NOT REPRESENTABLE    halyard hauled to the masthead / shroud tightened reduce weather helm
+          no halyard and no shroud control exist; controls.tackX (S2) moves the CE fore-aft but is not either of these lines
+
+AC-5.2    PASS                 the paddle is always available and its authority grows with boat speed
+          u=1: 133 N*m  u=2: 534 N*m  u=4: 2136 N*m -- 4x speed gives 16.0x moment, i.e. exactly the V^2 a foil should give
+
+AC-5.3    PASS                 backwind (sail caught on the wrong side) is detected and signalled
+          abackTimer rose within 20s: true; final=6.00s. UI shows the "ABACK" banner from this same flag
+
+AC-5.4b   PASS                 the crew's fore/aft reference swaps with the bow
+          "crew forward" turns the bow toward the wind by 21.4deg before the shunt and 6.0deg after (end=-1). clrXPosition() carries no explicit `end` term, but it is a BOAT-FRAME quantity and the boat frame itself flips at the shunt, so crewPosX=+1 keeps meaning "toward the active bow" on its own
+
+AC-6.1    PASS                 no control change turns the boat instantly (inertia)
+          every control slammed at once: |r| 0.000 -> 0.029 deg/s in one step (+0.0287), 1.731 at 0.5s, 3.293 at 2s
+
+AC-6.2    PASS (by inspection) the UI shows which side the ama is on
+          ui/app.js draws the ama and platform in plan view, on the state.end side, plus the "balance (bow-on)" inset and the crew pad art labelled ama/leeward; the HUD carries Ama load and Heel
+
+AC-6.3    PASS                 controls are independent and their effects combine, not exclude
+          crew aft alone -16.3deg, tack fwd alone -24.4deg, together -37.0deg (linear sum would be -40.7, departure 3.6deg — nonlinear, as a coupled model should be, but same direction and neither is ignored)
+
+summary: PARTIAL 7, PASS 12, NOT 2
