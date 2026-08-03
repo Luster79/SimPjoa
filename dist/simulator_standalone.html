@@ -172,9 +172,6 @@
       <h2 data-i18n="h.steering">Steering &amp; trim</h2>
       <div class="row"><label for="tackX" data-i18n="lbl.tackX">Tack (fore/aft)</label><input id="tackX" type="range" min="-1" max="1" step="0.02" value="0"><output id="tackXOut">0.00</output></div>
       <div class="hint" data-i18n="hint.tackX">Forward bears away, aft points up. This is how a proa steers.</div>
-      <div class="row"><label for="leeboardX" data-i18n="lbl.leeboardX">Leeboard (fore/aft)</label><input id="leeboardX" type="range" min="-1" max="1" step="0.02" value="0"><output id="leeboardXOut">0.00</output></div>
-      <div class="checkboxRow"><input type="checkbox" id="leeboardDown"><label for="leeboardDown" data-i18n="lbl.leeboardDown">Leeboard lowered</label></div>
-      <div class="hint" data-i18n="hint.leeboard">Extra lateral area: steadies the boat and moves the centre of lateral resistance, but costs about 10% of speed while it is down.</div>
       <div class="row"><label for="rudder" data-i18n="lbl.rudder">Rudder</label><input id="rudder" type="range" min="-1" max="1" step="0.02" value="0"><output id="rudderOut">0.00</output></div>
       <div class="hint" data-i18n="hint.rudder">A/D deflect, auto-centers on release</div>
       <div class="checkboxRow"><input type="checkbox" id="oarDeployed"><label for="oarDeployed" data-i18n="lbl.oarDeployed">Oar in the water</label></div>
@@ -388,12 +385,6 @@ function createDefaultControls() {
     // docs/adr/0011. 0 is the neutral setting, at which the model is
     // identical to what it was before this control existed.
     tackX: 0,
-    // leeboard (S3): raised by default, like the steering oar, so the boat's
-    // default configuration is exactly what it was before the board existed
-    // and any change is attributable to lowering it. leeboardX is its
-    // fore-aft trim, -1..1, referenced to the active bow like tackX.
-    leeboardDown: false,
-    leeboardX: 0,
     shuntRequest: false,
   };
 }
@@ -904,12 +895,16 @@ function buildDefaultConfig() {
       // did, and between them the hull was left with no directional
       // stability of its own for lead to balance against. Searching this
       // 2.7cm knife-edge window again would only re-create the same
-      // fragility one audit further on. S2/S3 of that work order remove the
+      // fragility one audit further on. S2 of that work order removed the
       // problem structurally, by giving the model the movable tack / mast
-      // rake and leeboard that a real proa steers with; lead is meant to
-      // become an OUTCOME of that geometry rather than the single free knob
-      // holding the whole balance. Until then S1a/S1b are xfail:STEERING
-      // with their numbers, deliberately not tuned green.
+      // rake that a real proa actually steers with -- Proafile: "traditional
+      // proas are steered on all reaching and windward courses with no
+      // rudder, paddle, or steering oar at all... by adjusting the relative
+      // fore and aft positions of the sail centre of effort and the hull
+      // centre of lateral resistance". `lead` is now only the value at
+      // tackX=0: it no longer has to be RIGHT, because the boat can trim out
+      // whatever bias it leaves (see the S2 course-hold check). S1a/S1b stay
+      // xfail:STEERING with their numbers, deliberately not tuned green.
       lead: 0.06 * p.boat_length_m,
     },
 
@@ -1284,38 +1279,6 @@ function buildDefaultConfig() {
       coeff: 2.1,
     },
 
-    // leeboard (S3, work-order-2026-08-02, docs/adr/0012): the movable half
-    // of the lateral plane. Dierking gives leeboards as one of the standard
-    // steering fits for these canoes; Proafile describes a large amidships
-    // board that can be rotated fore and aft. The foil coefficients are the
-    // SAME derivation as the oar's above (Helmbold low-AR slope, stalling
-    // blade, CD0 + k*CL^2) and are shared deliberately — it is the same kind
-    // of surface in the same kind of flow, so inventing a second set of
-    // numbers would be inventing precision.
-    leeboard: {
-      // area: an ESTIMATE, and labelled one. Sailing canoes carry a lateral
-      // plane of order 4-5% of sail area in a board; 12 m^2 of sail puts that
-      // at 0.5-0.6 m^2. 0.5 m^2 is a board roughly 1.0 x 0.5 m, which is what
-      // a person can ship and lower over the gunwale single-handed. It sits
-      // ON TOP of the hull's own 1.8 m^2 rather than replacing part of it —
-      // Flay's measured CS(leeway) curve describes the hull and stays with
-      // the hull (docs/adr/0004).
-      area: 0.5,
-      // neutralX: amidships. Proafile's "large leeboard on the midships
-      // section" — and the point of the control is the excursion around it,
-      // not the offset itself.
-      neutralX: 0,
-      // travel: half-range of the board's fore-aft excursion, in metres. A
-      // board pivoting about its head through +-20-25deg with ~1 m of
-      // immersed depth moves its centre of pressure about this far, which is
-      // the mechanism Proafile describes ("can be rotated fore and aft")
-      // rather than a board that physically slides along the gunwale.
-      travel: 0.4,
-      stallAngleDeg: 22,
-      CD0: 0.02,
-      inducedK: 0.35,
-      coeff: 2.1,
-    },
 
     // P4 (docs/work-order-2026-07-22.md; docs/diagnostic-2026-07-22-
     // residuary-hump.md Result 6): the shipped speedLockout=4 m/s (7.8kn)
@@ -2893,7 +2856,6 @@ function isLuffing(state, controls, config) {
 
 
 
-
 // computeForces(state, controls, config) -> total forces/moment + readouts
 // shared with derivatives() and the harness/UI (alpha, aw, amaLoad, ...).
 // amaLoad is the raw physics value (unbounded — round 8: drives the
@@ -2914,13 +2876,12 @@ function computeForces(state, controls, config) {
   const side = hullSideForce(state.u, state.v, controls.crewPosX ?? 0, config);
   const drag = amaDrag(state.u, state.phi, controls.crewPos, state.end, config);
   const rudder = rudderForce(state, controls, config);
-  const leeboard = leeboardForce(state, controls, config);
   const damp = yawDamping(state.r, state.u, config);
   const windage = windageForce(state, controls, config);
 
-  const Fx = aero.Fx + resist + side.Fx + drag.Fx + rudder.Fx + leeboard.Fx + windage.Fx;
-  const Fy = aero.Fy + side.Fy + rudder.Fy + leeboard.Fy + windage.Fy;
-  const M = aero.yawMoment + side.yawMoment + rudder.yawMoment + leeboard.yawMoment + damp + drag.yawMoment;
+  const Fx = aero.Fx + resist + side.Fx + drag.Fx + rudder.Fx + windage.Fx;
+  const Fy = aero.Fy + side.Fy + rudder.Fy + windage.Fy;
+  const M = aero.yawMoment + side.yawMoment + rudder.yawMoment + damp + drag.yawMoment;
 
   // Roll dynamics (4th DOF, FIX_REQUEST_round4_roll_dof.md Part 1):
   // sail heel (boat-frame heelMoment converted to the physical-frame roll
@@ -2946,7 +2907,6 @@ function computeForces(state, controls, config) {
       hullSide: { Fx: side.Fx, Fy: side.Fy, yawMoment: side.yawMoment },
       amaDrag: { Fx: drag.Fx, yawMoment: drag.yawMoment },
       rudder: { Fx: rudder.Fx, Fy: rudder.Fy, yawMoment: rudder.yawMoment },
-      leeboard: { Fx: leeboard.Fx, Fy: leeboard.Fy, yawMoment: leeboard.yawMoment },
       yawDamping: { M: damp },
       windage: { Fx: windage.Fx, Fy: windage.Fy },
       roll: { Msail, Mrestore, Mcrew, Mdamp, Mroll },
@@ -3491,14 +3451,14 @@ const MS_TO_KN = 1.9438;
 // recording's codeVersion is meaningful (harness/replay.js warns on
 // mismatch) for a downloaded bundle without requiring a build step for
 // plain `python3 -m http.server` development.
-const CODE_VERSION = "7ed9a9d";
+const CODE_VERSION = "42edb33";
 // BUILD_TIME: same pattern as CODE_VERSION above — tools/bundle.js
 // replaces this with the COMMIT's timestamp (not wall-clock build time),
 // so it stays stable across re-bundling the same commit and always
 // matches CODE_VERSION's hash. Shown in the bottom-right version footer
 // so a bug report/recording can be tied to an exact, dated build without
 // having to separately ask "which commit was this."
-const BUILD_TIME = "2026-08-03T18:20:19+02:00";
+const BUILD_TIME = "2026-08-03T18:39:21+02:00";
 
 // ---------------------------------------------------------------------
 // i18n — EN/PL. Static labels are marked with data-i18n="key" in
@@ -3524,8 +3484,6 @@ const TRANSLATIONS = {
     'tooltip.brailWindZones': (pct) => `0-${pct}%: trim (carrot) — sail keeps drawing · ${pct}-100%: power dump — spills power, panic/furl`,
     'h.steering': 'Steering & trim', 'lbl.rudder': 'Rudder', 'hint.rudder': 'A/D deflect, auto-centers on release',
     'lbl.tackX': 'Tack (fore/aft)', 'hint.tackX': 'Forward bears away, aft points up. This is how a proa steers — the oar is a last resort.',
-    'lbl.leeboardX': 'Leeboard (fore/aft)', 'lbl.leeboardDown': 'Leeboard lowered',
-    'hint.leeboard': 'Extra lateral area: steadies the boat and moves the centre of lateral resistance, but costs about 10% of speed while it is down.',
     'lbl.oarDeployed': 'Oar in the water', 'hint.oarDeployed': 'A steering oar, not a fixed rudder: normally shipped. Put it in the water to steer — it costs speed while it is down',
     'lbl.crewPos': 'Crew position', 'hint.crewPos': 'Drag the dot, or J/L (lateral), I/K (fore-aft)',
     'pad.ama': 'ama', 'pad.leeward': 'leeward', 'pad.aft': 'aft', 'pad.fwd': 'fwd',
@@ -3594,8 +3552,6 @@ const TRANSLATIONS = {
     'tooltip.brailWindZones': (pct) => `0-${pct}%: trym (marchewka) — żagiel dalej ciągnie · ${pct}-100%: zrzut mocy — panika/refowanie`,
     'h.steering': 'Sterowanie i wyważenie', 'lbl.rudder': 'Ster', 'hint.rudder': 'A/D wychyla ster, centruje się po puszczeniu',
     'lbl.tackX': 'Hals (przód/tył)', 'hint.tackX': 'Do przodu — odpadanie, do tyłu — ostrzenie. Tak steruje proa; wiosło to ostateczność.',
-    'lbl.leeboardX': 'Miecz (przód/tył)', 'lbl.leeboardDown': 'Miecz opuszczony',
-    'hint.leeboard': 'Dodatkowa powierzchnia boczna: uspokaja łódkę i przesuwa środek oporu bocznego, ale kosztuje ok. 10% prędkości, póki jest w wodzie.',
     'lbl.oarDeployed': 'Wiosło w wodzie', 'hint.oarDeployed': 'Ster to wiosło, nie stały ster — normalnie jest wyjęte. Włóż je do wody, żeby sterować — zanurzone kosztuje prędkość',
     'lbl.crewPos': 'Pozycja załogi', 'hint.crewPos': 'Przeciągnij kropkę, lub J/L (bok), I/K (wzdłuż)',
     'pad.ama': 'ama', 'pad.leeward': 'zawietrzna', 'pad.aft': 'rufa', 'pad.fwd': 'dziób',
@@ -3708,7 +3664,6 @@ const sliders = {
   brailLee: document.getElementById('brailLee'),
   brailWind: document.getElementById('brailWind'),
   tackX: document.getElementById('tackX'),
-  leeboardX: document.getElementById('leeboardX'),
   rudder: document.getElementById('rudder'),
 };
 const outs = {
@@ -3718,7 +3673,6 @@ const outs = {
   brailLee: document.getElementById('brailLeeOut'),
   brailWind: document.getElementById('brailWindOut'),
   tackX: document.getElementById('tackXOut'),
-  leeboardX: document.getElementById('leeboardXOut'),
   rudder: document.getElementById('rudderOut'),
   crewPos: document.getElementById('crewPosOut'),
   crewPosX: document.getElementById('crewPosXOut'),
@@ -3769,7 +3723,6 @@ skinSelect.addEventListener('change', () => {
   renderCrewPad(); // the SVG backdrop is static — the live canvas repaints itself, this doesn't
 });
 const oarDeployedCheckbox = document.getElementById('oarDeployed');
-const leeboardDownCheckbox = document.getElementById('leeboardDown');
 const btnRec = document.getElementById('btnRec');
 const btnMark = document.getElementById('btnMark');
 const btnDownloadRec = document.getElementById('btnDownloadRec');
@@ -3804,7 +3757,6 @@ function syncSlidersFromControls() {
   sliders.brailLee.value = String(Math.round(controls.brailLee * 100));
   sliders.brailWind.value = String(Math.round(controls.brailWind * 100));
   sliders.tackX.value = String(controls.tackX);
-  sliders.leeboardX.value = String(controls.leeboardX);
   sliders.rudder.value = String(controls.rudder);
   updateCrewDot();
   refreshOutputs();
@@ -3847,7 +3799,6 @@ function refreshOutputs() {
   outs.brailLee.textContent = `${Math.round(controls.brailLee * 100)}%`;
   outs.brailWind.textContent = `${Math.round(controls.brailWind * 100)}%`;
   outs.tackX.textContent = controls.tackX.toFixed(2);
-  outs.leeboardX.textContent = controls.leeboardX.toFixed(2);
   outs.rudder.textContent = controls.rudder.toFixed(2);
   outs.crewPos.textContent = controls.crewPos.toFixed(2);
   outs.crewPosX.textContent = controls.crewPosX.toFixed(2);
@@ -3859,7 +3810,6 @@ sliders.sheet.addEventListener('input', () => { controls.sheet = Number(sliders.
 sliders.brailLee.addEventListener('input', () => { controls.brailLee = Number(sliders.brailLee.value) / 100; refreshOutputs(); });
 sliders.brailWind.addEventListener('input', () => { controls.brailWind = Number(sliders.brailWind.value) / 100; refreshOutputs(); });
 sliders.tackX.addEventListener('input', () => { controls.tackX = Number(sliders.tackX.value); refreshOutputs(); });
-sliders.leeboardX.addEventListener('input', () => { controls.leeboardX = Number(sliders.leeboardX.value); refreshOutputs(); });
 sliders.rudder.addEventListener('input', () => { autoRudder = false; controls.rudder = Number(sliders.rudder.value); refreshOutputs(); });
 
 // Crew position 2D pad: one draggable dot standing in for the old crewPos
@@ -4018,22 +3968,8 @@ oarDeployedCheckbox.addEventListener('change', () => {
   syncOarUI();
 });
 
-// Same pattern as syncOarUI, and for the same reason: the checkbox and the
-// fore/aft slider must both be DERIVED from `controls`, not assumed to agree
-// with it. A raised board's position control does nothing, so it is disabled
-// rather than left live and inert.
-function syncLeeboardUI() {
-  leeboardDownCheckbox.checked = controls.leeboardDown;
-  sliders.leeboardX.disabled = !controls.leeboardDown;
-}
-leeboardDownCheckbox.addEventListener('change', () => {
-  controls.leeboardDown = leeboardDownCheckbox.checked;
-  syncLeeboardUI();
-});
-
 syncSlidersFromControls();
 syncOarUI();   // the oar starts SHIPPED, so the checkbox and the disabled slider must say so
-syncLeeboardUI();  // the board starts RAISED, likewise
 updateBrailZoneUI();
 updateSheetRangeUI();
 
