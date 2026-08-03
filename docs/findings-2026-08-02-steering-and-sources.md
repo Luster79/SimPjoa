@@ -1042,3 +1042,52 @@ the ama-drag band re-anchored on the R7-1 ratio evidence above; and `C-A`
 manual prescribes the *paddle* for downwind steering — *"when the sail creates
 too much weather helm for weight-shift steering to be effective"* — so a
 released rudder on a dead run is not something the source claims is holdable.
+
+### AC-1 resolved: the heel→yaw term was half of a cancelling pair
+
+With both of the manual's named mechanisms finally present (ADR 0015), the
+last experiment was the one I had not run — the heel coupling at **zero**, with
+those mechanisms in place.
+
+| criterion | +1 | **0** | −1 |
+|---|---|---|---|
+| AC-1.1 crew to ama → points up | 2/6 | **5/6 (dir 6/6)** | 5/6 |
+| AC-1.2 crew to hull → bears away | 1/6 | **4/6 (dir 5/6)** | 4/6 |
+| AC-4.2a breaking brail → bears away | 6/6 | **6/6** | 1/6 |
+| AC-4.2b … and grows with the pull | 5/6 | **6/6** | 0/6 |
+
+At ±1 the term **dominates both groups and forces them to share a direction**,
+so no sign satisfies the source. At 0 each of the two mechanisms the manual
+names governs its own criterion — which is what the manual describes.
+
+**The justification is not "the physics is zero".** `yawMomentHeel` models one
+half of a cancelling pair: heeling swings the rig's CE to leeward
+(`CEheight·sin φ`, which it computes) *and* makes the immersed hull asymmetric,
+producing an opposing moment — the dominant real-world heel-to-yaw mechanism,
+which the model does not have at all. **A partial model of a cancelling pair
+has an essentially arbitrary sign**, and this one's was calibrated against
+round 4's "1.6 coupling-sign test", whose target the manual contradicts.
+Including half of an opposing pair is worse than including neither.
+
+Kept as a live parameter, to be restored *together with* the hull's own term.
+
+`ceBrailXShift` raised 0.167 → **0.333 m** = chord/3, the centroid shift from
+spilling the rear *half* — what the manual describes at a full pull. Sensitivity
+checked rather than assumed: AC-4.2a/b hold 6/6 anywhere from 0.3 to 0.8 and
+collapse below ~0.25, so this sits at the conservative edge of a broad plateau.
+A value chosen to maximise the tally would have been 0.6.
+
+**Nothing needed re-anchoring.** 88/88, six `xfail`, none promoted; the polar
+barely moves (median 0.00 %, mean +0.11 %, one outlier at TWA 110 / TWS 10
++4.6 % where the helm is now better balanced).
+
+### What is still wrong
+
+**AC-4.1**: the *leeward* brail alone should be purely preparatory and change
+nothing; it moves the bow up to 10.4°. It scored 6/6 at `yawHeelSign = +1`
+purely because the heel term happened to cancel it — a coincidence, not a
+mechanism. With the term honest, this is exposed as its own defect: the leeward
+brail is steering the boat when the manual says it should not.
+
+**AC-3.1** (2/6) and **AC-2.3** (1/2) remain, along with the two criteria the
+model has no controls for (AC-4.4 mast rake, AC-5.1 halyard/shroud).
