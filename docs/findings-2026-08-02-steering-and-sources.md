@@ -818,7 +818,7 @@ ADR 0009's stated acceptance and it is the first time it actually holds.
 
 ---
 
-## AC-1 diagnosed, not fixed (2026-08-03)
+## AC-1 diagnosed, not fixed (2026-08-03) — SUPERSEDED, see below
 
 The one clean disagreement left with the manual after the AC-3 reversal.
 
@@ -879,3 +879,89 @@ structural change, not a knob.
 Left at `+1`, reported. Turning a phenomenological knob until AC-1.1 goes green
 would break AC-1.2 by exactly as much, and this project has spent two audits
 learning not to do that.
+
+---
+
+## AC-1 re-diagnosed against the original source (2026-08-03)
+
+The owner supplied the instruction manual itself, in both languages. It is now
+in the repo at `docs/sources/`. Reading it settles three things and overturns
+one of my own conclusions.
+
+### The criteria document had a transcription error, and I built on it
+
+Original, ch. III, verbatim:
+
+> If crew moves toward outrigger, the canoe turns to **windward** …
+> because the ama sinks (creates drag) and rotates the canoe around
+>
+> If crew moves to the sail, then canoe turns to **leeward** …
+> as the ama rises slightly and **reduces rotational force**
+
+`Kryteria_Akceptacji_Symulator_Pjoa.md` AC-1.2 says the boat *also* turns to
+windward, by a *different* mechanism. Both halves are wrong: it bears away, and
+it is the **same** mechanism (ama drag) merely reduced.
+
+I then reasoned at length that a symmetric response cannot come from an
+antisymmetric term, therefore AC-1 needed a structural fix rather than a sign
+flip. That argument was sound and its premise was false. The response is
+antisymmetric; the harness now tests the original's rule and cites it.
+
+An erratum is recorded in the criteria document itself rather than editing the
+criterion away, so the provenance stays visible.
+
+### The original also confirms the AC-3 reversal — and names the mechanism
+
+> **Pulling the sheet forces the bow to delicately turn off the wind as the
+> sail's centre of effort moves forward**
+>
+> Letting the sail out slightly … forces the bow to move closer to windward as
+> the sail's centre of effort **moves outward** (the boom is then like a lever
+> that turns the canoe)
+
+ADR 0014's change is exactly this: sheeting in now moves `xCE` forward. The
+source adds something 0014 did not claim — the easing half works through the
+CE moving *outward*, i.e. the lateral `yCE` lever, which the model already had.
+Both halves are now present and correctly signed.
+
+### The real defect: one sign, two groups, opposite requirements
+
+Flipping `yawHeelSign` does fix the crew group — and wrecks the brail group.
+Measured across the whole grid:
+
+| criterion | +1 | 0 | −1 |
+|---|---|---|---|
+| AC-1.1 crew to ama → points up | 1/6 | **5/6** | **5/6** |
+| AC-1.2 crew to hull → bears away | 0/6 | **4/6** | **4/6** |
+| AC-4.1 main brail alone: no course change | **6/6** | 5/6 | 1/6 |
+| AC-4.2a breaking brail → bears away | **6/6** | 1/6 | 1/6 |
+| AC-4.2b … and grows with the pull | **4/6** | 1/6 | 0/6 |
+
+All five are stated explicitly in the manual, so **no value of this sign
+satisfies the source.**
+
+Zeroing the coupling is the decisive test: it fixes the crew group and leaves
+the brail group just as wrong. That shows the brail's bear-away is currently
+*riding* the heel term rather than coming from the mechanism the manual names
+for it — spilling the leech moves the CE forward, giving lee helm.
+
+So the defect is one of **relative magnitude, not of sign**. The heel→yaw
+coupling is strong enough to dominate both groups and force them to share a
+direction, while the two mechanisms the manual actually names — the ama's drag
+for crew position, the CE shift for the brail — are present, correctly signed,
+and too weak to govern their own criteria.
+
+Left at `+1`, which is what the current suite and polar were measured against,
+with the whole matrix recorded at the parameter. Rebalancing three terms
+against five criteria is a multi-parameter change with a polar diff behind it
+and a decision in front of it; doing it by eye until the tally looked best is
+the thing this project keeps refusing.
+
+### Correction to my earlier entry
+
+The previous AC-1 section concluded "not a missing mechanism and not a wrong
+sign, but a competition between two present, correctly-signed mechanisms". The
+conclusion happens to be right and the reasoning that produced it was wrong —
+it rested on the transcription error. The section above supersedes it. The
+earlier one is left in place, marked, because being right for the wrong reason
+is worth being able to see.

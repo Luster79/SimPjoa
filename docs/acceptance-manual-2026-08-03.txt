@@ -3,13 +3,13 @@ Acceptance criteria — Kryteria_Akceptacji_Symulator_Pjoa.md
 (+turn = bow points UP / toward the wind; -turn = bears away)
 
 AC-1.1    PARTIAL              crew toward the ama -> bow points UP
-          1/6 points -- T70/6:-4.2 T90/6:-2.1 T110/6:+0.5 T70/10:-7.3C T90/10:-4.9C T110/10:-1.4  [direction correct at 1/6; 2 point(s) capsized inside the window, marked C]
+          1/6 points -- T70/6:-1.5 T90/6:-1.0 T110/6:+0.1 T70/10:-8.9 T90/10:-4.8 T110/10:-0.5
 
-AC-1.2    PARTIAL              crew away from the ama -> bow ALSO points UP
-          1/6 points -- T70/6:+10.2C T90/6:+8.9C T110/6:+6.7 T70/10:+7.3C T90/10:+4.9C T110/10:+0.4C  [direction correct at 6/6; 5 point(s) capsized inside the window, marked C]
+AC-1.2    FAIL                 crew away from the ama (toward the hull) -> bow BEARS AWAY
+          0/6 points -- T70/6:+8.1C T90/6:+5.7 T110/6:+0.6 T70/10:+8.9 T90/10:+4.8 T110/10:+7.6  [direction correct at 0/6; 1 point(s) capsized inside the window, marked C]
 
-AC-1.3    PARTIAL              centred crew is the neutral point (both directions turn the same way)
-          1/6 points -- min(both sides) - centred, T70/6:-4.2C T90/6:-2.1C T110/6:+0.5 T70/10:-7.3C T90/10:-4.9C T110/10:-1.4C  [direction correct at 1/6; 5 point(s) capsized inside the window, marked C]
+AC-1.3    PARTIAL              centred crew sits between the two extremes (no turning tendency of its own)
+          3/6 points -- min(both sides) - centred, T70/6:+1.5C T90/6:+1.0 T110/6:-0.1 T70/10:+1.1C T90/10:-0.6C T110/10:+0.5  [direction correct at 6/6; 3 point(s) capsized inside the window, marked C]
 
 AC-2.1    PASS                 crew FORWARD -> bow points UP
           6/6 points -- T70/6:+18.3 T90/6:+15.7 T110/6:+8.8 T70/10:+19.4 T90/10:+18.1 T110/10:+13.3
@@ -68,4 +68,4 @@ AC-6.2    PASS (by inspection) the UI shows which side the ama is on
 AC-6.3    PASS                 controls are independent and their effects combine, not exclude
           crew aft alone -15.1deg, tack fwd alone -21.2deg, together -31.6deg (linear sum would be -36.2, departure 4.7deg — nonlinear, as a coupled model should be, but same direction and neither is ignored)
 
-summary: PARTIAL 8, PASS 12, NOT 2
+summary: PARTIAL 7, FAIL 1, PASS 12, NOT 2

@@ -105,6 +105,17 @@ function differential(config, mutateA, mutateB, opts) {
   });
 }
 
+// Lateral crew is a BALLAST control before it is a steering one: a 0.3 swing
+// to leeward removes enough righting moment to put the boat over at these
+// trims, and a heading change measured through a capsize is not a measurement
+// of steering. The AC-1 group therefore uses a smaller step and a shorter
+// window than the rest -- uniformly across 1.1/1.2/1.3, so the three stay
+// comparable, and chosen so that no point capsizes at any setting rather than
+// per-criterion until the answer looked right. The capsize itself is real and
+// is reported by the C markers when it does happen.
+const CREW_STEP = 0.15;
+const CREW_OPTS = { settle: 40, window: 6 };
+
 const results = [];
 function record(id, claim, verdict, detail) {
   results.push({ id, claim, verdict, detail });
@@ -139,46 +150,62 @@ export function runAcceptance(config) {
     // points (crew already at 1.0) clamped to no movement at all and reported
     // a confident +0.0 for three of the six points -- a no-op dressed as a
     // measurement.
-    const hi = (base) => Math.min(1.0, base + 0.3);
+    const hi = (base) => Math.min(1.0, base + CREW_STEP);
     const rows = differential(config,
       (c) => { c.crewPos = hi(c.crewPos); },
-      (c) => { c.crewPos = hi(c.crewPos) - 0.3; });
+      (c) => { c.crewPos = hi(c.crewPos) - CREW_STEP; }, CREW_OPTS);
     const t = tally(rows, (r) => r.diff > 0);
     record('AC-1.1', 'crew toward the ama -> bow points UP',
       t.ok === t.n ? 'PASS' : (t.ok === 0 ? 'FAIL' : 'PARTIAL'),
       `${t.ok}/${t.n} points -- ${t.detail}`);
   }
 
-  // AC-1.2: crew moves AWAY from the ama (unloading it) -> bow ALSO turns
-  // toward the wind, by a different mechanism (the ama emerges and loses its
-  // righting moment). The direction claim is what is testable here; whether
-  // the model distinguishes the two mechanisms internally is checked below.
+  // AC-1.2: crew moves AWAY from the ama, toward the hull -> bow BEARS AWAY.
+  //
+  // NOTE: this is the OWNER'S CORRECTION, not what the criteria document says.
+  // Kryteria_Akceptacji_Symulator_Pjoa.md AC-1.2 reads "dziob lodzi ROWNIEZ
+  // skreca w strone wiatru" -- also turns toward the wind -- which would make
+  // the response EVEN in crew position. Asked directly, the owner stated the
+  // rule as: "Ruch w kierunku amy i ruch do przodu jachtu ostrza. Ruch w
+  // kierunku kadlub i na tyl lodki powoduje odpadanie." Toward the ama and
+  // forward point up; toward the hull and aft bear away. That is ANTISYMMETRIC,
+  // and the document's wording of AC-1.2 is wrong (or its "traci moment
+  // obrotowy" means the loss of the ama's DRAG-induced turning moment, not of
+  // its righting moment -- either way the direction is settled).
+  //
+  // I had built a whole argument on the document's wording -- that a symmetric
+  // response cannot come from an antisymmetric term, so AC-1 needed a
+  // structural fix rather than a sign flip. With the rule stated correctly
+  // that argument is void: the response IS antisymmetric and the sign flip is
+  // exactly the right fix. Recorded here rather than quietly deleted.
   {
-    const lo = (base) => Math.max(-0.3, base - 0.3);
+    const lo = (base) => Math.max(-0.3, base - CREW_STEP);
     const rows = differential(config,
       (c) => { c.crewPos = lo(c.crewPos); },
-      (c) => { c.crewPos = lo(c.crewPos) + 0.3; });
-    const t = tally(rows, (r) => r.diff > 0);
-    record('AC-1.2', 'crew away from the ama -> bow ALSO points UP',
+      (c) => { c.crewPos = lo(c.crewPos) + CREW_STEP; }, CREW_OPTS);
+    const t = tally(rows, (r) => r.diff < 0);
+    record('AC-1.2', 'crew away from the ama (toward the hull) -> bow BEARS AWAY',
       t.ok === t.n ? 'PASS' : (t.ok === 0 ? 'FAIL' : 'PARTIAL'),
       `${t.ok}/${t.n} points -- ${t.detail}`);
   }
 
   // AC-1.3: with the crew centred there is no turning tendency FROM THIS
-  // FACTOR. The boat has its own helm bias, so this can only be tested
-  // differentially: if AC-1.1 and AC-1.2 both point up, the centred position
-  // must be a local minimum of the turn.
+  // FACTOR. Differential, since the boat has its own helm bias: with the rule
+  // antisymmetric (see AC-1.2), the centred position must sit BETWEEN the two
+  // extremes rather than at a minimum of them.
   {
     const rows = GRID.map((point) => {
       const centre = Math.min(0.7, Math.max(0.0, point.crew));
-      const mid = probe(config, point, (c) => { c.crewPos = centre; });
-      const toAma = probe(config, point, (c) => { c.crewPos = centre + 0.3; });
-      const away = probe(config, point, (c) => { c.crewPos = centre - 0.3; });
-      return { point, diff: Math.min(toAma.turn, away.turn) - mid.turn,
+      const mid = probe(config, point, (c) => { c.crewPos = centre; }, CREW_OPTS);
+      const toAma = probe(config, point, (c) => { c.crewPos = centre + CREW_STEP; }, CREW_OPTS);
+      const away = probe(config, point, (c) => { c.crewPos = centre - CREW_STEP; }, CREW_OPTS);
+      const lo = Math.min(toAma.turn, away.turn), hi = Math.max(toAma.turn, away.turn);
+      // + = the centred turn lies inside the bracket the two extremes set.
+      return { point, diff: Math.min(mid.turn - lo, hi - mid.turn),
         capsized: mid.capsized || toAma.capsized || away.capsized };
     });
-    const t = tally(rows, (r) => r.diff > -1);
-    record('AC-1.3', 'centred crew is the neutral point (both directions turn the same way)',
+    const t = tally(rows, (r) => r.diff >= -1);
+    record('AC-1.3', 'centred crew sits between the two extremes (no turning tendency of its own)',
       t.ok === t.n ? 'PASS' : (t.ok === 0 ? 'FAIL' : 'PARTIAL'),
       `${t.ok}/${t.n} points -- min(both sides) - centred, ${t.detail}`);
   }

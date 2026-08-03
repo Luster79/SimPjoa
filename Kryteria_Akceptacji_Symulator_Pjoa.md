@@ -1,6 +1,19 @@
 # Kryteria Akceptacji – Zachowanie łodzi typu pjoa w symulatorze
 
 Źródło merytoryczne: „Elementarz żeglowania po Mikronezyjsku" (pjoa.eu), rozdziały III–V.
+Oryginał w repozytorium: `docs/sources/` (wersja PL i EN).
+
+> **Errata (2026-08-03), sprawdzona przeciwko oryginałowi.** AC-1.2 poniżej jest
+> błędne w dwóch miejscach. Oryginał (EN, rozdz. III) mówi:
+> *„If crew moves toward outrigger, the canoe turns to **windward** … because
+> the ama sinks (creates drag) and rotates the canoe around"* oraz *„If crew
+> moves to the sail, then canoe turns to **leeward** … as the ama rises slightly
+> and **reduces rotational force**"*.
+> Czyli (a) ruch w stronę kadłuba powoduje **odpadanie**, a nie ostrzenie, i
+> (b) to **nie jest inny mechanizm** — to ten sam moment od oporu amy, tylko
+> mniejszy. Reakcja jest **antysymetryczna**, nie parzysta.
+> Treść AC-1.2 zostawiona bez zmian jako zapis tego, co było testowane;
+> `harness/acceptance-manual.js` testuje regułę z oryginału.
 
 ## Założenia modelu
 
