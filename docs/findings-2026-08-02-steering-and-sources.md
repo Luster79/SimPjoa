@@ -815,3 +815,67 @@ Verified safe for the three files already loaded — none contains a `#` line.
 ADR 0009's stated acceptance and it is the first time it actually holds.
 
 `out/polar.csv` byte-identical — no physics changed.
+
+---
+
+## AC-1 diagnosed, not fixed (2026-08-03)
+
+The one clean disagreement left with the manual after the AC-3 reversal.
+
+### The same round, the same reasoning, two rules
+
+`hull.yawHeelSign` carried its own justification: *"verified empirically
+against the 1.6 coupling-sign test (**crew toward ama → bear away**)"*. That is
+precisely the rule AC-1.1 contradicts.
+
+And the comment block above the sail-steering assertions says round 9 retired
+**two** manual-encoded rules together, on one theory — that both were artefacts
+of the unphysical `lead = 0.15·L` lee-helm baseline:
+
+- "sheet in bears away" (AC-3.1) — since ruled correct, model reversed (ADR 0014);
+- lateral crew as a steering channel (AC-1.1/1.2) — *"lateral crew is a
+  BALLAST/heel control, not a steering channel"*.
+
+Fixing the baseline was right. Deleting the rules with it was not. That
+paragraph is left standing in the source with a correction beneath it, because
+what it got wrong is more instructive than a clean rewrite would be.
+
+### Why a sign flip does not fix it
+
+Measured, `yawHeelSign = -1`:
+
+| | at +1 | at −1 |
+|---|---|---|
+| AC-1.1 (crew toward ama → up) | 1/6 | **4/6** |
+| AC-1.2 (crew off ama → up) | 6/6 | **3/6** |
+
+It only trades one for the other, and it must. The manual says crew movement in
+**either** direction points the bow up — an *even* response in crew position —
+while the model's dominant crew→yaw path runs through heel and is *odd* in it.
+No choice of sign on an antisymmetric term produces a symmetric response.
+
+### The model has both mechanisms; the wrong one wins
+
+At a frozen state (nothing but `crewPos` allowed to move, so cause is not
+confused with effect):
+
+| crewPos | 0.0 | 0.3 | 0.6 | 1.0 |
+|---|---|---|---|---|
+| amaDrag yaw moment | 8.8 | 18.3 | 27.9 | **40.6** N·m |
+| everything else | unchanged | | | |
+
+The manual's AC-1.1 mechanism — crew weight presses the ama down, it drags, the
+boat pivots around it — is **present, correctly signed, and worth +31.8 N·m**
+across the crew's range. The heel-coupling term swings about ±27 N·m over the
+same range, comparable in size, and wins on the dynamics because the crew's
+roll moment (±1500 N·m) changes heel far faster than the drag path can act.
+
+So this is not a missing mechanism and not a wrong sign. It is a **competition
+between two present, correctly-signed mechanisms that the model resolves the
+other way from the manual.** Fixing it means making the drag path dominate on
+the ama-loaded side and the righting-loss path on the unloaded side — a
+structural change, not a knob.
+
+Left at `+1`, reported. Turning a phenomenological knob until AC-1.1 goes green
+would break AC-1.2 by exactly as much, and this project has spent two audits
+learning not to do that.

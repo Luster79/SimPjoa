@@ -1221,6 +1221,23 @@ export function runAsserts(config, { slow = true } = {}) {
   // under T4/ama-load, not here. The CREW STEERING channel is fore-aft
   // weight (crewPosX), asserted in T2 below.
   //
+  // 2026-08-03 — THE PARAGRAPH ABOVE IS WRONG ON BOTH COUNTS, and is left
+  // standing because what it got wrong is instructive. Round 9 retired two
+  // rules together, on one theory: that both were artefacts of the
+  // lead=15%LWL lee-helm baseline. The owner's primary source
+  // (Kryteria_Akceptacji_Symulator_Pjoa.md, from "Elementarz zeglowania po
+  // Mikronezyjsku") contradicts both.
+  //   - "sheet in bears away" (AC-3.1): ruled correct, model reversed, this
+  //     block's own trim-in assertion inverted and promoted out of xfail.
+  //     See docs/adr/0014.
+  //   - lateral crew as a steering channel (AC-1.1/1.2): the source says
+  //     crew movement in EITHER direction points the bow up, by two named
+  //     mechanisms. Not fixed, and NOT fixable by flipping hull.yawHeelSign
+  //     -- measured, that only trades AC-1.1 for AC-1.2, because a symmetric
+  //     response cannot come out of an antisymmetric term. See config.js at
+  //     yawHeelSign for the measurement and the diagnosis.
+  // Fixing the baseline was right; deleting the rules with it was not.
+  //
   // Round 10 (R10-1): the weaker Di Piazza-anchored sail cut the CE-lever's
   // Fx/Fy magnitudes enough that the old probe (TWA65/sheet30/trim-by-12,
   // full brail) dropped both legs below steeringOk's 2deg floor (0.4deg,
