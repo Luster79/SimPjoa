@@ -842,7 +842,36 @@ function buildDefaultConfig() {
       clrDepth: 0.35,                     // m — tunable estimate, same status as lateralArea
       crewForeAftTrimCoeff: 0.15,          // tunable ("k_trim") — fraction of half-length the CLR shifts per unit crewPosX (FIX_REQUEST_round4_roll_dof.md 1.5)
       crewTrimSign: 1,                     // +-1 — flips the crewPosX->CLR-shift direction; verified empirically against the 1.6 coupling-sign test (forward crew -> luff), see ARCHITECTURE doc
-      yawHeelSign: 1,                      // +-1 — flips the heel->yaw coupling direction (aero.js yawMomentHeel); verified empirically against the 1.6 coupling-sign test (crew toward ama -> bear away), see ARCHITECTURE doc
+      // yawHeelSign: +-1, flips the heel->yaw coupling direction (aero.js
+      // yawMomentHeel). Was "verified empirically against the 1.6
+      // coupling-sign test (crew toward ama -> bear away)".
+      //
+      // AC-1 (2026-08-03): that calibration target is contradicted by the
+      // owner's primary source. Kryteria_Akceptacji AC-1.1 says crew moving
+      // TOWARD the ama points the bow UP -- the opposite of the rule this
+      // sign was set to satisfy. It is the same pattern as AC-3 and the same
+      // round: round 9 retired the lateral-crew steering channel and the
+      // sheet-in-bears-away rule together, both as artefacts of an unphysical
+      // lee-helm baseline. AC-3 has since been ruled the other way (adr/0014).
+      //
+      // FLIPPING THIS DOES NOT FIX AC-1, and that is the useful finding.
+      // Measured at -1: AC-1.1 goes 1/6 -> 4/6 and AC-1.2 goes 6/6 -> 3/6 on
+      // direction. It only trades one for the other, necessarily: the manual
+      // says crew movement in EITHER direction points the bow up (AC-1.1 and
+      // AC-1.2, by two different mechanisms it names explicitly), which is an
+      // EVEN response in crew position, while the model's dominant crew->yaw
+      // path runs through heel and is ODD in it. No choice of sign on an
+      // antisymmetric term can produce a symmetric response.
+      //
+      // The model does contain both of the manual's mechanisms and they are
+      // the right order of magnitude -- at a frozen state, crewPos 0->1 moves
+      // amaDrag's yaw moment +31.8 N*m (the manual's AC-1.1 drag path) while
+      // the heel term swings about +-27 N*m. The heel path simply wins on the
+      // dynamics. Fixing this means making the drag path dominate on the
+      // ama-loaded side and the righting-loss path on the unloaded side, not
+      // turning a knob; left at +1 and reported rather than half-fixed. See
+      // docs/findings-2026-08-02, AC-1 section.
+      yawHeelSign: 1,
       ceLeverSign: 1,                     // +-1 (aero.js xCE/yCE yaw-lever sign) — round 10 (R10-4, docs/adr/0004): CURRENTLY THE IDENTITY, not an active flip. Round 5-7 used -1 to match the old (now-retired) "sheet in bears away" manual rule; the round-9 lead fix (0.15->0.05*LWL) removed the structural lee-helm bias that rule was masking, and the naive, unflipped r x F derivation now matches the boat's real (standard, non-inverted) steering direction on its own — see aero.js's own comment at this line for the full history
       // lead: round 7, D-6 (ROUND7_DECISION.md). Classical yacht-design
       // "lead" — the CE-CLR longitudinal separation — order 5-25% of
@@ -3488,14 +3517,14 @@ const MS_TO_KN = 1.9438;
 // recording's codeVersion is meaningful (harness/replay.js warns on
 // mismatch) for a downloaded bundle without requiring a build step for
 // plain `python3 -m http.server` development.
-const CODE_VERSION = "3f1a801";
+const CODE_VERSION = "b8e7987";
 // BUILD_TIME: same pattern as CODE_VERSION above — tools/bundle.js
 // replaces this with the COMMIT's timestamp (not wall-clock build time),
 // so it stays stable across re-bundling the same commit and always
 // matches CODE_VERSION's hash. Shown in the bottom-right version footer
 // so a bug report/recording can be tied to an exact, dated build without
 // having to separately ask "which commit was this."
-const BUILD_TIME = "2026-08-03T20:43:10+02:00";
+const BUILD_TIME = "2026-08-03T21:27:53+02:00";
 
 // ---------------------------------------------------------------------
 // i18n — EN/PL. Static labels are marked with data-i18n="key" in
