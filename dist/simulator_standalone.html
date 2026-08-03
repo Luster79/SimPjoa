@@ -170,6 +170,8 @@
       <div class="hint" data-i18n="hint.brailWind">W sheets in, X eases</div>
 
       <h2 data-i18n="h.steering">Steering &amp; trim</h2>
+      <div class="row"><label for="tackX" data-i18n="lbl.tackX">Tack (fore/aft)</label><input id="tackX" type="range" min="-1" max="1" step="0.02" value="0"><output id="tackXOut">0.00</output></div>
+      <div class="hint" data-i18n="hint.tackX">Forward bears away, aft points up. This is how a proa steers.</div>
       <div class="row"><label for="rudder" data-i18n="lbl.rudder">Rudder</label><input id="rudder" type="range" min="-1" max="1" step="0.02" value="0"><output id="rudderOut">0.00</output></div>
       <div class="hint" data-i18n="hint.rudder">A/D deflect, auto-centers on release</div>
       <div class="checkboxRow"><input type="checkbox" id="oarDeployed"><label for="oarDeployed" data-i18n="lbl.oarDeployed">Oar in the water</label></div>
@@ -377,6 +379,12 @@ function createDefaultControls() {
     brailWind: 0,
     crewPos: 0,
     crewPosX: 0, // fore-aft crew position, -1..1 (FIX_REQUEST_round4_roll_dof.md 1.5)
+    // tackX (S2, work-order-2026-08-02): fore-aft position of the rig's tack,
+    // -1..1, referenced to the ACTIVE bow (+1 = toward it). This is how an
+    // Oceanic lateen actually steers — see core/aero.js's xCE geometry and
+    // docs/adr/0011. 0 is the neutral setting, at which the model is
+    // identical to what it was before this control existed.
+    tackX: 0,
     shuntRequest: false,
   };
 }
@@ -967,6 +975,23 @@ function buildDefaultConfig() {
       // sheeting geometry ever becomes available, it belongs in
       // example_proa_parameters.csv as its own measured parameter, which
       // would retire this derivation rather than re-fit it.
+      // tackTravel (S2, work-order-2026-08-02): half-range, in metres, of the
+      // tack's fore-aft travel — controls.tackX = +-1 maps to +-this. An
+      // estimate, and unlike `hull.lead` an untroubling one, because the
+      // response to it is monotone and smooth over the whole range rather
+      // than a sign flip inside a 2.7 cm window. Measured before the control
+      // was built (by perturbing `lead`, which is mathematically the same
+      // displacement of xCE): the helm's zero crossing sits within 0.3 m of
+      // neutral at every one of TWA 70/90/110 x TWS 6/10, so 0.5 m of travel
+      // covers it roughly twice over at every operating point. The exact
+      // value therefore decides how much authority is left BEYOND neutral,
+      // not whether neutral is reachable — which is the property that
+      // matters and the one that is robust.
+      //
+      // 0.5 m is 9% of LWL. It is bounded above by the sail staying set as
+      // the tack moves and by the hull's own length; a specific boat's real
+      // tack-line travel would belong in example_proa_parameters.csv.
+      tackTravel: 0.5,
       deltaMinDeg: (() => {
         const sparLength = Math.sqrt(2 * p.sail_area_m2 / Math.sin(p.sail_apex_angle_deg * Math.PI / 180));
         if (sparLength <= p.boat_length_m) return 0;
@@ -1890,7 +1915,26 @@ function sailForces(state, controls, config) {
   const yceBrailShift = config.sail.yceBrailShift ?? 0.6;
   const halfChordEff = halfChord * ceSwingFraction * (1 - ceBrailShift * brailWind);
   const halfChordEffY = halfChord * ceSwingFraction * (1 - yceBrailShift * brailWind);
-  const xCE = clrXNeutral + lead - halfChordEff * Math.cos(delta);
+  // tackX (S2, work-order-2026-08-02): the rig's own fore-aft position, the
+  // steering control this model did not have. On an Oceanic lateen the tack
+  // travels along the hull and the mast's rake is adjustable, so the CE moves
+  // longitudinally by a real distance — Dierking has the yard's heel sliding
+  // under the gunwale on an endless tack line, and Proafile notes that a
+  // fixed-halyard bridle "removes some of the flexibility of moving the
+  // centre of effort, both fore and aft and vertically", i.e. designers treat
+  // the movable CE as a feature they can choose to give up. Before this, the
+  // whole helm balance rested on the single constant `lead`, and the lever
+  // (xCE - clrX) could not reach zero at any trim: `lead` (0.33 m) exceeds
+  // the entire trim-driven excursion (halfChordEff, 0.25 m), so the
+  // expression was positive by construction.
+  //
+  // Sign: referenced to the ACTIVE bow, so it flips with `end`. At a shunt
+  // the tack walks to the new bow and the rake reverses with it; without the
+  // `end` factor the boat would come out of every shunt with its helm
+  // balance mirrored.
+  const tackTravel = config.sail.tackTravel ?? 0;
+  const tackOffset = state.end * (controls.tackX ?? 0) * tackTravel;
+  const xCE = clrXNeutral + lead + tackOffset - halfChordEff * Math.cos(delta);
   const yCE = -state.end * halfChordEffY * Math.sin(delta);
 
   // Heel-course coupling (pure geometry, FIX_REQUEST_round4_roll_dof.md
@@ -3174,11 +3218,11 @@ const HEADING_HOLD_TOLERANCE = 15 * DEG__b10;
 // look flat, and maxSeconds raised 25->35 to give slow trims enough
 // runway to actually reach it (verified against the diagnostic's own
 // case: settles at t=29s, speed 7.382, within 0.02% of the 400s value).
-function simulateToSteady(config, twaDeg, tws, sheetDeg, crewPos, brailWind = 0, maxSeconds = 35) {
+function simulateToSteady(config, twaDeg, tws, sheetDeg, crewPos, brailWind = 0, tackX = 0, maxSeconds = 35) {
   const windDirFrom = HEADING0 + twaDeg * DEG__b10;
   const controls = {
     windDirFrom, windSpeed: tws, sheet: sheetDeg * DEG__b10, rudder: 0,
-    brailLee: 0, brailWind, crewPos, crewPosX: 0, shuntRequest: false,
+    brailLee: 0, brailWind, crewPos, crewPosX: 0, tackX, shuntRequest: false,
   };
 
   let state = makeInitialState(Math.min(Math.abs(sheetDeg) * DEG__b10, Math.PI / 2));
@@ -3233,6 +3277,22 @@ const CREW_POS_SEARCH = [0, 0.3, 0.6, 1.0];
 // its middle.
 const BRAIL_SEARCH_DEEP = [0, 0.3, 0.6];
 
+// TACKX_SEARCH (S2, work-order-2026-08-02): the rig's fore-aft position is a
+// real trim, so the polar searches it — freezing it at 0 would have reported
+// a boat sailing with its helm permanently out of balance. Restricted to
+// close-hauled headings, and the restriction is measured, not assumed. Speed
+// gain of the best tackX over tackX=0, TWS 6: TWA 45 +3.45%, TWA 70 +0.92%,
+// TWA 90 +0.00%, TWA 110 +0.11%, and TWA 90 at TWS 10 +0.04%. Past ~70deg
+// the boat has little helm left for the tack to null out, and what is left
+// is inside the search's own noise.
+//   Negative (tack aft) is excluded for the same measured reason it is
+// included nowhere else: it LOSES close-hauled (TWA 45 -5.4%, TWA 70 -2.0%)
+// and its best showing anywhere is +0.11%, which is noise. It remains fully
+// available as a CONTROL — it is how the boat points up — it just never wins
+// a steady-state speed contest, which is the only question this sweep asks.
+const TACKX_SEARCH = [0, 0.5, 1];
+const TACKX_SEARCH_TWA_MAX = 70;
+
 // bestForHeading as a GENERATOR, yielding once per individual trial. A whole
 // heading is far too coarse a unit of work to hand a UI: measured 3-12.5s of
 // solid main-thread time per heading, so an interactive caller that only got
@@ -3240,14 +3300,17 @@ const BRAIL_SEARCH_DEEP = [0, 0.3, 0.6];
 // of them for the full sweep). One trial is ~10-100ms, which a caller can
 // batch to whatever frame budget it actually has. Node callers just drain it.
 function* bestForHeadingSteps(config, twaDeg, tws) {
-  let best = { speed: 0, sheet: 0, delta: 0, crewPos: 0, brailWind: 0 };
+  let best = { speed: 0, sheet: 0, delta: 0, crewPos: 0, brailWind: 0, tackX: 0 };
   const brailOptions = twaDeg >= 135 ? BRAIL_SEARCH_DEEP : [0];
+  const tackOptions = twaDeg <= TACKX_SEARCH_TWA_MAX ? TACKX_SEARCH : [0];
   for (let sheet = 4; sheet <= 88; sheet += 4) {
     for (const crewPos of CREW_POS_SEARCH) {
       for (const brailWind of brailOptions) {
-        const { speed, settled, deltaDeg } = simulateToSteady(config, twaDeg, tws, sheet, crewPos, brailWind);
-        if (settled && speed > best.speed) best = { speed, sheet, delta: deltaDeg, crewPos, brailWind };
-        yield;
+        for (const tackX of tackOptions) {
+          const { speed, settled, deltaDeg } = simulateToSteady(config, twaDeg, tws, sheet, crewPos, brailWind, tackX);
+          if (settled && speed > best.speed) best = { speed, sheet, delta: deltaDeg, crewPos, brailWind, tackX };
+          yield;
+        }
       }
     }
   }
@@ -3270,6 +3333,10 @@ function polarRow(config, twa, tws, best) {
     // header is written out explicitly in run_tests.js and ui/app.js, so the
     // byte-gated out/polar.csv is unaffected.
     bestCrewPos: best.crewPos,
+    // bestTackX (S2): like bestCrewPos, reported on the row but deliberately
+    // NOT added to the exported CSV header, which is written out explicitly
+    // in run_tests.js and ui/app.js.
+    bestTackX: best.tackX,
   };
 }
 
@@ -3379,14 +3446,14 @@ const MS_TO_KN = 1.9438;
 // recording's codeVersion is meaningful (harness/replay.js warns on
 // mismatch) for a downloaded bundle without requiring a build step for
 // plain `python3 -m http.server` development.
-const CODE_VERSION = "c8793f2";
+const CODE_VERSION = "77cab44";
 // BUILD_TIME: same pattern as CODE_VERSION above — tools/bundle.js
 // replaces this with the COMMIT's timestamp (not wall-clock build time),
 // so it stays stable across re-bundling the same commit and always
 // matches CODE_VERSION's hash. Shown in the bottom-right version footer
 // so a bug report/recording can be tied to an exact, dated build without
 // having to separately ask "which commit was this."
-const BUILD_TIME = "2026-08-03T16:07:13+02:00";
+const BUILD_TIME = "2026-08-03T16:52:05+02:00";
 
 // ---------------------------------------------------------------------
 // i18n — EN/PL. Static labels are marked with data-i18n="key" in
@@ -3411,6 +3478,7 @@ const TRANSLATIONS = {
     // both so the split isn't only discoverable by reading the source.
     'tooltip.brailWindZones': (pct) => `0-${pct}%: trim (carrot) — sail keeps drawing · ${pct}-100%: power dump — spills power, panic/furl`,
     'h.steering': 'Steering & trim', 'lbl.rudder': 'Rudder', 'hint.rudder': 'A/D deflect, auto-centers on release',
+    'lbl.tackX': 'Tack (fore/aft)', 'hint.tackX': 'Forward bears away, aft points up. This is how a proa steers — the oar is a last resort.',
     'lbl.oarDeployed': 'Oar in the water', 'hint.oarDeployed': 'A steering oar, not a fixed rudder: normally shipped. Put it in the water to steer — it costs speed while it is down',
     'lbl.crewPos': 'Crew position', 'hint.crewPos': 'Drag the dot, or J/L (lateral), I/K (fore-aft)',
     'pad.ama': 'ama', 'pad.leeward': 'leeward', 'pad.aft': 'aft', 'pad.fwd': 'fwd',
@@ -3478,6 +3546,7 @@ const TRANSLATIONS = {
     'lbl.brailWind': 'Gejtawa nawietrzna', 'hint.brailWind': 'W wybiera, X luzuje',
     'tooltip.brailWindZones': (pct) => `0-${pct}%: trym (marchewka) — żagiel dalej ciągnie · ${pct}-100%: zrzut mocy — panika/refowanie`,
     'h.steering': 'Sterowanie i wyważenie', 'lbl.rudder': 'Ster', 'hint.rudder': 'A/D wychyla ster, centruje się po puszczeniu',
+    'lbl.tackX': 'Hals (przód/tył)', 'hint.tackX': 'Do przodu — odpadanie, do tyłu — ostrzenie. Tak steruje proa; wiosło to ostateczność.',
     'lbl.oarDeployed': 'Wiosło w wodzie', 'hint.oarDeployed': 'Ster to wiosło, nie stały ster — normalnie jest wyjęte. Włóż je do wody, żeby sterować — zanurzone kosztuje prędkość',
     'lbl.crewPos': 'Pozycja załogi', 'hint.crewPos': 'Przeciągnij kropkę, lub J/L (bok), I/K (wzdłuż)',
     'pad.ama': 'ama', 'pad.leeward': 'zawietrzna', 'pad.aft': 'rufa', 'pad.fwd': 'dziób',
@@ -3589,6 +3658,7 @@ const sliders = {
   sheet: document.getElementById('sheet'),
   brailLee: document.getElementById('brailLee'),
   brailWind: document.getElementById('brailWind'),
+  tackX: document.getElementById('tackX'),
   rudder: document.getElementById('rudder'),
 };
 const outs = {
@@ -3597,6 +3667,7 @@ const outs = {
   sheet: document.getElementById('sheetOut'),
   brailLee: document.getElementById('brailLeeOut'),
   brailWind: document.getElementById('brailWindOut'),
+  tackX: document.getElementById('tackXOut'),
   rudder: document.getElementById('rudderOut'),
   crewPos: document.getElementById('crewPosOut'),
   crewPosX: document.getElementById('crewPosXOut'),
@@ -3680,6 +3751,7 @@ function syncSlidersFromControls() {
   sliders.sheet.value = String(Math.round(controls.sheet / DEG__b12));
   sliders.brailLee.value = String(Math.round(controls.brailLee * 100));
   sliders.brailWind.value = String(Math.round(controls.brailWind * 100));
+  sliders.tackX.value = String(controls.tackX);
   sliders.rudder.value = String(controls.rudder);
   updateCrewDot();
   refreshOutputs();
@@ -3721,6 +3793,7 @@ function refreshOutputs() {
   outs.sheet.textContent = `${Math.round(controls.sheet / DEG__b12)}°`;
   outs.brailLee.textContent = `${Math.round(controls.brailLee * 100)}%`;
   outs.brailWind.textContent = `${Math.round(controls.brailWind * 100)}%`;
+  outs.tackX.textContent = controls.tackX.toFixed(2);
   outs.rudder.textContent = controls.rudder.toFixed(2);
   outs.crewPos.textContent = controls.crewPos.toFixed(2);
   outs.crewPosX.textContent = controls.crewPosX.toFixed(2);
@@ -3731,6 +3804,7 @@ sliders.windSpeed.addEventListener('input', () => { controls.windSpeed = Number(
 sliders.sheet.addEventListener('input', () => { controls.sheet = Number(sliders.sheet.value) * DEG__b12; refreshOutputs(); });
 sliders.brailLee.addEventListener('input', () => { controls.brailLee = Number(sliders.brailLee.value) / 100; refreshOutputs(); });
 sliders.brailWind.addEventListener('input', () => { controls.brailWind = Number(sliders.brailWind.value) / 100; refreshOutputs(); });
+sliders.tackX.addEventListener('input', () => { controls.tackX = Number(sliders.tackX.value); refreshOutputs(); });
 sliders.rudder.addEventListener('input', () => { autoRudder = false; controls.rudder = Number(sliders.rudder.value); refreshOutputs(); });
 
 // Crew position 2D pad: one draggable dot standing in for the old crewPos
@@ -5111,7 +5185,11 @@ function drawBoat(state, forces, cam) {
     const halfChord = chord / 2;
     const ceBrailShift = dims.sail.ceBrailShift ?? 0.3;
     const halfChordEffX = halfChord * (1 - ceBrailShift * (controls.brailWind ?? 0));
-    const ceX = tackX - halfChordEffX * Math.cos(state.delta ?? 0);
+    // S2: the tack trim moves the CE for real (core/aero.js), so the drawn CE
+    // has to move with it — otherwise the marker contradicts the slider the
+    // user is dragging.
+    const tackTrim = state.end * (controls.tackX ?? 0) * (dims.sail.tackTravel ?? 0);
+    const ceX = tackX + tackTrim - halfChordEffX * Math.cos(state.delta ?? 0);
     const ceY = -state.end * halfChord * Math.sin(state.delta ?? 0);
     // Same effective CLR the side-view marker and the physics use, so the
     // green side-force vector originates from the true pivot (incl. the crew
