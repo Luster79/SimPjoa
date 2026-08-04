@@ -1,12 +1,11 @@
-// sheet.js — the one-sided sheet constraint on the yard
-// (EXTENSION_round5_sheet_constraint.md R5-1): you cannot push on a rope.
-// `controls.sheet` sets only the MAXIMUM yard angle delta_max; the yard's
-// ACTUAL angle `state.delta` (a real piece of state, >=0) chases its
+// sheet.js — the one-sided sheet constraint on the yard: you cannot push on
+// a rope. `controls.sheet` sets only the MAXIMUM yard angle delta_max; the
+// yard's ACTUAL angle `state.delta` (a real piece of state, >=0) chases its
 // aerodynamic equilibrium — clamped to that ceiling — at a bounded slew
 // rate. See state.js's Conventions comment for the field definitions.
 //
-// Derivation of deltaAlign (verified numerically, not just derived — see
-// the round-5 investigation): aero.js computes the chord-flow angle as
+// Derivation of deltaAlign (verified numerically, not just derived):
+// aero.js computes the chord-flow angle as
 // alpha = chordAngle - awAngle, where chordAngle = end*delta and awAngle =
 // apparentWind(...).angleToBoat (the "blowing towards" angle, boat frame).
 // The yard is edge-on to the wind (fully weathervaned/luffing, zero AoA
@@ -45,17 +44,15 @@ export function deltaAlign(state, controls) {
 
 // effectiveDeltaMax(state, controls, config) -> the sheet ceiling actually
 // in force this instant. Released to config.sail.deltaMaxReleaseDeg while a
-// shunt is easing the sheet (phases 'ease'/'transfer'/'swap' — R5-1 point
-// 3: this is what lets the yard swing freely to flip sides during a
-// shunt), and closed back to the commanded controls.sheet once 'sheet'
-// starts hauling it back in.
-// S6 (work-order-2026-08-02): the ceiling has a FLOOR of
-// config.sail.deltaMinDeg — the rig cannot be sheeted closer to the
-// centreline than its own geometry allows (see config.js for the
-// derivation). This bounds the SHEET, not the yard: a sheet is a rope, so it
-// can only ever stop the yard swinging OUT. The wind is still free to push
-// the yard inside deltaMin — that is the luffing/backwinded regime the
-// header describes, and it is unchanged.
+// shunt is easing the sheet (phases 'ease'/'transfer'/'swap' — this is what
+// lets the yard swing freely to flip sides during a shunt), and closed back
+// to the commanded controls.sheet once 'sheet' starts hauling it back in.
+//   The ceiling has a FLOOR of config.sail.deltaMinDeg — the rig cannot be
+// sheeted closer to the centreline than its own geometry allows (see
+// config.js for the derivation). This bounds the SHEET, not the yard: a
+// sheet is a rope, so it can only ever stop the yard swinging OUT. The wind
+// is still free to push the yard inside deltaMin — that is the
+// luffing/backwinded regime the header describes.
 export function effectiveDeltaMax(state, controls, config) {
   const commanded = clamp(Math.abs(controls.sheet ?? 0), 0, Math.PI / 2);
   const phase = state.shunt?.phase;

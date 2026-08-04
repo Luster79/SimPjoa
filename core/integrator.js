@@ -1,10 +1,9 @@
 // integrator.js — assembles per-module forces into total Fx/Fy/M/Mroll,
-// RK4-integrates the smooth 4DOF ODE state [x, y, heading, u, v, r, phi,
-// p] (roll added FIX_REQUEST_round4_roll_dof.md Part 1), then applies the
-// discrete, non-ODE updates once per substep: the shunt state machine
-// (which may itself override u, v, heading, end at the swap instant —
-// phi, p pass through unchanged, see core/shunt.js) and the ama-load /
-// aback-timer / capsize statics (now derived from phi, see stability.js).
+// RK4-integrates the smooth 4DOF ODE state [x, y, heading, u, v, r, phi, p],
+// then applies the discrete, non-ODE updates once per substep: the shunt
+// state machine (which may itself override u, v, heading, end at the swap
+// instant — see core/shunt.js), the sheet constraint, and the ama-load /
+// aback-timer / capsize statics (see core/stability.js).
 
 import { sailForces, windageForce } from './aero.js';
 import { hullResistance, hullSideForce, amaDrag } from './hydro.js';
@@ -14,16 +13,13 @@ import { shuntStep } from './shunt.js';
 import { sheetStep, effectiveDeltaMax, isLuffing } from './sheet.js';
 
 // computeForces(state, controls, config) -> total forces/moment + readouts
-// shared with derivatives() and the harness/UI (alpha, aw, amaLoad, ...).
-// amaLoad is the raw physics value (unbounded — round 8: drives the
-// aback timer on the phi<0 side and the "AMA FLYING" warning readout on
-// the phi>=0 side, must NOT be clamped for either); amaLoadDisplay is the
-// same value capped at config.stability.amaLoadDisplayCap for UI
-// readouts, since raw values like 2000 (see stability.js computeAmaLoad —
-// a near-zero restoring capacity denominator) are meaningless as a
-// percentage gauge.
-// alpha is the raw chord-flow angle; alphaSailor is the sailor's AoA. Both
-// pairs are FIX_REQUEST_step1_round2.md R2-3.
+// shared with derivatives() and the harness/UI.
+//
+// amaLoad is the raw physics value and must NOT be clamped: it drives the
+// aback timer on the phi<0 side and the "AMA FLYING" warning readout on the
+// phi>=0 side. amaLoadDisplay is the same value capped at
+// config.stability.amaLoadDisplayCap for UI readouts. Likewise alpha is the
+// raw chord-flow angle and alphaSailor is the sailor's acute AoA.
 export function computeForces(state, controls, config) {
   const aero = sailForces(state, controls, config);
   const amaLoad = computeAmaLoad(state.phi, config);
@@ -39,11 +35,10 @@ export function computeForces(state, controls, config) {
   const Fy = aero.Fy + side.Fy + rudder.Fy + windage.Fy;
   const M = aero.yawMoment + side.yawMoment + rudder.yawMoment + drag.yawMoment;
 
-  // Roll dynamics (4th DOF, FIX_REQUEST_round4_roll_dof.md Part 1):
-  // sail heel (boat-frame heelMoment converted to the physical-frame roll
-  // sign via *end — see state.js: heelMoment*end<0 is the normal,
+  // Roll: sail heel (the boat-frame, end-aware heelMoment converted to the
+  // physical-frame roll sign via *end — heelMoment*end<0 is the normal,
   // ama-lifting case, which must contribute POSITIVE Mroll, hence the
-  // negation) + the ama's own restoring moment + crew moment + damping.
+  // negation) + the ama's restoring moment + crew moment + damping.
   const Msail = -aero.heelMoment * state.end;
   const Mrestore = rollRestoreMoment(state.phi, config);
   const Mcrew = crewRollMoment(state.phi, controls.crewPos, config);
@@ -69,19 +64,19 @@ export function computeForces(state, controls, config) {
   };
 }
 
-// derivatives(state, forces, config) -> time derivatives of the ODE state
-// F8 (work-order-2026-07-30): three SEPARATE inertias, not one displacement.
-// A hull accelerating sideways drags a large body of water with it; pushing it
-// forward barely does. Previously m_x = m_y = displacement = 190 kg and
-// I_z = 0.06*m*L^2 = 345 kg.m^2 — the latter BELOW even a uniform rod (1/12),
-// which no mass distribution can justify once added mass is counted, since
-// added mass only ever adds.
+// derivatives(state, forces, config) -> time derivatives of the ODE state.
+//
+// THREE SEPARATE INERTIAS, not one displacement. A hull accelerating
+// sideways drags a large body of water with it (added mass); pushing it
+// forward barely does; and yaw inertia must exceed even a uniform rod's
+// m*L^2/12, since added mass only ever adds. See config.js for each term's
+// derivation.
 //
 // Writing the rigid-body equations with distinct inertias also produces the
 // MUNK MOMENT on its own — the (m_x - m_y)*u*v term in dr, the classical
-// destabilising moment on a slender body at an angle of attack. It was
-// identically zero before, and not because it was neglected: with m_x = m_y
-// there was nothing to express it with.
+// destabilising moment on a slender body at an angle of attack. With
+// m_x = m_y there is nothing to express it with. It is not double-counted
+// against hydro.js's strip integration (docs/adr/0018).
 export function derivatives(state, forces, config) {
   const { massSurge, massSway, yawInertia } = config.hull;
   const Iroll = config.stability.I_roll;
@@ -107,8 +102,8 @@ function addScaled(base, deriv, h) {
   return out;
 }
 
-// isPhysicallyPlausible(s) -> bool. Cheap "has the arithmetic survived"
-// test for a freshly integrated ODE state — see the divergence guard in
+// isPhysicallyPlausible(s) -> bool. Cheap "has the arithmetic survived" test
+// for a freshly integrated ODE state — see the divergence guard in
 // integrate() for why it exists and why these bounds are absurd on purpose.
 const DIVERGENCE_MAX_PHI = 2 * Math.PI;   // rad; a real capsize fires near 50deg
 const DIVERGENCE_MAX_SPEED = 100;         // m/s; the boat sails at a few m/s
@@ -124,15 +119,12 @@ function isPhysicallyPlausible(s) {
 
 // integrate(state, controls, config, dt) -> newState (RK4, fixed dt)
 //
-// R5-2.2: once capsized, the core freezes -- zeroes u/v/r/p (a short
-// exponential bleed, not an instant jump) and stops accepting control
-// inputs (including the sheet/shunt/rudder) except reset, which is a
-// facade-level concern (simulator.js's reset()), not this function's.
-// This lives HERE, not in the UI-facing simulator.js facade, so every
-// caller of integrate() -- the harness scenarios and the polar sweep
-// included, which call it directly, bypassing the facade entirely -- gets
-// the same "no ghost sailing at some absurd heel" guarantee instead of
-// only the live UI.
+// CAPSIZE FREEZE. Once capsized, the core freezes: u/v/r/p bleed
+// exponentially to zero (not an instant jump) and no control input is
+// accepted. This lives HERE, not in the UI-facing simulator.js facade, so
+// every caller of integrate() — the harness scenarios and the polar sweep
+// included, which bypass the facade entirely — gets the same "no ghost
+// sailing at some absurd heel" guarantee. Resetting is a facade concern.
 export function integrate(state, controls, config, dt) {
   if (state.capsized) {
     const bleed = Math.exp(-dt / 0.3);
@@ -159,23 +151,23 @@ export function integrate(state, controls, config, dt) {
   }
   next.heading = Math.atan2(Math.sin(next.heading), Math.cos(next.heading));
 
-  // Numerical divergence guard. The fixed-dt RK4 above is stable across the
+  // NUMERICAL DIVERGENCE GUARD. The fixed-dt RK4 above is stable across the
   // whole envelope this boat can actually sail, but a sustained hard-over
   // rudder spins it fast enough that dt stops resolving the rotation (the
   // v*r / -u*r coupling in derivatives()), and the state then runs away
-  // exponentially: measured u climbing 3 -> 12 -> 37 m/s and then to 1e91
-  // inside a single 0.25 s window. The capsize test downstream DOES fire on
-  // the way past, so this is not a missing trigger — the problem is purely
-  // that by then the numbers are garbage, and what gets frozen (and
-  // recorded, and replayed) is nonsense rather than a boat.
+  // exponentially within a fraction of a second. The capsize test downstream
+  // does fire on the way past, so this is not a missing trigger — the
+  // problem is that by then the numbers are garbage, and what gets frozen
+  // (and recorded, and replayed) is nonsense rather than a boat.
   //
   // So: catch the runaway and freeze the last state that was still physical,
-  // flagged as a capsize — which is unambiguously where the trajectory was
-  // going. The bounds below are deliberately absurd rather than tuned; they
-  // exist to separate "arithmetic has failed" from "sailing badly", and a
-  // real capsize is flagged far inside every one of them (phiCapsizeDeg is
-  // 50deg against a 360deg bound here, hull speed is a few m/s against 100).
-  // They must never become knobs — anything that needs tuning belongs in
+  // flagged as a capsize — unambiguously where the trajectory was going.
+  //
+  // The bounds are deliberately absurd rather than tuned. They exist to
+  // separate "arithmetic has failed" from "sailing badly", and a real
+  // capsize is flagged far inside every one of them (phiCapsizeDeg is 50deg
+  // against a 360deg bound here; hull speed is a few m/s against 100). THEY
+  // MUST NEVER BECOME KNOBS — anything that needs tuning belongs in
   // config.js, not in a sanity check.
   if (!isPhysicallyPlausible(next)) {
     return { ...state, t: state.t + dt, u: 0, v: 0, r: 0, p: 0, capsized: true };
@@ -186,13 +178,12 @@ export function integrate(state, controls, config, dt) {
   const shuntPatch = shuntStep({ ...state, ...next }, controls, config, dt);
   Object.assign(next, shuntPatch);
 
-  // Sheet constraint (R5-1): delta relaxes toward its equilibrium at a
-  // bounded slew rate, evaluated AFTER the shunt patch so a phase
-  // transition landing on this exact step (e.g. entering 'sheet') is
-  // already reflected in the delta_max it relaxes against. Held constant
-  // across this step's own k1..k4 RK4 evaluations above (same treatment as
-  // the shunt phase/fade), then advanced once per substep here — cheap and
-  // accurate at dt=1/240s.
+  // Sheet constraint: delta relaxes toward its equilibrium at a bounded slew
+  // rate, evaluated AFTER the shunt patch so a phase transition landing on
+  // this exact step (e.g. entering 'sheet') is already reflected in the
+  // delta_max it relaxes against. Held constant across this step's own
+  // k1..k4 evaluations above (same treatment as the shunt phase/fade), then
+  // advanced once per substep here — cheap and accurate at dt=1/240s.
   const sheetPatch = sheetStep({ ...state, ...next }, controls, config, dt);
   Object.assign(next, sheetPatch);
 

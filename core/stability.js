@@ -1,16 +1,12 @@
-// stability.js — roll as a 4th DOF: sail heel moment, ama restoring moment
-// (weight when lifting, buoyancy when pressed), crew moment, linear
-// damping, and the capsize state machine (round 8: purely physical on the
-// flying/phi>=0 side — phi crossing past the capsizing-arm reversal — and
-// a timer on the aback/phi<0 side, unchanged since it's already physical).
-// (FIX_REQUEST_round4_roll_dof.md Part 1 — supersedes the earlier static
-// heel/roll model: "Full roll dynamics are out of scope" no longer holds.)
+// stability.js — roll as a 4th DOF: the ama's restoring moment (weight when
+// lifting, buoyancy when pressed), the crew's pendulum moment, linear
+// damping, and the capsize state machine.
 
 const DEG = Math.PI / 180;
 
-// rollRestoreMoment(phi, config) -> N*m, a genuine restoring term (opposes
-// phi: negative for phi>0, positive for phi<0) UP TO a point — see the
-// capsizing branch below.
+// rollRestoreMoment(phi, config) -> N*m, a restoring term (opposing phi:
+// negative for phi>0, positive for phi<0) UP TO a point — see the capsizing
+// branch below.
 //   phi >= 0 (ama lifting/flying): the ama's own WEIGHT resists further
 //   lift, growing smoothly (ease-out, zero slope at the cap) from 0 at
 //   phi=0 to its full ama.mass*g*ama.spacing lever at phi=phiLiftoffRad
@@ -18,61 +14,43 @@ const DEG = Math.PI / 180;
 //   phi < 0 (ama pressed): symmetric, using ama.maxBuoyancy instead of
 //   ama.mass, saturating at phi=-phiSubmergeRad ("ama fully submerged").
 //
-// Capsizing branch (EXTENSION_round5_sheet_constraint.md R5-2.1 —
-// supersedes the round-4 model, which held the moment flat at its
-// saturated value forever past liftoff/submergence): a real righting-arm
-// (GZ) curve doesn't plateau indefinitely — past some heel angle the
-// platform's effective CG has swung far enough that gravity itself starts
-// working on the capsizing side, and the arm reverses. Past phiCapsizeRad
-// (symmetric on both sides) the magnitude, which was held at its saturated
-// cap immediately past liftoff/submergence under the old model, is instead
-// ramped LINEARLY from that same cap back through zero AT phiCapsizeRad and
-// on into the opposite sign beyond it — a genuine capsizing arm — but that
-// ramp is itself capped at the SAME magnitude (Mmax) one further span past
-// phiCapsizeRad, rather than left to grow without bound: an unbounded
-// linear-in-phi term here is a destabilizing linear spring, and integrating
-// it produces a textbook exponential blow-up (verified: phi reaching
-// thousands of degrees within seconds, well before the capsize timer even
-// has a chance to fire and freeze the state) — numerically ugly and not
-// what "accelerates to the water" is asking for. Capping it at Mmax still
-// gives a strong, sustained, escalating-then-constant capsizing torque
-// (the timer fires and the core freezes the state — R5-2.2 — well within
-// this bounded regime for any realistic sail moment), while fixing the
-// original bug: a boat driven past the angle of vanishing stability no
-// longer finds a spurious stable equilibrium at some absurd heel (verified
-// bug: steady sailing at phi=58deg under the old flat-forever model).
+// CAPSIZING BRANCH. A real righting-arm (GZ) curve does not plateau
+// indefinitely: past some heel angle the platform's effective CG has swung
+// far enough that gravity itself starts working on the capsizing side, and
+// the arm reverses. So past phiCapsizeRad (symmetric on both sides) the
+// magnitude is ramped LINEARLY from its saturated cap back through zero AT
+// phiCapsizeRad and on into the opposite sign — a genuine capsizing arm.
 //
-// The ramp-down doesn't start immediately at liftoff/submergence: it holds
-// flat at the old, already-validated Mmax plateau for HOLD_FRAC of the
-// liftoff-to-capsize span first, matching a real GZ curve (righting arm
-// stays near its max for a good stretch past the initial "deck awash"
-// angle before falling away closer to the angle of vanishing stability),
-// and — pragmatically — preserving the round-4 squall scenario's gust-
-// recovery margin: a pure ramp-from-the-threshold (tried first) measurably
-// weakened the mid-range restoring the phi-aware brail/crew controller
-// relies on for an underdamped (~2.6s period) roll oscillation, enough to
-// tip a scenario that used to recover into a genuine capsize. Only past
-// HOLD_FRAC does it ramp down through zero at phiCapsizeRad and on into
-// the capped capsizing arm beyond, same as before. Near the OLD threshold
-// this is now IDENTICAL to the old flat-cap value (not just approximately,
-// as a from-the-threshold ramp gave), so the 2s/6s capsize timers' whole
-// pre-existing near-threshold behaviour is preserved outright — the timer
-// stays the FORMAL trigger; only genuinely runaway heel (past HOLD_FRAC of
-// the way to phiCapsizeDeg) now has the dynamics agree with it instead of
-// fighting it with an implausible indefinite plateau.
+// That ramp is itself CAPPED at the same magnitude (Mmax) one further span
+// past phiCapsizeRad rather than left to grow without bound: an unbounded
+// linear-in-phi term here is a destabilising linear spring, and integrating
+// it produces textbook exponential blow-up (phi reaching thousands of
+// degrees within seconds), which is numerically useless and not what
+// "accelerates to the water" is asking for. Capped, it still gives a
+// strong, sustained capsizing torque, and the capsize trigger fires and
+// freezes the state well inside this bounded regime for any realistic sail
+// moment. Without the reversal at all, a boat driven past the angle of
+// vanishing stability finds a spurious STABLE equilibrium at an absurd heel.
+//
+// The ramp-down does not start immediately at liftoff/submergence: it holds
+// flat at the saturated Mmax for HOLD_FRAC of the liftoff-to-capsize span
+// first. That matches a real GZ curve (the righting arm stays near its max
+// for a good stretch past the initial "deck awash" angle before falling
+// away toward the angle of vanishing stability), and it keeps the mid-range
+// restoring intact — a pure ramp from the threshold measurably weakens the
+// gust-recovery margin that the phi-aware brail/crew controllers rely on.
 const HOLD_FRAC = 0.5;
 export function rollRestoreMoment(phi, config) {
   const { ama, g, stability } = config;
   const capsizeRad = stability.phiCapsizeDeg * DEG;
-  // F13 (work-order-2026-07-30): the ama's righting LEVER is its lateral
-  // offset projected onto the horizontal as the platform rolls —
-  // ama.spacing*cos(phi), not ama.spacing. crewRollMoment() directly below
-  // already carries exactly this cos(phi), from exactly the same geometric
-  // argument, so the two terms of the same balance disagreed with each other:
-  // at 50deg the ama's arm was overstated by 1/cos(50) = 56%. Applied to the
-  // returned moment (the frac shape functions model how much of the float's
-  // weight/buoyancy is engaged; this is the lever it acts on). cos(phi) does
-  // not change sign over any reachable roll angle — capsize fires at 65deg.
+  // The ama's righting LEVER is its lateral offset projected onto the
+  // horizontal as the platform rolls — ama.spacing*cos(phi), not
+  // ama.spacing. crewRollMoment() below carries exactly this cos(phi) from
+  // exactly the same geometric argument, so the two terms of the same
+  // balance must agree. Applied to the returned moment: the frac shape
+  // functions model how much of the float's weight/buoyancy is engaged,
+  // this is the lever it acts on. cos(phi) does not change sign over any
+  // reachable roll angle (capsize fires at 65deg).
   const leverProjection = Math.cos(phi);
   if (phi >= 0) {
     const liftoffRad = stability.phiLiftoffDeg * DEG;
@@ -100,27 +78,21 @@ export function rollRestoreMoment(phi, config) {
   return Mmax * (1 - frac2);
 }
 
-// crewRollMoment(phi, crewPos, config) -> N*m. A genuine pendulum torque,
+// crewRollMoment(phi, crewPos, config) -> N*m. A genuine PENDULUM torque,
 // NOT a bidirectional "restoring" term: a crew member rigidly standing at
-// lateral offset crewPos*ama.spacing (crewPos>0 = toward the ama) sweeps
-// to world position (offset*cos(phi), offset*sin(phi)) as the platform
-// rolls, and gravity's moment about the roll axis on that swept position
-// is -m*g*offset*cos(phi) — CONSTANT SIGN in phi (cos(phi) doesn't flip
-// sign for realistic roll angles), matching the extension request's
-// literal formula (crew.mass*g*crewPos*ama.spacing*cos(phi)) with a minus
-// applied for standard pivot-torque sign convention (r x F, force
-// straight down). This is why crew ballast is double-edged: for crewPos>0
-// it RESISTS the ama lifting (phi>0, the normal case), but *worsens* the
-// ama being pressed down once phi has already gone negative (aback-like)
-// — real physics (moving crew weight onto the side that's already being
-// forced under makes it worse), confirmed by the squall scenario capsize
-// this exposed until its threshold controller was made phi-aware (see
-// harness/scenarios.js, FIX_REQUEST_round4_roll_dof.md Part 1) instead of
-// chasing amaLoad's magnitude alone regardless of which side it's on.
-// Cross-checked against the coupling-sign tests in harness/asserts.js
-// (1.6): with this sign, crew toward the ama (phi>=0 branch) measurably
-// lowers the settled amaLoad, matching the existing round-2/round-3
-// semantics.
+// lateral offset crewPos*ama.spacing (crewPos>0 = toward the ama) sweeps to
+// world position (offset*cos(phi), offset*sin(phi)) as the platform rolls,
+// and gravity's moment about the roll axis on that swept position is
+// -m*g*offset*cos(phi) — CONSTANT SIGN in phi, since cos(phi) does not flip
+// sign over realistic roll angles.
+//
+// This is why crew ballast is double-edged: for crewPos>0 it RESISTS the ama
+// lifting (phi>0, the normal case), but *worsens* the ama being pressed down
+// once phi has already gone negative (aback-like). Moving crew weight onto
+// the side that is already being forced under makes it worse. A controller
+// that chases amaLoad's MAGNITUDE regardless of which side it is on will
+// capsize the boat with this term; harness/scenarios.js's squall controller
+// reads the sign of state.phi for exactly this reason.
 export function crewRollMoment(phi, crewPos, config) {
   const { crew, ama, g } = config;
   return -crew.mass * g * crewPos * ama.spacing * Math.cos(phi);
@@ -131,17 +103,12 @@ export function rollDampingMoment(p, config) {
   return -config.stability.rollDampingCoeff * p;
 }
 
-// computeAmaLoad(phi, config) -> amaLoad. DERIVED from the roll angle
-// (FIX_REQUEST_round4_roll_dof.md 1.3 — replaces the old static
-// heelMoment/restoringCapacity formula) so the existing contract carries
-// over continuously: 0 = upright, exactly 1.0 when the ama just leaves
-// the water (phi=phiLiftoffRad) or just fully submerges
-// (phi=-phiSubmergeRad) — "restoring fully mobilised" either way — and
-// UNBOUNDED past that (grows linearly with phi), so the aback timer and
-// the "AMA FLYING" warning readout below keep the exact "how far past
-// the edge" semantics they always had (a near-zero denominator is no
-// longer possible: phi is a real integrated state, not a moment/capacity
-// ratio).
+// computeAmaLoad(phi, config) -> amaLoad, derived from the roll angle:
+// 0 = upright, exactly 1.0 when the ama just leaves the water
+// (phi=phiLiftoffRad) or just fully submerges (phi=-phiSubmergeRad) —
+// "restoring fully mobilised" either way — and UNBOUNDED past that, growing
+// linearly with phi, so the aback timer and the "AMA FLYING" warning keep
+// their "how far past the edge" semantics.
 export function computeAmaLoad(phi, config) {
   const { stability } = config;
   if (phi >= 0) return phi / (stability.phiLiftoffDeg * DEG);
@@ -149,74 +116,44 @@ export function computeAmaLoad(phi, config) {
 }
 
 // updateAback(state, amaLoad, Msail, dt, config) -> { abackTimer, capsized }
-//   Round 8 (ROUND8_physical_capsize.md, R8-1) retires the phi>=0
-//   "overload timer" as a capsize trigger. It was a v0.1 proxy from
-//   before roll dynamics existed at all (FIX_REQUEST_step1_review.md) —
-//   real proas fly the ama routinely as a controlled technique, and
-//   round 7's diagnosis (ROUND7_steering_regression_findings.md sec 6-7)
-//   found it firing on trims that were still well short of the actual
-//   physical point of no return (phi~14-18deg, against a phiCapsizeDeg of
-//   50). Capsize on this side is now decided PURELY by phi: past
-//   phiCapsizeDeg the restoring arm has already reversed (see
-//   rollRestoreMoment above) and the dynamics accelerate over on their
-//   own; once phi crosses phiCapsizeDeg + capsizeTriggerMarginDeg (a
-//   config angle safely past the reversal, so integrate()'s freeze-on-
-//   capsize — see its own comment — catches the boat visibly rolling
-//   past the point of no return, not the instant it crosses the
-//   reversal itself), that's an unambiguous capsize. amaLoad>1 on this
-//   side is now purely a WARNING condition (ui/app.js's "AMA FLYING" tag,
-//   derived on the fly from state.phi/amaLoad — no stored timer, nothing
-//   to retire further if the warning's own display logic ever changes).
 //
-//   The aback/pressed path's TIMER (phi<0 && amaLoad>1.0, i.e. the ama
-//   genuinely fully submerged) is UNCHANGED (R8-1(b), then round 10d H2
-//   re-audit: touching this gate to also fire on transient Msail<0
-//   blips — tried first — broke several deep-course scenarios that sail
-//   fine today, D4-1/D4-2/D4-3/C-deadrun, into false capsizes: ordinary
-//   downwind sailing routinely has brief negative-phi/negative-Msail
-//   moments that are NOT a sustained press and must not feed the same
-//   timer that governs real capsize). Counting time past full
-//   submersion stays the physically-motivated capsize question it always
-//   was.
+// Two distinct capsize paths, deliberately kept separate.
 //
-//   The through-gybe aback WARNING (round 10d, H2, ROUND10d_helm_balance.md,
-//   archived) is a separate, non-capsize-affecting signal for a gap that
-//   round's diagnosis found: several reproduced through-gybe trajectories
-//   (wind crossing to the ama-leeward side via a bear-away, yard slammed to
-//   delta~0 against the mast, sheet.js regime c) settle phi at a genuinely
-//   pressed, SUSTAINED -3..-9deg (amaLoad 0.3-0.9, short of the 1.0 full-
-//   submersion bar) — the buoyancy-side restoring arm is strong enough
-//   (ama.maxBuoyancy vs the flying side's much lighter ama.mass, R8's own
-//   asymmetry) to hold it there indefinitely, sail jammed, unable to trim —
-//   with the old detector completely silent for the boat's entire time in
-//   that state. amaLoad>1 (full submersion) is a severe, LATER-STAGE
-//   CONSEQUENCE of sustained aback, not aback's own nautical definition
-//   (wind on the wrong side of the sail); `phi<0 && Msail<0` (the sail's OWN
-//   current roll-moment contribution, already computed every step in
-//   integrator.js's breakdown) is the direct, physical reading of that
-//   definition: pressed, AND actively being pressed right now. Deliberately
-//   kept OUT of abackTimer/capsized since it fires far more readily than
-//   full submersion, so it is computed independently by each consumer
-//   (ui/app.js's "PRESSED" banner, harness/asserts.js's H2 assertion)
-//   directly from state.phi/breakdown.roll.Msail, rather than threaded
-//   through this return value (R3, docs/work-order-2026-07-22.md: nothing
-//   read the value this function used to also return here, making it a
-//   redundant, unread second source of truth for the same condition).
+//   ANGULAR, applied SYMMETRICALLY: |phi| past phiCapsizeDeg +
+//   capsizeTriggerMarginDeg. rollRestoreMoment() reverses the righting arm
+//   past phiCapsizeDeg on BOTH sides, so a pressed-side runaway is as
+//   unrecoverable as a flying-side one; without the symmetric trigger, phi
+//   can run to a full barrel roll and be caught by integrator.js's
+//   isPhysicallyPlausible() guard instead — a real capsize misreported as an
+//   arithmetic failure. The margin puts the trigger safely PAST the
+//   reversal, so integrate()'s freeze catches the boat visibly rolling past
+//   the point of no return rather than the instant it crosses the reversal.
+//
+//   ABACK TIMER, pressed side only: phi<0 && amaLoad>1.0 (the ama genuinely
+//   fully submerged) sustained beyond abackCapsizeTime. This is the earlier,
+//   nautical mechanism — counting time past full submersion — and is
+//   deliberately distinct from the point-of-no-return angle above.
+//
+// Real proas fly the ama routinely as a controlled technique, so amaLoad>1
+// on the FLYING side is a warning readout only (ui/app.js's "AMA FLYING"),
+// derived on the fly from phi/amaLoad with no stored timer behind it.
+//
+// The through-gybe aback WARNING (phi<0 && Msail<0 — pressed, AND actively
+// being pressed right now) is likewise NOT computed here. It is the direct
+// reading of aback's nautical definition, and it catches trajectories that
+// settle at a genuinely pressed but SUB-1.0 amaLoad, which full-submersion
+// detection never flags. But it fires far more readily than full
+// submersion: gating this timer on it turns ordinary downwind sailing —
+// which routinely has brief negative-phi/negative-Msail moments that are not
+// a sustained press — into false capsizes. Each consumer (ui/app.js's
+// "PRESSED" banner, harness/asserts.js) therefore computes it independently
+// from state.phi and breakdown.roll.Msail rather than reading it from here.
 export function updateAback(state, amaLoad, Msail, dt, config) {
   const { abackCapsizeTime, phiCapsizeDeg, capsizeTriggerMarginDeg } = config.stability;
 
   const isAback = state.phi < 0 && amaLoad > 1.0;
   const abackTimer = isAback ? state.abackTimer + dt : 0;
 
-  // Angular capsize threshold, applied SYMMETRICALLY (F2, work-order-
-  // 2026-07-30): rollRestoreMoment() reverses the righting arm past
-  // phiCapsizeDeg on BOTH sides, so a pressed-side runaway (phi <= -threshold)
-  // is as unrecoverable as a flying-side one. Before this the pressed side
-  // had only the (slower, correct) aback timer, letting phi run to a full
-  // -360deg barrel roll caught by integrator's isPhysicallyPlausible() guard
-  // — a real capsize misreported as an arithmetic failure. The aback timer
-  // is unchanged: it is the earlier, nautical (6s sustained submersion)
-  // mechanism, deliberately distinct from this point-of-no-return angle.
   const capsizeRad = (phiCapsizeDeg + capsizeTriggerMarginDeg) * DEG;
   const capsized = state.capsized
     || abackTimer > abackCapsizeTime
