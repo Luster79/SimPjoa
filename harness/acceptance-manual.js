@@ -283,14 +283,28 @@ export function runAcceptance(config) {
   }
 
   // ---- 4. Brails -----------------------------------------------------------
-  // AC-4.1: deepening the sail with the MAIN brail, sheet in, must NOT by
-  // itself change the course — it is only the preparatory step.
+  // AC-4.1: the preparation step. Re-read against the original after the owner
+  // pointed out that the brail IS a steering control: the manual says "these
+  // are preparations only, so don't expect course changing, YET" -- a
+  // SEQUENCING note for a learner, telling them the turn comes at step (b),
+  // not a claim that the leeward brail produces zero yaw moment. I had turned
+  // it into a hard zero-moment invariant (+-3deg) and then read the model's
+  // failure to meet it as a defect. It is not one.
+  //
+  // Restated as what the manual actually orders: the preparation must be
+  // SMALLER than the effect it prepares for. The breaking brail is the control;
+  // deepening the sail is the setup.
   {
-    const rows = differential(config, (c) => { c.brailLee = 0.3; }, (c) => { });
-    const t = tally(rows, (r) => Math.abs(r.diff) < 3);
-    record('AC-4.1', 'main brail alone (preparatory step) does NOT change course',
+    const rows = GRID.map((point) => {
+      const base = probe(config, point, null).turn;
+      const prep = probe(config, point, (c) => { c.brailLee = 0.3; }).turn - base;
+      const act = probe(config, point, (c) => { c.brailLee = 0.3; c.brailWind = 0.6; }).turn - base;
+      return { point, diff: Math.abs(act) - Math.abs(prep), capsized: false, prep, act };
+    });
+    const t = tally(rows, (r) => r.diff > 0);
+    record('AC-4.1', 'the preparation step is smaller than the manoeuvre it prepares (|brail-wind effect| > |brail-lee alone|)',
       t.ok === t.n ? 'PASS' : (t.ok === 0 ? 'FAIL' : 'PARTIAL'),
-      `${t.ok}/${t.n} points within +-3deg -- ${t.detail}`);
+      `${t.ok}/${t.n} points -- ` + rows.map((r) => `T${r.point.twa}/${r.point.tws}: prep${r.prep >= 0 ? '+' : ''}${r.prep.toFixed(1)} full${r.act >= 0 ? '+' : ''}${r.act.toFixed(1)}`).join(' '));
   }
 
   // AC-4.2: the SECOND (breaking) brail bears the bow away, and the effect

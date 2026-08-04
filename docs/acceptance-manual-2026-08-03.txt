@@ -29,8 +29,8 @@ AC-3.2    PASS                 sheet EASED -> bow points UP
 AC-3.3    PARTIAL              a luffing sail does not give the textbook sheet response
           5/6 points -- (drawing response - luffing response) T70/6:+0.0 T90/6:+2.3 T110/6:+1.6 T70/10:+8.5 T90/10:+4.5 T110/10:+0.0
 
-AC-4.1    PARTIAL              main brail alone (preparatory step) does NOT change course
-          2/6 points within +-3deg -- T70/6:+3.8 T90/6:+2.7 T110/6:+0.9 T70/10:+10.4 T90/10:+3.6 T110/10:+3.8
+AC-4.1    PARTIAL              the preparation step is smaller than the manoeuvre it prepares (|brail-wind effect| > |brail-lee alone|)
+          2/6 points -- T70/6: prep+3.8 full+3.2 T90/6: prep+2.7 full+1.8 T110/6: prep+0.9 full-2.1 T70/10: prep+10.4 full+1.5 T90/10: prep+3.6 full-5.5 T110/10: prep+3.8 full-0.4
 
 AC-4.2a   PASS                 breaking brail -> bow BEARS AWAY
           6/6 points -- T70/6:-1.9 T90/6:-1.8 T110/6:-3.7 T70/10:-3.3 T90/10:-7.6 T110/10:-1.8
