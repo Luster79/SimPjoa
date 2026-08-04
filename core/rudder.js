@@ -48,7 +48,27 @@ export function rudderForce(state, controls, config) {
   // The oar sits at the physical end opposite the active bow, so the water it
   // meets carries the yaw-rate contribution r*leverArm as well as the boat's
   // own sway. Including it is what gives the oar real yaw damping.
-  const leverArm = -(hull.length / 2) * state.end;
+  // The oar is at the STERN, and the boat frame's +x already points at the
+  // ACTIVE bow (see state.js Conventions), so the stern is at -L/2 in that
+  // frame on BOTH ends. There is no `end` factor to apply, and applying one
+  // put the oar at the BOW after every shunt.
+  //
+  // F9 corrected this from +(L/2) to -(L/2)*end and verified the result by
+  // exhausting sign combinations against three required properties — but
+  // evaluated all three at end=+1 only, where -(L/2)*end and -(L/2) are the
+  // same number. Measured at end=-1 the shipped form failed two of the three:
+  //
+  //   property                          -(L/2)*end        -(L/2)
+  //   positive rudder -> positive M     -1635  FAIL       +1635  ok
+  //   leeway alone -> weathercocks       +473  FAIL        -473  ok
+  //   yaw rate alone -> damps           -1345  ok         -1345  ok
+  //
+  // The consequence in the boat: with the oar down and centred, end +1 bore
+  // away 11deg and held 3.93 m/s over 20s while end -1 rounded up 81deg and
+  // collapsed to 0.15 — the oar anti-damping because it was modelled at the
+  // wrong end of the hull. With the oar shipped the two ends were already
+  // bit-identical, which is what localised it here.
+  const leverArm = -(hull.length / 2);
   const u = state.u;
   const vAtRudder = state.v + state.r * leverArm;
   const V2 = u * u + vAtRudder * vAtRudder;

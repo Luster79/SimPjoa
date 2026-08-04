@@ -387,33 +387,19 @@ export function runAsserts(config, { slow = true } = {}) {
   // the geometry distinguishes them: the ama is always to windward, the sail
   // always to leeward, the hull is symmetric fore and aft.
   //
-  // Found 2026-08-04 while checking an unrelated post-shunt measurement. It is
-  // NOT symmetric, and the defect is localised entirely to the steering oar.
-  // Free boat, rudder centred, 20 s from an identical start:
-  //   oar SHIPPED:  end +1 and end -1 are BIT-IDENTICAL (+81.0deg, v=0.45).
-  //                 So sail, hull, ama, roll and shunt bookkeeping are all
-  //                 correctly end-symmetric.
-  //   oar DOWN:     end +1 bears away 10.9deg and holds 3.93 m/s;
-  //                 end -1 rounds up 81.0deg and collapses to 0.15 m/s.
+  // It was NOT symmetric until 2026-08-04, and the whole of the difference was
+  // the steering oar being modelled at the BOW after a shunt
+  // (core/rudder.js's lever arm carried a spurious *state.end). Free boat,
+  // rudder centred, 20 s from an identical start, before the fix:
+  //   oar shipped: end +1 and end -1 bit-identical (+81.0deg, v=0.45)
+  //   oar down:    end +1 bore away 10.9deg at 3.93 m/s
+  //                end -1 rounded up 81.0deg and collapsed to 0.15 m/s
+  // The shipped-oar half passing is what localised it: everything except the
+  // oar was already correct across the swap.
   //
-  // Mechanism: rudderForce's yaw moment is Fy * leverArm with
-  // leverArm = -(L/2)*end, while alphaEff = deflection + inflowAngle carries
-  // no end term. So the same oar state produces OPPOSITE yaw moments on the
-  // two ends. headingHoldRudder compensates for the commanded part with its
-  // own state.end factor -- which is why it is there, and why the autopilot
-  // only half-works -- but the INFLOW-driven part (weathercocking and yaw
-  // damping, both introduced by F9) gets no such compensation and is
-  // therefore wrongly signed on end -1, where it anti-damps.
-  //
-  // That is the exact failure mode F9's own comment records an intermediate
-  // revision having ("produced ANTI-damping"). F9 resolved it by exhausting
-  // sign combinations against three required properties -- all evaluated at
-  // end=+1. The other end was never checked.
-  //
-  // xfail with the numbers rather than fixed here: this is the third attempt
-  // at these signs, the two previous ones each shipped a different wrong
-  // answer, and the fix is to redo F9's property exhaustion on BOTH ends
-  // rather than to flip something and see.
+  // Both halves are real assertions now. Keep them: this area has had three
+  // passes at its signs and two of them shipped a wrong answer, and an
+  // end=+1-only check cannot see any of them.
   {
     const freeRun = (end, rudderUp) => {
       const wind = HEADING0 + 90 * DEG;
@@ -433,9 +419,8 @@ export function runAsserts(config, { slow = true } = {}) {
 
     const dnA = freeRun(1, false), dnB = freeRun(-1, false);
     check('end symmetry: with the oar DOWN and centred the two ends behave identically',
-      Math.abs(dnA.dTwa - dnB.dTwa) < 5 && Math.abs(dnA.speed - dnB.speed) < 0.3,
-      `end+1 dTWA=${dnA.dTwa.toFixed(1)} v=${dnA.speed.toFixed(2)}; end-1 dTWA=${dnB.dTwa.toFixed(1)} v=${dnB.speed.toFixed(2)} -- the oar's INFLOW-driven moment (F9 weathercocking + damping) has no end term while its lever arm does, so it anti-damps on end -1. Everything else in the model is bit-identical across the swap`,
-      'STEERING');
+      Math.abs(dnA.dTwa - dnB.dTwa) < 0.5 && Math.abs(dnA.speed - dnB.speed) < 0.02,
+      `end+1 dTWA=${dnA.dTwa.toFixed(1)} v=${dnA.speed.toFixed(2)}; end-1 dTWA=${dnB.dTwa.toFixed(1)} v=${dnB.speed.toFixed(2)} -- was +81.0/0.15 on end -1 before the lever-arm fix`);
   }
 
   // --- 3. Polar shape + speed anchor (TWS=6) --- (slow: computePolar sweep)

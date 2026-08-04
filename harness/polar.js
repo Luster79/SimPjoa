@@ -15,11 +15,16 @@ function normalizeAngle(a) { return Math.atan2(Math.sin(a), Math.cos(a)); }
 
 // headingHoldRudder — small P+D autopilot used by the whole harness (polar
 // runs and scenarios) to hold a course so TWA stays put while speed settles.
-// The state.end factor compensates for the rudder's lever-arm sign flip
-// after a shunt (see rudder.js), so the same gains work on either tack/end.
+//
+// The `state.end` factor this used to carry is GONE (2026-08-04). It existed
+// to compensate for the oar's lever arm flipping sign after a shunt — which
+// was itself the bug: core/rudder.js placed the oar at the BOW on end -1. With
+// the lever arm corrected, positive rudder gives a positive yaw moment on both
+// ends and the autopilot needs no end-awareness. Keeping the factor after the
+// fix would have re-introduced the same inversion from the other side.
 export function headingHoldRudder(state, targetHeading, config, kp = 2.5, kd = 1.2) {
   const error = normalizeAngle(targetHeading - state.heading);
-  const raw = state.end * (kp * error - kd * state.r);
+  const raw = kp * error - kd * state.r;
   return Math.max(-1, Math.min(1, raw));
 }
 
