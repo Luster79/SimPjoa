@@ -172,6 +172,10 @@
       <h2 data-i18n="h.steering">Steering &amp; trim</h2>
       <div class="row"><label for="tackX" data-i18n="lbl.tackX">Tack (fore/aft)</label><input id="tackX" type="range" min="-1" max="1" step="0.02" value="0"><output id="tackXOut">0.00</output></div>
       <div class="hint" data-i18n="hint.tackX">Forward bears away, aft points up. This is how a proa steers.</div>
+      <div class="row"><label for="halyard" data-i18n="lbl.halyard">Halyard</label><input id="halyard" type="range" min="0" max="1" step="0.02" value="1"><output id="halyardOut">1.00</output></div>
+      <div class="hint" data-i18n="hint.halyard">Hauled to the masthead cuts weather helm; eased, the yard falls and the boat wants to point up.</div>
+      <div class="row"><label for="shroud" data-i18n="lbl.shroud">Shroud</label><input id="shroud" type="range" min="0" max="1" step="0.02" value="1"><output id="shroudOut">1.00</output></div>
+      <div class="hint" data-i18n="hint.shroud">Tight stands the mast upright — less weather helm, and it reinforces the carrot downwind. Slack lets it fall to leeward.</div>
       <div class="row"><label for="rudder" data-i18n="lbl.rudder">Rudder</label><input id="rudder" type="range" min="-1" max="1" step="0.02" value="0"><output id="rudderOut">0.00</output></div>
       <div class="hint" data-i18n="hint.rudder">A/D deflect, auto-centers on release</div>
       <div class="checkboxRow"><input type="checkbox" id="oarDeployed"><label for="oarDeployed" data-i18n="lbl.oarDeployed">Oar in the water</label></div>
@@ -385,6 +389,16 @@ function createDefaultControls() {
     // docs/adr/0011. 0 is the neutral setting, at which the model is
     // identical to what it was before this control existed.
     tackX: 0,
+    // halyard / shroud (docs/adr/0019): the two rigging controls the manual's
+    // own list names (AC-6.3, "fal" and "wanta"). 1 is the normal sailing
+    // state -- hoisted to the masthead, mast held upright -- and at 1/1 the
+    // rig geometry is exactly what it was before these existed.
+    //   halyard: 1 = yard peaked at the masthead, 0 = fully eased (yard falls,
+    //   its CE drops and moves aft -> weather helm; AC-5.1a).
+    //   shroud:  1 = mast upright, 0 = fully slack (mast leans aft AND to
+    //   leeward -> CE aft and outboard -> weather helm; AC-4.4, AC-5.1b).
+    halyard: 1,
+    shroud: 1,
     shuntRequest: false,
   };
 }
@@ -687,6 +701,9 @@ function buildDefaultConfig() {
   // Surge added mass for a slender body is small (a few % — it is pushing
   // water aside lengthwise, not broadside); 10% is used. ama.mass is now
   // included in the translational masses, which it previously was not.
+  // Yard inclination from horizontal at full hoist (docs/adr/0019). Needed
+  // here first: sail.yardCERadius is derived from it below.
+  const YARD_PEAK_ANGLE_DEG = 60;
   const HULL_LATERAL_AREA = 1.8;                        // m^2 — see hull.lateralArea below (same value, needed here first)
   const draft = HULL_LATERAL_AREA / p.boat_length_m;    // ~0.327 m
   // kg/m, 2D cylinder analogy. AUDITED 2026-08-04 (docs/adr/0018) and kept at
@@ -1008,7 +1025,31 @@ function buildDefaultConfig() {
     sail: {
       area: p.sail_area_m2,                // 12 m^2
       apexAngleDeg: p.sail_apex_angle_deg,  // 50 deg (45-60 valid range)
-      CEheight: p.CE_height_m,              // 2.0 m
+      CEheight: p.CE_height_m,              // 2.0 m — NOMINAL: the CE height at
+      // full hoist and an upright mast. aero.js derives the EFFECTIVE height
+      // from the halyard and shroud controls below; this stays the sail's own
+      // size reference (the streamwise chord, which does not change when the
+      // sail is hoisted higher).
+      //
+      // --- Vertical rig geometry (2026-08-04, docs/adr/0019) ---
+      // The manual's own control list (AC-6.3) names the halyard ("fal") and
+      // the shroud ("wanta") alongside the sheet and the two brails, and three
+      // of its techniques work through nothing else: AC-4.4 (mast stood
+      // upright reinforces the carrot), AC-5.1a (halyard hauled to the
+      // masthead cuts weather helm) and AC-5.1b (shroud tightened cuts weather
+      // helm). With CEheight a constant the model could answer none of them.
+      //
+      // Two controls, both defaulting to the normal sailing state (hauled and
+      // tight), at which every term below is exactly zero -- so the model is
+      // bit-identical to what it was before this geometry existed, and none of
+      // hull.lead / ceSwingFraction / clrXFraction is retuned.
+      yardPeakAngleDeg: YARD_PEAK_ANGLE_DEG, // yard inclination from horizontal at full hoist; Oceanic lateen practice
+      halyardDropDeg: 20,                  // how far the yard falls when the halyard is fully eased
+      mastRakeMaxDeg: 12,                  // mast lean from vertical with the shroud fully slack
+      // Derived, not chosen: the distance from the tack to the sail's CE along
+      // the yard is whatever puts the CE at CEheight when the yard is at its
+      // full-hoist angle. That is what keeps the default state identical.
+      yardCERadius: p.CE_height_m / Math.sin(YARD_PEAK_ANGLE_DEG * Math.PI / 180),
       // deltaMinDeg (S6, work-order-2026-08-02): the closest the SHEET can
       // hold the yard to the centreline. A rig cannot be strapped flat just
       // because the optimizer would like it to be: on an Oceanic lateen the
@@ -1930,7 +1971,47 @@ function sailForces(state, controls, config) {
   // capacity — a spurious effect driven by a known bug. Revisit after F9.
   //   F11: the heeling force is the IN-PLANE transverse force, not the
   // twice-projected horizontal one.
-  const heelArm = config.sail.CEheight + (config.hull.clrDepth ?? 0);
+  // --- Vertical rig geometry (docs/adr/0019) -------------------------------
+  // Three of the manual's techniques work through the halyard and the shroud
+  // and through nothing else, and with CEheight a constant the model could
+  // answer none of them (AC-4.4, AC-5.1a, AC-5.1b were all NOT REPRESENTABLE).
+  //
+  // The halyard sets the YARD's inclination. Hauled to the masthead the yard
+  // peaks up and its CE rides high and well forward, toward the tack; eased,
+  // the yard falls, and its CE drops AND swings aft -- which is the manual's
+  // stated weather-helm cause. One radius, derived so that full hoist
+  // reproduces the nominal CEheight exactly (config.js sail.yardCERadius).
+  //
+  // The shroud runs to the ama, so slackening it lets the mast fall away from
+  // the ama -- to LEEWARD -- and aft. The manual describes standing the mast
+  // up as one action ("loosened backstay + shortened shroud"), so one angle
+  // drives both senses; splitting them would be a control the manual does not
+  // give.
+  //
+  // At halyard = shroud = 1 every term here is exactly zero and the geometry
+  // is what it was before this block existed. hull.lead, ceSwingFraction and
+  // clrXFraction are untouched.
+  const DEGR = Math.PI / 180;
+  const halyard = Math.max(0, Math.min(1, controls.halyard ?? 1));
+  const shroud = Math.max(0, Math.min(1, controls.shroud ?? 1));
+  const yardPeak = (config.sail.yardPeakAngleDeg ?? 60) * DEGR;
+  const yardPsi = yardPeak - (config.sail.halyardDropDeg ?? 0) * DEGR * (1 - halyard);
+  const yardR = config.sail.yardCERadius ?? (config.sail.CEheight / Math.sin(yardPeak));
+  const mastRake = (config.sail.mastRakeMaxDeg ?? 0) * DEGR * (1 - shroud);
+  // Height of the CE above the water: up the yard, then tipped by the rake.
+  const CEheightEff = yardR * Math.sin(yardPsi) * Math.cos(mastRake);
+  // Fore-aft: only the CHANGE from full hoist, so the baseline lever that
+  // `lead` anchors is untouched (the same discipline as the AC-3 swing).
+  const xHalyard = -yardR * (Math.cos(yardPsi) - Math.cos(yardPeak));
+  // The mast rakes toward the ACTIVE STERN on both ends -- the boat frame's +x
+  // already points at the active bow, so there is no `end` factor here. That
+  // is the same trap the steering oar's lever arm fell into (docs/adr/0016).
+  const xRake = -CEheightEff * Math.sin(mastRake);
+  // Laterally it falls to LEEWARD, the -end side (the ama is windward and the
+  // shroud runs to it), so this one DOES carry `end`.
+  const yRake = -state.end * CEheightEff * Math.sin(mastRake);
+
+  const heelArm = CEheightEff + (config.hull.clrDepth ?? 0);
   const heelMoment = FyInPlane * heelArm * (1 - verticalLiftFraction) * brailWindHeelFactor;
 
   // CE geometry — round 7, D-6 (ROUND7_DECISION.md): rebuilt around a
@@ -2061,8 +2142,8 @@ function sailForces(state, controls, config) {
   // Sized from the geometry rather than fitted: spilling the rear third of a
   // chord moves the remaining area's centroid forward by about chord/6.
   const ceBrailXShift = (config.sail.ceBrailXShift ?? 0) * brailWind;
-  const xCE = clrXNeutral + lead + tackOffset + swing + ceBrailXShift;
-  const yCE = -state.end * halfChordEffY * Math.sin(delta);
+  const xCE = clrXNeutral + lead + tackOffset + swing + ceBrailXShift + xHalyard + xRake;
+  const yCE = -state.end * halfChordEffY * Math.sin(delta) + yRake;
 
   // Heel-course coupling (pure geometry, FIX_REQUEST_round4_roll_dof.md
   // 1.4): heeling tips the mast, offsetting the CE laterally by
@@ -2076,7 +2157,7 @@ function sailForces(state, controls, config) {
   // a SEPARATE mechanism from the x_CE/y_CE geometry above (mast RAKE
   // under heel vs. the yard's OWN swing angle) and stays additive with it.
   const yawHeelSign = config.hull.yawHeelSign ?? 1;
-  const yawMomentHeel = yawHeelSign * state.end * config.sail.CEheight * Math.sin(phi) * Fx;
+  const yawMomentHeel = yawHeelSign * state.end * CEheightEff * Math.sin(phi) * Fx;
   // ceLeverSign: history below; CURRENTLY AN IDENTITY (+1) — round 10
   // (R10-4, ROUND10_data_integration.md, docs/adr/0004) re-examined this
   // TODO and found the flip is no longer active. Round 5-7's derivation
@@ -3651,14 +3732,14 @@ const MS_TO_KN = 1.9438;
 // recording's codeVersion is meaningful (harness/replay.js warns on
 // mismatch) for a downloaded bundle without requiring a build step for
 // plain `python3 -m http.server` development.
-const CODE_VERSION = "619936b";
+const CODE_VERSION = "018feee";
 // BUILD_TIME: same pattern as CODE_VERSION above — tools/bundle.js
 // replaces this with the COMMIT's timestamp (not wall-clock build time),
 // so it stays stable across re-bundling the same commit and always
 // matches CODE_VERSION's hash. Shown in the bottom-right version footer
 // so a bug report/recording can be tied to an exact, dated build without
 // having to separately ask "which commit was this."
-const BUILD_TIME = "2026-08-04T10:23:15+02:00";
+const BUILD_TIME = "2026-08-04T12:09:11+02:00";
 
 // ---------------------------------------------------------------------
 // i18n — EN/PL. Static labels are marked with data-i18n="key" in
@@ -3684,6 +3765,8 @@ const TRANSLATIONS = {
     'tooltip.brailWindZones': (pct) => `0-${pct}%: trim (carrot) — sail keeps drawing · ${pct}-100%: power dump — spills power, panic/furl`,
     'h.steering': 'Steering & trim', 'lbl.rudder': 'Rudder', 'hint.rudder': 'A/D deflect, auto-centers on release',
     'lbl.tackX': 'Tack (fore/aft)', 'hint.tackX': 'Forward bears away, aft points up. This is how a proa steers — the oar is a last resort.',
+    'lbl.halyard': 'Halyard', 'hint.halyard': 'Hauled to the masthead cuts weather helm; eased, the yard falls and the boat wants to point up.',
+    'lbl.shroud': 'Shroud', 'hint.shroud': 'Tight stands the mast upright — less weather helm, and it reinforces the carrot downwind. Slack lets it fall to leeward.',
     'lbl.oarDeployed': 'Oar in the water', 'hint.oarDeployed': 'A steering oar, not a fixed rudder: normally shipped. Put it in the water to steer — it costs speed while it is down',
     'lbl.crewPos': 'Crew position', 'hint.crewPos': 'Drag the dot, or J/L (lateral), I/K (fore-aft)',
     'pad.ama': 'ama', 'pad.leeward': 'leeward', 'pad.aft': 'aft', 'pad.fwd': 'fwd',
@@ -3752,6 +3835,8 @@ const TRANSLATIONS = {
     'tooltip.brailWindZones': (pct) => `0-${pct}%: trym (marchewka) — żagiel dalej ciągnie · ${pct}-100%: zrzut mocy — panika/refowanie`,
     'h.steering': 'Sterowanie i wyważenie', 'lbl.rudder': 'Ster', 'hint.rudder': 'A/D wychyla ster, centruje się po puszczeniu',
     'lbl.tackX': 'Hals (przód/tył)', 'hint.tackX': 'Do przodu — odpadanie, do tyłu — ostrzenie. Tak steruje proa; wiosło to ostateczność.',
+    'lbl.halyard': 'Fał', 'hint.halyard': 'Wybrany do szczytu masztu zmniejsza nawietrzność; poluzowany — reja opada i łódź ostrzy.',
+    'lbl.shroud': 'Wanta', 'hint.shroud': 'Napięta stawia maszt pionowo — mniej nawietrzności, i wzmacnia marchewkę z wiatrem. Luźna pozwala masztowi opaść na zawietrzną.',
     'lbl.oarDeployed': 'Wiosło w wodzie', 'hint.oarDeployed': 'Ster to wiosło, nie stały ster — normalnie jest wyjęte. Włóż je do wody, żeby sterować — zanurzone kosztuje prędkość',
     'lbl.crewPos': 'Pozycja załogi', 'hint.crewPos': 'Przeciągnij kropkę, lub J/L (bok), I/K (wzdłuż)',
     'pad.ama': 'ama', 'pad.leeward': 'zawietrzna', 'pad.aft': 'rufa', 'pad.fwd': 'dziób',
@@ -3864,6 +3949,8 @@ const sliders = {
   brailLee: document.getElementById('brailLee'),
   brailWind: document.getElementById('brailWind'),
   tackX: document.getElementById('tackX'),
+  halyard: document.getElementById('halyard'),
+  shroud: document.getElementById('shroud'),
   rudder: document.getElementById('rudder'),
 };
 const outs = {
@@ -3873,6 +3960,8 @@ const outs = {
   brailLee: document.getElementById('brailLeeOut'),
   brailWind: document.getElementById('brailWindOut'),
   tackX: document.getElementById('tackXOut'),
+  halyard: document.getElementById('halyardOut'),
+  shroud: document.getElementById('shroudOut'),
   rudder: document.getElementById('rudderOut'),
   crewPos: document.getElementById('crewPosOut'),
   crewPosX: document.getElementById('crewPosXOut'),
@@ -3957,6 +4046,8 @@ function syncSlidersFromControls() {
   sliders.brailLee.value = String(Math.round(controls.brailLee * 100));
   sliders.brailWind.value = String(Math.round(controls.brailWind * 100));
   sliders.tackX.value = String(controls.tackX);
+  sliders.halyard.value = String(controls.halyard);
+  sliders.shroud.value = String(controls.shroud);
   sliders.rudder.value = String(controls.rudder);
   updateCrewDot();
   refreshOutputs();
@@ -3999,6 +4090,8 @@ function refreshOutputs() {
   outs.brailLee.textContent = `${Math.round(controls.brailLee * 100)}%`;
   outs.brailWind.textContent = `${Math.round(controls.brailWind * 100)}%`;
   outs.tackX.textContent = controls.tackX.toFixed(2);
+  outs.halyard.textContent = controls.halyard.toFixed(2);
+  outs.shroud.textContent = controls.shroud.toFixed(2);
   outs.rudder.textContent = controls.rudder.toFixed(2);
   outs.crewPos.textContent = controls.crewPos.toFixed(2);
   outs.crewPosX.textContent = controls.crewPosX.toFixed(2);
@@ -4010,6 +4103,8 @@ sliders.sheet.addEventListener('input', () => { controls.sheet = Number(sliders.
 sliders.brailLee.addEventListener('input', () => { controls.brailLee = Number(sliders.brailLee.value) / 100; refreshOutputs(); });
 sliders.brailWind.addEventListener('input', () => { controls.brailWind = Number(sliders.brailWind.value) / 100; refreshOutputs(); });
 sliders.tackX.addEventListener('input', () => { controls.tackX = Number(sliders.tackX.value); refreshOutputs(); });
+sliders.halyard.addEventListener('input', () => { controls.halyard = Number(sliders.halyard.value); refreshOutputs(); });
+sliders.shroud.addEventListener('input', () => { controls.shroud = Number(sliders.shroud.value); refreshOutputs(); });
 sliders.rudder.addEventListener('input', () => { autoRudder = false; controls.rudder = Number(sliders.rudder.value); refreshOutputs(); });
 
 // Crew position 2D pad: one draggable dot standing in for the old crewPos
