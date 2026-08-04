@@ -2534,7 +2534,27 @@ function rudderForce(state, controls, config) {
   // The oar sits at the physical end opposite the active bow, so the water it
   // meets carries the yaw-rate contribution r*leverArm as well as the boat's
   // own sway. Including it is what gives the oar real yaw damping.
-  const leverArm = -(hull.length / 2) * state.end;
+  // The oar is at the STERN, and the boat frame's +x already points at the
+  // ACTIVE bow (see state.js Conventions), so the stern is at -L/2 in that
+  // frame on BOTH ends. There is no `end` factor to apply, and applying one
+  // put the oar at the BOW after every shunt.
+  //
+  // F9 corrected this from +(L/2) to -(L/2)*end and verified the result by
+  // exhausting sign combinations against three required properties — but
+  // evaluated all three at end=+1 only, where -(L/2)*end and -(L/2) are the
+  // same number. Measured at end=-1 the shipped form failed two of the three:
+  //
+  //   property                          -(L/2)*end        -(L/2)
+  //   positive rudder -> positive M     -1635  FAIL       +1635  ok
+  //   leeway alone -> weathercocks       +473  FAIL        -473  ok
+  //   yaw rate alone -> damps           -1345  ok         -1345  ok
+  //
+  // The consequence in the boat: with the oar down and centred, end +1 bore
+  // away 11deg and held 3.93 m/s over 20s while end -1 rounded up 81deg and
+  // collapsed to 0.15 — the oar anti-damping because it was modelled at the
+  // wrong end of the hull. With the oar shipped the two ends were already
+  // bit-identical, which is what localised it here.
+  const leverArm = -(hull.length / 2);
   const u = state.u;
   const vAtRudder = state.v + state.r * leverArm;
   const V2 = u * u + vAtRudder * vAtRudder;
@@ -3284,11 +3304,16 @@ function normalizeAngle__b10(a) { return Math.atan2(Math.sin(a), Math.cos(a)); }
 
 // headingHoldRudder — small P+D autopilot used by the whole harness (polar
 // runs and scenarios) to hold a course so TWA stays put while speed settles.
-// The state.end factor compensates for the rudder's lever-arm sign flip
-// after a shunt (see rudder.js), so the same gains work on either tack/end.
+//
+// The `state.end` factor this used to carry is GONE (2026-08-04). It existed
+// to compensate for the oar's lever arm flipping sign after a shunt — which
+// was itself the bug: core/rudder.js placed the oar at the BOW on end -1. With
+// the lever arm corrected, positive rudder gives a positive yaw moment on both
+// ends and the autopilot needs no end-awareness. Keeping the factor after the
+// fix would have re-introduced the same inversion from the other side.
 function headingHoldRudder(state, targetHeading, config, kp = 2.5, kd = 1.2) {
   const error = normalizeAngle__b10(targetHeading - state.heading);
-  const raw = state.end * (kp * error - kd * state.r);
+  const raw = kp * error - kd * state.r;
   return Math.max(-1, Math.min(1, raw));
 }
 
@@ -3600,14 +3625,14 @@ const MS_TO_KN = 1.9438;
 // recording's codeVersion is meaningful (harness/replay.js warns on
 // mismatch) for a downloaded bundle without requiring a build step for
 // plain `python3 -m http.server` development.
-const CODE_VERSION = "d721649";
+const CODE_VERSION = "2d4b582";
 // BUILD_TIME: same pattern as CODE_VERSION above — tools/bundle.js
 // replaces this with the COMMIT's timestamp (not wall-clock build time),
 // so it stays stable across re-bundling the same commit and always
 // matches CODE_VERSION's hash. Shown in the bottom-right version footer
 // so a bug report/recording can be tied to an exact, dated build without
 // having to separately ask "which commit was this."
-const BUILD_TIME = "2026-08-04T07:22:30+02:00";
+const BUILD_TIME = "2026-08-04T07:42:58+02:00";
 
 // ---------------------------------------------------------------------
 // i18n — EN/PL. Static labels are marked with data-i18n="key" in
