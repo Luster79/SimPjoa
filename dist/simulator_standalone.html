@@ -1216,6 +1216,23 @@ function buildDefaultConfig() {
       // fraction of hull half-length); aero.js's yaw-moment CE geometry no
       // longer reads it — see hull.lead above and ceSwingFraction below.
       tackXFraction: 0.06,                    // fraction of hull half-length — mast/tack position, active-bow side of CG (UI drawing only, round 7)
+      // ceRadius (docs/adr/0024) -- DERIVED distance from the tack to the
+      // sail's own area centroid, along the bisector of the two spars:
+      //   spar   = sqrt(2*A/sin(apex))
+      //   rC     = 2*spar*cos(apex/2)/3        (centroid of a triangle with
+      //                                         two equal sides from the tack)
+      // This is the base length for the LATERAL CE offset only. It is a
+      // geometric fact about where the sail hangs, not a centre-of-pressure
+      // migration, and it is 11x the half-chord the model used to share
+      // between both axes (2.76 m against 0.25 m).
+      ceRadius: 2 * Math.sqrt(2 * p.sail_area_m2 / Math.sin(p.sail_apex_angle_deg * Math.PI / 180))
+        * Math.cos(p.sail_apex_angle_deg * Math.PI / 360) / 3,
+      // yceFraction: how far along that tack->centroid line the lateral centre
+      // of pressure actually sits. 1.0 is the area centroid; a vortex-lift
+      // sail's CP sits closer to the leading edge, and this is where that
+      // belongs -- NOT in the base length, which is geometry. See ADR 0024 for
+      // the measurement that set it.
+      yceFraction: 0.35,
       ceBrailShift: 0.3,                      // tunable (P2-3), fraction of the half-chord the CE shifts toward the tack at brailWind=1 (spilling the sail's rear/upper area), request's own suggested ~0.25-0.35 band
       // yceBrailShift (round 10c, C1, ROUND10c_carrot_two_regime.md):
       // SEPARATE from ceBrailShift above — round 10b (D2) unified xCE/yCE
@@ -2117,7 +2134,16 @@ function sailForces(state, controls, config) {
   const ceBrailShift = config.sail.ceBrailShift ?? 0.3;
   const yceBrailShift = config.sail.yceBrailShift ?? 0.6;
   const halfChordEff = halfChord * ceSwingFraction * (1 - ceBrailShift * brailWind);
-  const halfChordEffY = halfChord * ceSwingFraction * (1 - yceBrailShift * brailWind);
+  // The LATERAL offset gets its own, geometric base length (docs/adr/0024).
+  // It shared `halfChord` with the fore-aft swing until now, which conflated
+  // two different physical things: the fore-aft excursion is a centre-of-
+  // pressure MIGRATION with trim (small, and calibrated against the owner's
+  // own field datum that Pjoa sail-trim steering is slow -- D-6), while the
+  // lateral offset is the geometric fact that an eased crab claw hangs right
+  // out over the water. Sharing one length made the second 11x too small:
+  // 0.25 m against the sail's real tack-to-centroid distance of 2.76 m.
+  const ceRadiusEff = (config.sail.ceRadius ?? halfChord) * (config.sail.yceFraction ?? 1);
+  const halfChordEffY = ceRadiusEff * (1 - yceBrailShift * brailWind);
   // tackX (S2, work-order-2026-08-02): the rig's own fore-aft position, the
   // steering control this model did not have. On an Oceanic lateen the tack
   // travels along the hull and the mast's rake is adjustable, so the CE moves
@@ -3795,14 +3821,14 @@ const MS_TO_KN = 1.9438;
 // recording's codeVersion is meaningful (harness/replay.js warns on
 // mismatch) for a downloaded bundle without requiring a build step for
 // plain `python3 -m http.server` development.
-const CODE_VERSION = "9fab21d";
+const CODE_VERSION = "979a789";
 // BUILD_TIME: same pattern as CODE_VERSION above — tools/bundle.js
 // replaces this with the COMMIT's timestamp (not wall-clock build time),
 // so it stays stable across re-bundling the same commit and always
 // matches CODE_VERSION's hash. Shown in the bottom-right version footer
 // so a bug report/recording can be tied to an exact, dated build without
 // having to separately ask "which commit was this."
-const BUILD_TIME = "2026-08-04T17:34:13+02:00";
+const BUILD_TIME = "2026-08-04T18:10:29+02:00";
 
 // ---------------------------------------------------------------------
 // i18n — EN/PL. Static labels are marked with data-i18n="key" in
