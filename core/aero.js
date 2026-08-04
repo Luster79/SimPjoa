@@ -468,15 +468,24 @@ export function sailForces(state, controls, config) {
   const yardPsi = yardPeak - (config.sail.halyardDropDeg ?? 0) * DEGR * (1 - halyard);
   const yardR = config.sail.yardCERadius ?? (config.sail.CEheight / Math.sin(yardPeak));
   const mastRake = (config.sail.mastRakeMaxDeg ?? 0) * DEGR * (1 - shroud);
-  // Height of the CE above the water: up the yard, then tipped by the rake.
-  const CEheightEff = yardR * Math.sin(yardPsi) * Math.cos(mastRake);
+  // Fore-aft rake is its OWN rigging (docs/adr/0020): the plans draw the
+  // shroud as one line to the ama and the stays as a fore-and-aft pair with
+  // their own tensioner. Signed, so the mast can be raked FORWARD -- the
+  // classical cure for weather helm, which ADR 0019's single angle could not
+  // express because it only ever leaned the mast aft.
+  const stays = Math.max(-1, Math.min(1, controls.stays ?? 0));
+  const stayRake = (config.sail.stayRakeMaxDeg ?? 0) * DEGR * stays;
+  // Height of the CE above the water: up the yard, then tipped by both rakes.
+  const CEheightEff = yardR * Math.sin(yardPsi) * Math.cos(mastRake) * Math.cos(stayRake);
   // Fore-aft: only the CHANGE from full hoist, so the baseline lever that
   // `lead` anchors is untouched (the same discipline as the AC-3 swing).
   const xHalyard = -yardR * (Math.cos(yardPsi) - Math.cos(yardPeak));
-  // The mast rakes toward the ACTIVE STERN on both ends -- the boat frame's +x
-  // already points at the active bow, so there is no `end` factor here. That
-  // is the same trap the steering oar's lever arm fell into (docs/adr/0016).
-  const xRake = -CEheightEff * Math.sin(mastRake);
+  // Positive stays rake the masthead toward the ACTIVE BOW, so the CE moves to
+  // +x. No `end` factor: the boat frame's +x already points at the active bow,
+  // which is the trap the steering oar's lever arm fell into (docs/adr/0016).
+  // The sailor re-tensions the stays at each shunt, so a control that means
+  // "rake toward the bow" is the right thing to reference to the active bow.
+  const xRake = CEheightEff * Math.sin(stayRake);
   // Laterally it falls to LEEWARD, the -end side (the ama is windward and the
   // shroud runs to it), so this one DOES carry `end`.
   const yRake = -state.end * CEheightEff * Math.sin(mastRake);

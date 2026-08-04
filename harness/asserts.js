@@ -1505,12 +1505,25 @@ export function runAsserts(config, { slow = true } = {}) {
     // REINFORCED (a further forward shift of the driving force)." Measured
     // with the carrot already set, which is what AC-4.3 is.
     const carrotGrid = [150, 160];
-    const rakeRuns = carrotGrid.map((twa) => ({ twa, ...steeringDrift(config, rigBase(twa, { sheet: 70 * DEG, brailWind: 0.5, shroud: 0 }), (c) => { c.shroud = 1; }) }));
+    const rakeRuns = carrotGrid.map((twa) => ({ twa, ...steeringDrift(config, rigBase(twa, { sheet: 70 * DEG, brailWind: 0.5, shroud: 0, stays: -1 }), (c) => { c.shroud = 1; c.stays = 1; }) }));
     const rakeOk = rakeRuns.filter((r) => !r.capsized && Math.sign(r.drift) === -1 && Math.abs(r.drift) >= 2).length;
     check('AC-4.4: with the carrot set on a broad course, standing the mast upright reinforces the bear-away',
       rakeOk === rakeRuns.length,
       `${rakeOk}/${rakeRuns.length} points -- ` + rakeRuns.map((r) => `TWA${r.twa}:${r.drift.toFixed(1)}deg`).join(' ') +
-      ' -- steeringOk\'s 2-20deg band is applied as a floor only here: the criterion is that the effect is REINFORCED, so its size is bounded below, not above');
+      ' -- steeringOk\'s 2-20deg band is applied as a floor only here: the criterion is that the effect is REINFORCED, so its size is bounded below, not above. Measured as the criterion states it -- "loosened backstay AND shortened shroud" -- which is two riggings, and since docs/adr/0020 the model has both');
+
+    // The capability ADR 0019 could not express at all: raking the mast
+    // FORWARD. The PJOA FOLK plans give the stays their own tensioner, and
+    // moving the CE forward is the classical cure for weather helm, so this
+    // asserts the direction on both sides of upright.
+    const stayFwd = rigGrid.map((twa) => ({ twa, ...steeringDrift(config, rigBase(twa), (c) => { c.stays = 1; }) }));
+    const stayAft = rigGrid.map((twa) => ({ twa, ...steeringDrift(config, rigBase(twa), (c) => { c.stays = -1; }) }));
+    const stayOk = stayFwd.filter((r) => !r.capsized && steeringOk(r.drift, -1)).length
+      + stayAft.filter((r) => !r.capsized && steeringOk(r.drift, 1)).length;
+    check('AC-4.4b: the stays rake the mast both ways -- forward bears away, aft points up',
+      stayOk === stayFwd.length + stayAft.length,
+      `${stayOk}/${stayFwd.length + stayAft.length} -- forward: ` + stayFwd.map((r) => `TWA${r.twa}:${r.drift.toFixed(1)}`).join(' ') +
+      ' | aft: ' + stayAft.map((r) => `TWA${r.twa}:${r.drift.toFixed(1)}`).join(' '));
   }
 
   // --- Hard-trim stability (was T3's counterintuitive "sheet-in-bears-away"

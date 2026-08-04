@@ -60,6 +60,7 @@ Append-only. Never edit an old ADR; supersede it with a new one.
 | 0017 | The hull's whole lateral force by strip integration -- supersedes 0016's *split* between sway and yaw, not its finding |
 | 0018 | The Munk moment is not double-counted -- closes 0017's open question; the model has *less* destabilising moment than the literature, not more |
 | 0019 | Vertical rig geometry: the halyard and the shroud, and a CE height that is derived rather than constant |
+| 0020 | The stays and the shroud are two riggings -- refines 0019; the mast can now be raked FORWARD, which is what took the crew off the stop |
 
 ## Work orders — what to do
 

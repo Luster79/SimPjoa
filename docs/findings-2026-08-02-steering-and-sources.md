@@ -1473,3 +1473,67 @@ dynamics, so S8 is untouched. The single rake angle is the manual's own
 framing but simplifies two real riggings into one. And the manual's remaining
 unmodelled technique is using the sheet as a substitute windward shroud to
 recover from a backwind.
+
+---
+
+## The plans brochure, and what the boat actually measures (2026-08-04, ADR 0020)
+
+The owner observed that holding a beam reach required the crew pinned at the
+extreme aft stop. Measured, there was no margin at all: crew −0.75 already lost
+the course (18° excursion against 5.6° at −1). The helm budget at that settled
+state, with 4° of leeway at 8 kn:
+
+| term | N·m (+ = luffing) |
+|---|---|
+| **Munk** | **+505** |
+| sail (tack forward, halyard, shroud) | −286 |
+| hull side force (crew fully aft) | −255 |
+| ama drag | +35 |
+| **sum** | ≈ 0 |
+
+Everything the boat has, at its stops, exactly cancels the Munk moment.
+
+### What the brochure gave
+
+`PJOA_FOLK_plans_broshure_ENv3.pdf`, sheet *"Rigging — 8 sketches"*, is
+readable and settles a modelling question: the **shroud** is one line to the
+**ama** (lateral) and the **stays** are a fore-and-aft **pair** to both
+gunwales with their own tensioner. ADR 0019 had modelled them as one angle,
+which left the mast able to lean only aft-and-to-leeward — the model could not
+rake the mast **forward** at all, which is the classical cure for exactly the
+weather helm being complained about. Split in ADR 0020; the crew comes off the
+stop and the excursion improves 6×.
+
+### What it did not give
+
+Every dimensioned sheet is reproduced as a thumbnail — the whole five-drawing
+strip is a single 1011×474 raster at ~93 ppi. Mast step position and the
+immersed profile are not recoverable from it.
+
+### What the web gave — and the gap it opens
+
+pjoa.eu's own FOLK page publishes the principal dimensions. Against this
+model's parameters (`data/example_proa_parameters.csv`, which the data README
+states are order-of-magnitude values from Dierking's T2/Wa'apa, **not** a
+measured boat):
+
+| | model | PJOA FOLK |
+|---|---|---|
+| hull length | 5.5 m | **5.0 m** |
+| overall beam | 2.5 m | **3.1 m** |
+| sail area | 12 m² | **8 m²** (10 m² option) |
+| ama mass | 25 kg | **13 kg** |
+| rigged weight | 190 kg incl. crew | **85–90 kg** + crew |
+| rig height | CE 2.0 m | mast **5.4 / 5.9 m** |
+
+The sail is **50 % oversized** in the model, and every aerodynamic force —
+including the yaw moment that is being fought — scales with it. The ama sits
+0.6 m further inboard than the real boat, which changes the righting moment
+too.
+
+This is a re-parameterisation, not a fix: it would move the polar, every
+calibration band and most assertions, and it is a decision about *which boat
+the simulator is*. Recorded here, not acted on.
+
+Sources: [pjoa.eu FOLK](https://pjoa.eu/2020/10/03/folk-pjoa/),
+[Proa File — The Pjoa Folk](https://proafile.com/multihull-boats/article/the-pjoa-folk).

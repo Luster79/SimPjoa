@@ -83,7 +83,8 @@ const TRANSLATIONS = {
     'h.steering': 'Steering & trim', 'lbl.rudder': 'Rudder', 'hint.rudder': 'A/D deflect, auto-centers on release',
     'lbl.tackX': 'Tack (fore/aft)', 'hint.tackX': 'Forward bears away, aft points up. This is how a proa steers — the oar is a last resort.',
     'lbl.halyard': 'Halyard', 'hint.halyard': 'Hauled to the masthead cuts weather helm; eased, the yard falls and the boat wants to point up.',
-    'lbl.shroud': 'Shroud', 'hint.shroud': 'Tight stands the mast upright — less weather helm, and it reinforces the carrot downwind. Slack lets it fall to leeward.',
+    'lbl.shroud': 'Shroud', 'hint.shroud': 'Tight holds the mast upright against the ama. Slack lets it fall to leeward, which turns the bow into the wind.',
+    'lbl.stays': 'Stays (rake)', 'hint.stays': 'Fore-aft mast rake. Forward moves the sail\u2019s pull ahead and bears away; aft points up. The main cure for weather helm.',
     'lbl.oarDeployed': 'Oar in the water', 'hint.oarDeployed': 'A steering oar, not a fixed rudder: normally shipped. Put it in the water to steer — it costs speed while it is down',
     'lbl.crewPos': 'Crew position', 'hint.crewPos': 'Drag the dot, or J/L (lateral), I/K (fore-aft)',
     'pad.ama': 'ama', 'pad.leeward': 'leeward', 'pad.aft': 'aft', 'pad.fwd': 'fwd',
@@ -153,7 +154,8 @@ const TRANSLATIONS = {
     'h.steering': 'Sterowanie i wyważenie', 'lbl.rudder': 'Ster', 'hint.rudder': 'A/D wychyla ster, centruje się po puszczeniu',
     'lbl.tackX': 'Hals (przód/tył)', 'hint.tackX': 'Do przodu — odpadanie, do tyłu — ostrzenie. Tak steruje proa; wiosło to ostateczność.',
     'lbl.halyard': 'Fał', 'hint.halyard': 'Wybrany do szczytu masztu zmniejsza nawietrzność; poluzowany — reja opada i łódź ostrzy.',
-    'lbl.shroud': 'Wanta', 'hint.shroud': 'Napięta stawia maszt pionowo — mniej nawietrzności, i wzmacnia marchewkę z wiatrem. Luźna pozwala masztowi opaść na zawietrzną.',
+    'lbl.shroud': 'Wanta', 'hint.shroud': 'Napięta trzyma maszt pionowo, opartego o amę. Luźna pozwala mu opaść na zawietrzną, co ostrzy dziób.',
+    'lbl.stays': 'Sztagi (pochylenie)', 'hint.stays': 'Pochylenie masztu wzdłuż łodzi. Do przodu przenosi ciąg żagla w przód i odpada; w tył ostrzy. Główne lekarstwo na nawietrzność.',
     'lbl.oarDeployed': 'Wiosło w wodzie', 'hint.oarDeployed': 'Ster to wiosło, nie stały ster — normalnie jest wyjęte. Włóż je do wody, żeby sterować — zanurzone kosztuje prędkość',
     'lbl.crewPos': 'Pozycja załogi', 'hint.crewPos': 'Przeciągnij kropkę, lub J/L (bok), I/K (wzdłuż)',
     'pad.ama': 'ama', 'pad.leeward': 'zawietrzna', 'pad.aft': 'rufa', 'pad.fwd': 'dziób',
@@ -268,6 +270,7 @@ const sliders = {
   tackX: document.getElementById('tackX'),
   halyard: document.getElementById('halyard'),
   shroud: document.getElementById('shroud'),
+  stays: document.getElementById('stays'),
   rudder: document.getElementById('rudder'),
 };
 const outs = {
@@ -279,6 +282,7 @@ const outs = {
   tackX: document.getElementById('tackXOut'),
   halyard: document.getElementById('halyardOut'),
   shroud: document.getElementById('shroudOut'),
+  stays: document.getElementById('staysOut'),
   rudder: document.getElementById('rudderOut'),
   crewPos: document.getElementById('crewPosOut'),
   crewPosX: document.getElementById('crewPosXOut'),
@@ -346,12 +350,23 @@ const recSize = document.getElementById('recSize');
 //
 // createInitialState puts it at rest on heading pi/2, which is course 000,
 // and the start-up wind is compass 270 (from the west), so this is a beam
-// reach at TWA 90. Searched over sheet x crew x tack from the cold start the
-// page actually performs (fresh simulator, fixed controls, no autopilot,
-// 150 s): 3 of 126 combinations hold inside 10deg over the last minute, and
-// they agree on what matters -- sheet trimmed in HARD, crew fully aft, tack
-// fully forward. This is the best of them: it settles within 5.6deg at
-// 7.8 kn and peaks at 4deg of heel, so nothing near the overload alarm.
+// reach at TWA 90. Searched over the cold start the page actually performs
+// (fresh simulator, fixed controls, no autopilot, 150 s). Sheet has to be
+// trimmed in HARD; after that the helm is a balance LINE along which the
+// stays, the tack and the crew's fore-aft position trade off:
+//
+//     stays \ crew   -1     -0.75    -0.5    -0.25      0
+//         0          5.6     18.0    52.4    59.0    62.3
+//         0.5       41.5     17.2     3.8    21.4    53.3
+//         1         45.8     43.4    40.7    14.9     0.9   <- here
+//
+// The corner taken is the one where the crew sits NORMALLY: mast raked fully
+// forward on the stays, tack forward, crew amidships fore-aft. It holds
+// within 0.9deg at 7.8 kn and 4deg of peak heel -- six times better than the
+// crew-on-the-transom corner, and a state a person could actually sail in.
+// Raking the mast forward is the classical cure for weather helm and it is
+// the control the model gained in docs/adr/0020; before that the only way to
+// balance this boat was to put the crew on the stop.
 //
 // The previous defaults (sheet 50deg, crew centred fore-aft, tack neutral)
 // were picked to look calm on load rather than to sail: from the same cold
@@ -369,8 +384,9 @@ controls.windDirFrom = 180 * DEG;
 controls.windSpeed = 6;
 controls.sheet = 12 * DEG;
 controls.crewPos = 0.3;
-controls.crewPosX = -1;
+controls.crewPosX = 0;
 controls.tackX = 1;
+controls.stays = 1;
 
 let autoRudder = true; // keyboard rudder auto-centers when A/D released
 const keys = new Set();
@@ -385,6 +401,7 @@ function syncSlidersFromControls() {
   sliders.tackX.value = String(controls.tackX);
   sliders.halyard.value = String(controls.halyard);
   sliders.shroud.value = String(controls.shroud);
+  sliders.stays.value = String(controls.stays);
   sliders.rudder.value = String(controls.rudder);
   updateCrewDot();
   refreshOutputs();
@@ -430,6 +447,7 @@ function refreshOutputs() {
   outs.tackX.textContent = controls.tackX.toFixed(2);
   outs.halyard.textContent = controls.halyard.toFixed(2);
   outs.shroud.textContent = controls.shroud.toFixed(2);
+  outs.stays.textContent = controls.stays.toFixed(2);
   outs.rudder.textContent = controls.rudder.toFixed(2);
   outs.crewPos.textContent = controls.crewPos.toFixed(2);
   outs.crewPosX.textContent = controls.crewPosX.toFixed(2);
@@ -443,6 +461,7 @@ sliders.brailWind.addEventListener('input', () => { controls.brailWind = Number(
 sliders.tackX.addEventListener('input', () => { controls.tackX = Number(sliders.tackX.value); refreshOutputs(); });
 sliders.halyard.addEventListener('input', () => { controls.halyard = Number(sliders.halyard.value); refreshOutputs(); });
 sliders.shroud.addEventListener('input', () => { controls.shroud = Number(sliders.shroud.value); refreshOutputs(); });
+sliders.stays.addEventListener('input', () => { controls.stays = Number(sliders.stays.value); refreshOutputs(); });
 sliders.rudder.addEventListener('input', () => { autoRudder = false; controls.rudder = Number(sliders.rudder.value); refreshOutputs(); });
 
 // Crew position 2D pad: one draggable dot standing in for the old crewPos

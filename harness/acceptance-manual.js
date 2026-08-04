@@ -350,8 +350,8 @@ export function runAcceptance(config) {
   // a broad course ("kurs pelny"), so it is measured there.
   {
     const rows = differential(config,
-      (c) => { c.brailWind = 0.5; c.shroud = 1; },
-      (c) => { c.brailWind = 0.5; c.shroud = 0; });
+      (c) => { c.brailWind = 0.5; c.shroud = 1; c.stays = 1; },
+      (c) => { c.brailWind = 0.5; c.shroud = 0; c.stays = -1; });
     const deep = rows.filter((r) => r.point.twa >= 110);
     const t = tally(deep, (r) => r.diff < 0);
     record('AC-4.4', 'mast raked more upright reinforces the carrot',

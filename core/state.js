@@ -100,10 +100,19 @@ export function createDefaultControls() {
     // rig geometry is exactly what it was before these existed.
     //   halyard: 1 = yard peaked at the masthead, 0 = fully eased (yard falls,
     //   its CE drops and moves aft -> weather helm; AC-5.1a).
-    //   shroud:  1 = mast upright, 0 = fully slack (mast leans aft AND to
-    //   leeward -> CE aft and outboard -> weather helm; AC-4.4, AC-5.1b).
+    //   shroud:  1 = mast upright, 0 = fully slack (mast falls to LEEWARD,
+    //   away from the ama it is anchored to -> an off-centre drive force that
+    //   yaws the bow to windward; AC-5.1b).
+    //   stays:   fore-aft rake, -1..+1 about an upright mast. +1 rakes the
+    //   masthead toward the ACTIVE BOW, carrying the CE forward -> lee helm;
+    //   -1 rakes it aft -> weather helm. 0 is neutral, and at 0 the model is
+    //   identical to what it was before this control existed.
+    //     Separate from the shroud because the boat rigs them separately: the
+    //   PJOA FOLK plans draw the shroud as one line to the ama and the stays
+    //   as a fore-and-aft pair with their own tensioner (docs/adr/0020).
     halyard: 1,
     shroud: 1,
+    stays: 0,
     shuntRequest: false,
   };
 }

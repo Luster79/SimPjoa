@@ -175,7 +175,9 @@
       <div class="row"><label for="halyard" data-i18n="lbl.halyard">Halyard</label><input id="halyard" type="range" min="0" max="1" step="0.02" value="1"><output id="halyardOut">1.00</output></div>
       <div class="hint" data-i18n="hint.halyard">Hauled to the masthead cuts weather helm; eased, the yard falls and the boat wants to point up.</div>
       <div class="row"><label for="shroud" data-i18n="lbl.shroud">Shroud</label><input id="shroud" type="range" min="0" max="1" step="0.02" value="1"><output id="shroudOut">1.00</output></div>
-      <div class="hint" data-i18n="hint.shroud">Tight stands the mast upright — less weather helm, and it reinforces the carrot downwind. Slack lets it fall to leeward.</div>
+      <div class="hint" data-i18n="hint.shroud">Tight holds the mast upright against the ama. Slack lets it fall to leeward, which turns the bow into the wind.</div>
+      <div class="row"><label for="stays" data-i18n="lbl.stays">Stays (rake)</label><input id="stays" type="range" min="-1" max="1" step="0.02" value="1"><output id="staysOut">1.00</output></div>
+      <div class="hint" data-i18n="hint.stays">Fore-aft mast rake. Forward moves the sail’s pull ahead and bears away; aft points up. The main cure for weather helm.</div>
       <div class="row"><label for="rudder" data-i18n="lbl.rudder">Rudder</label><input id="rudder" type="range" min="-1" max="1" step="0.02" value="0"><output id="rudderOut">0.00</output></div>
       <div class="hint" data-i18n="hint.rudder">A/D deflect, auto-centers on release</div>
       <div class="checkboxRow"><input type="checkbox" id="oarDeployed"><label for="oarDeployed" data-i18n="lbl.oarDeployed">Oar in the water</label></div>
@@ -400,10 +402,19 @@ function createDefaultControls() {
     // rig geometry is exactly what it was before these existed.
     //   halyard: 1 = yard peaked at the masthead, 0 = fully eased (yard falls,
     //   its CE drops and moves aft -> weather helm; AC-5.1a).
-    //   shroud:  1 = mast upright, 0 = fully slack (mast leans aft AND to
-    //   leeward -> CE aft and outboard -> weather helm; AC-4.4, AC-5.1b).
+    //   shroud:  1 = mast upright, 0 = fully slack (mast falls to LEEWARD,
+    //   away from the ama it is anchored to -> an off-centre drive force that
+    //   yaws the bow to windward; AC-5.1b).
+    //   stays:   fore-aft rake, -1..+1 about an upright mast. +1 rakes the
+    //   masthead toward the ACTIVE BOW, carrying the CE forward -> lee helm;
+    //   -1 rakes it aft -> weather helm. 0 is neutral, and at 0 the model is
+    //   identical to what it was before this control existed.
+    //     Separate from the shroud because the boat rigs them separately: the
+    //   PJOA FOLK plans draw the shroud as one line to the ama and the stays
+    //   as a fore-and-aft pair with their own tensioner (docs/adr/0020).
     halyard: 1,
     shroud: 1,
+    stays: 0,
     shuntRequest: false,
   };
 }
@@ -1050,7 +1061,15 @@ function buildDefaultConfig() {
       // hull.lead / ceSwingFraction / clrXFraction is retuned.
       yardPeakAngleDeg: YARD_PEAK_ANGLE_DEG, // yard inclination from horizontal at full hoist; Oceanic lateen practice
       halyardDropDeg: 20,                  // how far the yard falls when the halyard is fully eased
-      mastRakeMaxDeg: 12,                  // mast lean from vertical with the shroud fully slack
+      mastRakeMaxDeg: 12,                  // LATERAL mast lean from vertical with the shroud fully slack
+      // Fore-aft rake, its own rigging (docs/adr/0020). The PJOA FOLK plan
+      // sheet "Rigging - 8 sketches" draws the shroud (1) as a single line to
+      // the AMA and the stays (2) as a fore-and-aft pair to eyebolts at both
+      // gunwales, with their own tensioner (2a). Two lines, adjusted
+      // separately -- so ADR 0019's single angle for both senses was wrong,
+      // and it left the model unable to rake the mast FORWARD at all, which
+      // is the classical cure for weather helm and a control the boat has.
+      stayRakeMaxDeg: 12,                  // fore-aft lean at full stay travel, EACH WAY from upright
       // Derived, not chosen: the distance from the tack to the sail's CE along
       // the yard is whatever puts the CE at CEheight when the yard is at its
       // full-hoist angle. That is what keeps the default state identical.
@@ -2003,15 +2022,24 @@ function sailForces(state, controls, config) {
   const yardPsi = yardPeak - (config.sail.halyardDropDeg ?? 0) * DEGR * (1 - halyard);
   const yardR = config.sail.yardCERadius ?? (config.sail.CEheight / Math.sin(yardPeak));
   const mastRake = (config.sail.mastRakeMaxDeg ?? 0) * DEGR * (1 - shroud);
-  // Height of the CE above the water: up the yard, then tipped by the rake.
-  const CEheightEff = yardR * Math.sin(yardPsi) * Math.cos(mastRake);
+  // Fore-aft rake is its OWN rigging (docs/adr/0020): the plans draw the
+  // shroud as one line to the ama and the stays as a fore-and-aft pair with
+  // their own tensioner. Signed, so the mast can be raked FORWARD -- the
+  // classical cure for weather helm, which ADR 0019's single angle could not
+  // express because it only ever leaned the mast aft.
+  const stays = Math.max(-1, Math.min(1, controls.stays ?? 0));
+  const stayRake = (config.sail.stayRakeMaxDeg ?? 0) * DEGR * stays;
+  // Height of the CE above the water: up the yard, then tipped by both rakes.
+  const CEheightEff = yardR * Math.sin(yardPsi) * Math.cos(mastRake) * Math.cos(stayRake);
   // Fore-aft: only the CHANGE from full hoist, so the baseline lever that
   // `lead` anchors is untouched (the same discipline as the AC-3 swing).
   const xHalyard = -yardR * (Math.cos(yardPsi) - Math.cos(yardPeak));
-  // The mast rakes toward the ACTIVE STERN on both ends -- the boat frame's +x
-  // already points at the active bow, so there is no `end` factor here. That
-  // is the same trap the steering oar's lever arm fell into (docs/adr/0016).
-  const xRake = -CEheightEff * Math.sin(mastRake);
+  // Positive stays rake the masthead toward the ACTIVE BOW, so the CE moves to
+  // +x. No `end` factor: the boat frame's +x already points at the active bow,
+  // which is the trap the steering oar's lever arm fell into (docs/adr/0016).
+  // The sailor re-tensions the stays at each shunt, so a control that means
+  // "rake toward the bow" is the right thing to reference to the active bow.
+  const xRake = CEheightEff * Math.sin(stayRake);
   // Laterally it falls to LEEWARD, the -end side (the ama is windward and the
   // shroud runs to it), so this one DOES carry `end`.
   const yRake = -state.end * CEheightEff * Math.sin(mastRake);
@@ -3747,7 +3775,7 @@ const MS_TO_KN = 1.9438;
 // recording's codeVersion is meaningful (harness/replay.js warns on
 // mismatch) for a downloaded bundle without requiring a build step for
 // plain `python3 -m http.server` development.
-const CODE_VERSION = "2c9fb21";
+const CODE_VERSION = "d9eebfe+dirty";
 // BUILD_TIME: same pattern as CODE_VERSION above — tools/bundle.js
 // replaces this with the COMMIT's timestamp (not wall-clock build time),
 // so it stays stable across re-bundling the same commit and always
@@ -3781,7 +3809,8 @@ const TRANSLATIONS = {
     'h.steering': 'Steering & trim', 'lbl.rudder': 'Rudder', 'hint.rudder': 'A/D deflect, auto-centers on release',
     'lbl.tackX': 'Tack (fore/aft)', 'hint.tackX': 'Forward bears away, aft points up. This is how a proa steers — the oar is a last resort.',
     'lbl.halyard': 'Halyard', 'hint.halyard': 'Hauled to the masthead cuts weather helm; eased, the yard falls and the boat wants to point up.',
-    'lbl.shroud': 'Shroud', 'hint.shroud': 'Tight stands the mast upright — less weather helm, and it reinforces the carrot downwind. Slack lets it fall to leeward.',
+    'lbl.shroud': 'Shroud', 'hint.shroud': 'Tight holds the mast upright against the ama. Slack lets it fall to leeward, which turns the bow into the wind.',
+    'lbl.stays': 'Stays (rake)', 'hint.stays': 'Fore-aft mast rake. Forward moves the sail\u2019s pull ahead and bears away; aft points up. The main cure for weather helm.',
     'lbl.oarDeployed': 'Oar in the water', 'hint.oarDeployed': 'A steering oar, not a fixed rudder: normally shipped. Put it in the water to steer — it costs speed while it is down',
     'lbl.crewPos': 'Crew position', 'hint.crewPos': 'Drag the dot, or J/L (lateral), I/K (fore-aft)',
     'pad.ama': 'ama', 'pad.leeward': 'leeward', 'pad.aft': 'aft', 'pad.fwd': 'fwd',
@@ -3851,7 +3880,8 @@ const TRANSLATIONS = {
     'h.steering': 'Sterowanie i wyważenie', 'lbl.rudder': 'Ster', 'hint.rudder': 'A/D wychyla ster, centruje się po puszczeniu',
     'lbl.tackX': 'Hals (przód/tył)', 'hint.tackX': 'Do przodu — odpadanie, do tyłu — ostrzenie. Tak steruje proa; wiosło to ostateczność.',
     'lbl.halyard': 'Fał', 'hint.halyard': 'Wybrany do szczytu masztu zmniejsza nawietrzność; poluzowany — reja opada i łódź ostrzy.',
-    'lbl.shroud': 'Wanta', 'hint.shroud': 'Napięta stawia maszt pionowo — mniej nawietrzności, i wzmacnia marchewkę z wiatrem. Luźna pozwala masztowi opaść na zawietrzną.',
+    'lbl.shroud': 'Wanta', 'hint.shroud': 'Napięta trzyma maszt pionowo, opartego o amę. Luźna pozwala mu opaść na zawietrzną, co ostrzy dziób.',
+    'lbl.stays': 'Sztagi (pochylenie)', 'hint.stays': 'Pochylenie masztu wzdłuż łodzi. Do przodu przenosi ciąg żagla w przód i odpada; w tył ostrzy. Główne lekarstwo na nawietrzność.',
     'lbl.oarDeployed': 'Wiosło w wodzie', 'hint.oarDeployed': 'Ster to wiosło, nie stały ster — normalnie jest wyjęte. Włóż je do wody, żeby sterować — zanurzone kosztuje prędkość',
     'lbl.crewPos': 'Pozycja załogi', 'hint.crewPos': 'Przeciągnij kropkę, lub J/L (bok), I/K (wzdłuż)',
     'pad.ama': 'ama', 'pad.leeward': 'zawietrzna', 'pad.aft': 'rufa', 'pad.fwd': 'dziób',
@@ -3966,6 +3996,7 @@ const sliders = {
   tackX: document.getElementById('tackX'),
   halyard: document.getElementById('halyard'),
   shroud: document.getElementById('shroud'),
+  stays: document.getElementById('stays'),
   rudder: document.getElementById('rudder'),
 };
 const outs = {
@@ -3977,6 +4008,7 @@ const outs = {
   tackX: document.getElementById('tackXOut'),
   halyard: document.getElementById('halyardOut'),
   shroud: document.getElementById('shroudOut'),
+  stays: document.getElementById('staysOut'),
   rudder: document.getElementById('rudderOut'),
   crewPos: document.getElementById('crewPosOut'),
   crewPosX: document.getElementById('crewPosXOut'),
@@ -4044,12 +4076,23 @@ const recSize = document.getElementById('recSize');
 //
 // createInitialState puts it at rest on heading pi/2, which is course 000,
 // and the start-up wind is compass 270 (from the west), so this is a beam
-// reach at TWA 90. Searched over sheet x crew x tack from the cold start the
-// page actually performs (fresh simulator, fixed controls, no autopilot,
-// 150 s): 3 of 126 combinations hold inside 10deg over the last minute, and
-// they agree on what matters -- sheet trimmed in HARD, crew fully aft, tack
-// fully forward. This is the best of them: it settles within 5.6deg at
-// 7.8 kn and peaks at 4deg of heel, so nothing near the overload alarm.
+// reach at TWA 90. Searched over the cold start the page actually performs
+// (fresh simulator, fixed controls, no autopilot, 150 s). Sheet has to be
+// trimmed in HARD; after that the helm is a balance LINE along which the
+// stays, the tack and the crew's fore-aft position trade off:
+//
+//     stays \ crew   -1     -0.75    -0.5    -0.25      0
+//         0          5.6     18.0    52.4    59.0    62.3
+//         0.5       41.5     17.2     3.8    21.4    53.3
+//         1         45.8     43.4    40.7    14.9     0.9   <- here
+//
+// The corner taken is the one where the crew sits NORMALLY: mast raked fully
+// forward on the stays, tack forward, crew amidships fore-aft. It holds
+// within 0.9deg at 7.8 kn and 4deg of peak heel -- six times better than the
+// crew-on-the-transom corner, and a state a person could actually sail in.
+// Raking the mast forward is the classical cure for weather helm and it is
+// the control the model gained in docs/adr/0020; before that the only way to
+// balance this boat was to put the crew on the stop.
 //
 // The previous defaults (sheet 50deg, crew centred fore-aft, tack neutral)
 // were picked to look calm on load rather than to sail: from the same cold
@@ -4067,8 +4110,9 @@ controls.windDirFrom = 180 * DEG__b12;
 controls.windSpeed = 6;
 controls.sheet = 12 * DEG__b12;
 controls.crewPos = 0.3;
-controls.crewPosX = -1;
+controls.crewPosX = 0;
 controls.tackX = 1;
+controls.stays = 1;
 
 let autoRudder = true; // keyboard rudder auto-centers when A/D released
 const keys = new Set();
@@ -4083,6 +4127,7 @@ function syncSlidersFromControls() {
   sliders.tackX.value = String(controls.tackX);
   sliders.halyard.value = String(controls.halyard);
   sliders.shroud.value = String(controls.shroud);
+  sliders.stays.value = String(controls.stays);
   sliders.rudder.value = String(controls.rudder);
   updateCrewDot();
   refreshOutputs();
@@ -4128,6 +4173,7 @@ function refreshOutputs() {
   outs.tackX.textContent = controls.tackX.toFixed(2);
   outs.halyard.textContent = controls.halyard.toFixed(2);
   outs.shroud.textContent = controls.shroud.toFixed(2);
+  outs.stays.textContent = controls.stays.toFixed(2);
   outs.rudder.textContent = controls.rudder.toFixed(2);
   outs.crewPos.textContent = controls.crewPos.toFixed(2);
   outs.crewPosX.textContent = controls.crewPosX.toFixed(2);
@@ -4141,6 +4187,7 @@ sliders.brailWind.addEventListener('input', () => { controls.brailWind = Number(
 sliders.tackX.addEventListener('input', () => { controls.tackX = Number(sliders.tackX.value); refreshOutputs(); });
 sliders.halyard.addEventListener('input', () => { controls.halyard = Number(sliders.halyard.value); refreshOutputs(); });
 sliders.shroud.addEventListener('input', () => { controls.shroud = Number(sliders.shroud.value); refreshOutputs(); });
+sliders.stays.addEventListener('input', () => { controls.stays = Number(sliders.stays.value); refreshOutputs(); });
 sliders.rudder.addEventListener('input', () => { autoRudder = false; controls.rudder = Number(sliders.rudder.value); refreshOutputs(); });
 
 // Crew position 2D pad: one draggable dot standing in for the old crewPos

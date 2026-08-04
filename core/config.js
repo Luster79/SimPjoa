@@ -639,7 +639,15 @@ function buildDefaultConfig() {
       // hull.lead / ceSwingFraction / clrXFraction is retuned.
       yardPeakAngleDeg: YARD_PEAK_ANGLE_DEG, // yard inclination from horizontal at full hoist; Oceanic lateen practice
       halyardDropDeg: 20,                  // how far the yard falls when the halyard is fully eased
-      mastRakeMaxDeg: 12,                  // mast lean from vertical with the shroud fully slack
+      mastRakeMaxDeg: 12,                  // LATERAL mast lean from vertical with the shroud fully slack
+      // Fore-aft rake, its own rigging (docs/adr/0020). The PJOA FOLK plan
+      // sheet "Rigging - 8 sketches" draws the shroud (1) as a single line to
+      // the AMA and the stays (2) as a fore-and-aft pair to eyebolts at both
+      // gunwales, with their own tensioner (2a). Two lines, adjusted
+      // separately -- so ADR 0019's single angle for both senses was wrong,
+      // and it left the model unable to rake the mast FORWARD at all, which
+      // is the classical cure for weather helm and a control the boat has.
+      stayRakeMaxDeg: 12,                  // fore-aft lean at full stay travel, EACH WAY from upright
       // Derived, not chosen: the distance from the tack to the sail's CE along
       // the yard is whatever puts the CE at CEheight when the yard is at its
       // full-hoist angle. That is what keeps the default state identical.
