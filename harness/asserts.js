@@ -2342,6 +2342,59 @@ export function runAsserts(config, { slow = true } = {}) {
       'STEERING');
   }
 
+  // --- C-B: deep-course hold with the paddle SHIPPED and EVERY bear-away
+  // trim the manual names applied at once — tack forward, crew aft, windward
+  // brail set to the "carrot". C-A above measures a centred oar still in the
+  // water; this measures the configuration the manual actually describes for
+  // sailing without the paddle, which is the harder and more relevant claim.
+  //
+  // It exists because the fore-aft trim arms are a tempting thing to enlarge
+  // when this fails, and enlarging them does not work. The sail's yaw moment
+  // splits into xCE*Fy (fore-aft arm against SIDE force) and -yCE*Fx (lateral
+  // arm against DRIVE force). Deep downwind the side force is what collapses
+  // -- Fy is -24 N at TWA140 and -3 N at TWA160 against -185 N close-hauled --
+  // so every fore-aft arm (sail.tackTravel, sail.ceBrailXShift, hull.lead)
+  // loses its authority exactly where this check needs it: +0.3 m of tack
+  // travel buys -56 N*m at TWA70, -7 N*m at TWA140 and -1 N*m at TWA160, and
+  // on the deep courses that moment has the round-up sign anyway.
+  //
+  // What the boat is fighting is not a mistrimmed rig. With the full
+  // bear-away trim set at TWA140/TWS6 the sail contributes +6 N*m at release
+  // while the hull's own weathercocking reaches -116 N*m as leeway builds,
+  // and the boat settles where the hull moment balances the Munk moment, at
+  // TWA ~77. The deficit is the hull's directional stability, not rig trim
+  // authority -- the same finding S1b/S1c carry for reaching courses.
+  {
+    const dt = config.dt, tws = 6;
+    const rows = [];
+    let worstRate = -Infinity, nHeld = 0;
+    for (const [twaDeg, sheetDeg] of [[140, 50], [160, 70]]) {
+      const windDirFrom = HEADING0 + twaDeg * DEG;
+      const trim = { brailLee: 0, brailWind: 0.6, crewPos: 0.35, crewPosX: -1.0,
+        tackX: 1.0, shuntRequest: false };
+      let state = freshState(sheetDeg * DEG);
+      for (let i = 0; i < Math.round(45 / dt); i++) {
+        state = integrate(state, { windDirFrom, windSpeed: tws, sheet: sheetDeg * DEG,
+          rudder: headingHoldRudder(state, HEADING0, config), ...trim }, config, dt);
+      }
+      const twaStart = Math.abs(normalizeAngle(windDirFrom - state.heading)) / DEG;
+      const releaseSeconds = 120;
+      for (let i = 0; i < Math.round(releaseSeconds / dt); i++) {
+        state = integrate(state, { windDirFrom, windSpeed: tws, sheet: sheetDeg * DEG,
+          rudder: 0, rudderUp: true, ...trim }, config, dt);
+      }
+      const twaEnd = Math.abs(normalizeAngle(windDirFrom - state.heading)) / DEG;
+      const rate = (twaStart - twaEnd) / (releaseSeconds / 60);
+      if (rate < 15 && !state.capsized) nHeld++;
+      worstRate = Math.max(worstRate, rate);
+      rows.push(`TWA${twaDeg}: ${twaStart.toFixed(0)}->${twaEnd.toFixed(0)}deg ${rate.toFixed(1)}deg/min`);
+    }
+    check('C-B: paddle SHIPPED, every bear-away trim set (tack fwd + crew aft + carrot) -- deep courses hold within 15deg/min',
+      nHeld === 2,
+      `${nHeld}/2 points hold -- ${rows.join(' | ')} -- worst ${worstRate.toFixed(1)}deg/min against the 15 ceiling. Rig trim is not the binding constraint: see this block's own comment for the measured moment budget (sail +6 N*m vs hull -116 N*m) and why enlarging the fore-aft arms does not move it`,
+      'STEERING');
+  }
+
   // --- R6-1 determinism self-test (ROUND6_flight_recorder.md): the
   // recorder/replay tool's entire premise is that the core has NO hidden
   // nondeterminism (Math.random, Date.now/performance.now, iteration-order

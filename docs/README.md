@@ -5,6 +5,12 @@
 `ARCHITECTURE_physics_core_EN.md` in the repo root is the context map for the
 code. This file is the map for everything in `docs/`.
 
+Since ADR 0025 the context map and the comments in `/core` describe **the
+current model only**. The development history they used to carry lives in the
+ADRs below, in the round documents in `Archive/`, and — for the context map's
+own previous edition —
+`Archive/ARCHITECTURE_physics_core_EN_2026-08-04_historical.md`.
+
 **Read order for someone new:** the primary source first (below), then the
 ADRs, then the current work order's open items. The findings documents are
 evidence, not instructions — consult them when you want to know *why* a number
@@ -65,6 +71,8 @@ Append-only. Never edit an old ADR; supersede it with a new one.
 | 0022 | The draft comes from the beam -- refines 0021; the owner's 50-55 cm can only be the gunwale, and displacement then fixes the draft |
 | 0023 | The tack control reversed at every shunt -- third instance of the ADR 0016 defect, and the one 0016's own symmetry checks could not see |
 | 0024 | The sail hangs out to leeward -- the lateral CE lever was 11x too small, which is why the brail, the manual's primary bear-away control, was the weakest one |
+| 0025 | Comments describe the current model; history lives in the ADRs and `Archive/` |
+| 0026 | Fore-aft trim arms have no downwind authority -- they act on the sail's side force, which collapses on deep courses |
 
 ## Work orders — what to do
 

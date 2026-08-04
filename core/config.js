@@ -2,18 +2,14 @@
 // range validation. Pure ESM, no external dependencies, Node >= 18.
 //
 // Design note on the sail drag model.
-// The RUNTIME model is the composite in docs/adr/0007 (block B of
-// work-order-2026-07-30):
+// The RUNTIME model is the composite in docs/adr/0007:
 //     CD = CD0 + inducedK*CL_working^2 + CDbroadside*sin^4(alpha) + ...
-// The suction-loss form CD0 + s*CL*tan(alpha) that used to live here is gone,
-// and with it CONFIG.sail.s — it had no remaining runtime reader.
 //
 // The Polhamus CD helpers below (polhamusCD/polhamusCDv2, with their own
 // per-table `s`) are retained for ONE purpose: regenerating the shipped CSVs'
 // CD column at startup to verify the files have not been silently edited or
 // corrupted. That is an integrity/provenance check on the data files, NOT a
-// live code path — aero.js reads only the CL column. See F3(b) in
-// work-order-2026-07-30-physics-audit.md and the note at
+// live code path — aero.js reads only the CL column. See the note at
 // crossCheckAeroTableV2.
 
 import { readFileSync } from 'node:fs';
@@ -29,13 +25,10 @@ export const CONFIG_VERSION = '1.0.0';
 // Minimal CSV parser (handles quoted fields with embedded commas, "" escapes)
 // ---------------------------------------------------------------------
 export function parseCSV(text) {
-  // Strip whole-line `#` comments before parsing (S4b, docs/adr/0009). ADR
-  // 0009 makes a self-describing header — extraction method, the source's own
-  // definitions — mandatory on every digitised file, so a parser that treats
-  // the first `#` line as the column header cannot read the files the contract
-  // requires. Verified safe for the three files already read
-  // (crab_claw_CL_CD_polhamus, crab_claw_CL_CD_v2, example_proa_parameters):
-  // none of them contains a `#` line.
+  // Strip whole-line `#` comments before parsing. docs/adr/0009 makes a
+  // self-describing header — extraction method, the source's own definitions —
+  // mandatory on every digitised file, so a parser that treats the first `#`
+  // line as the column header cannot read the files the contract requires.
   text = text.split('\n').filter((line) => !line.trimStart().startsWith('#')).join('\n');
   const rows = [];
   let row = [];
@@ -101,13 +94,12 @@ export function polhamusCD(CL, alphaRad, CD0, s) {
 }
 
 // ---------------------------------------------------------------------
-// v2 aero table generator (round 10, R10-1, ROUND10_data_integration.md,
-// docs/adr/0003): crab_claw_CL_CD_v2.csv rescales the SAME Polhamus
-// functional-form curve (kept for interpolation smoothness — the work
-// order's own instruction) to Di Piazza, Pearthree & Paille 2014's
-// measured Santa Cruz wind-tunnel anchors (Fig 3) instead of the pure
-// theoretical suction-analogy curve, which overshoots CLmax by ~35%
-// (1.88 analytic vs ~1.38 measured). Three-parameter fit per apex angle:
+// v2 aero table generator (docs/adr/0003): crab_claw_CL_CD_v2.csv rescales
+// the SAME Polhamus functional-form curve (kept for interpolation
+// smoothness) to Di Piazza, Pearthree & Paille 2014's measured Santa Cruz
+// wind-tunnel anchors (Fig 3) instead of the pure theoretical
+// suction-analogy curve, which overshoots CLmax by ~35% (1.88 analytic vs
+// ~1.38 measured). Three-parameter fit per apex angle:
 //   - CLgain: scales CL so the theoretical peak matches measured CLmax.
 //   - alphaStretch: remaps the alpha axis (piecewise: a plain multiply
 //     on the rising side 0..peakAlpha, a linear rescale on the falling
@@ -122,9 +114,8 @@ export function polhamusCD(CL, alphaRad, CD0, s) {
 // Polhamus curve's own peak per apex — precomputed once here rather than
 // re-searched at runtime; CLgain is defined directly from it
 // (measured CLmax / peakCL), so it never needs to be re-derived.
-// See ROUND10_data_integration_findings.md for the full fit residuals
-// and the L/Dmax-region constraint (the curve must not exceed the
-// paper's own labeled peak L/D=0.70/0.13=5.38 anywhere else).
+// The fit is additionally constrained so the curve never exceeds the
+// paper's own labelled peak L/D = 0.70/0.13 = 5.38 anywhere.
 export const AERO_V2_PARAMS = {
   45: { peakAlphaDeg: 46.849, peakCL: 1.916361, CLgain: 0.7202, alphaStretch: 1.10, CD0: 0.040, s: 0.406 },
   60: { peakAlphaDeg: 45.517, peakCL: 2.126019, CLgain: 0.6491, alphaStretch: 1.10, CD0: 0.040, s: 0.428 },
@@ -214,19 +205,18 @@ function crossCheckAeroTable(byApex) {
   }
 }
 
-// Cross-check for crab_claw_CL_CD_v2.csv (round 10, R10-1): same integrity
-// purpose as crossCheckAeroTable above, but regenerates against the v2
-// generator (polhamusCLv2/polhamusCDv2, AERO_V2_PARAMS) instead of the raw
-// Polhamus formula — the v2 table is a measured-anchored RESCALING, not a
-// direct Polhamus output, so checking it against the unscaled formula
-// would always fail. Tolerance unchanged (2%) per the work order.
-// F3(b) (work-order-2026-07-30, settled by docs/adr/0007): the CD column
-// checked below is NOT read by any runtime path — since ADR 0007 the runtime
-// builds CD from CD0 + inducedK*CL^2 + CDbroadside*sin^4(alpha), and before
-// that it rebuilt CD from the CL column. This cross-check is therefore an
-// INTEGRITY/PROVENANCE check on the shipped CSV (has the file been silently
-// edited or corrupted?), not coverage of a live code path. Kept deliberately,
-// and labelled so it cannot be mistaken for the latter.
+// Cross-check for crab_claw_CL_CD_v2.csv: same integrity purpose as
+// crossCheckAeroTable above, but regenerates against the v2 generator
+// (polhamusCLv2/polhamusCDv2, AERO_V2_PARAMS) instead of the raw Polhamus
+// formula — the v2 table is a measured-anchored RESCALING, not a direct
+// Polhamus output, so checking it against the unscaled formula would always
+// fail. Same 2% tolerance.
+//   NOTE: the CD column checked below is NOT read by any runtime path — the
+// runtime builds CD from CD0 + inducedK*CL^2 + CDbroadside*sin^4(alpha)
+// (docs/adr/0007). This is therefore an INTEGRITY/PROVENANCE check on the
+// shipped CSV (has the file been silently edited or corrupted?), not coverage
+// of a live code path. Kept deliberately, and labelled so it cannot be
+// mistaken for the latter.
 function crossCheckAeroTableV2(byApex) {
   const REL_TOL = 0.02;
   for (const apexStr of Object.keys(byApex)) {
@@ -272,29 +262,27 @@ function loadBoatParamsCSV() {
 // Default CONFIG assembly
 // ---------------------------------------------------------------------
 function buildDefaultConfig() {
-  // Round 10 (R10-1): two switchable aero tables — v1 (Marchaj/Polhamus
-  // theoretical) and v2 (Di Piazza 2014 measured-anchored, default) — see
-  // docs/adr/0003. Both loaded unconditionally (tiny CSVs); the active one
-  // is picked by sail.aeroTableVersion and re-derived on every createConfig
-  // call (below) so the boat-design tab can switch it at runtime.
+  // Two switchable aero tables — v1 (Marchaj/Polhamus theoretical) and v2
+  // (Di Piazza 2014 measured-anchored, the default) — see docs/adr/0003.
+  // Both are loaded unconditionally (tiny CSVs); the active one is picked by
+  // sail.aeroTableVersion and re-derived on every createConfig call (below)
+  // so the boat-design tab can switch it at runtime.
   const aeroTableV1 = loadAeroTable('crab_claw_CL_CD_polhamus.csv');
   crossCheckAeroTable(aeroTableV1);
   const aeroTableV2 = loadAeroTable('crab_claw_CL_CD_v2.csv');
   crossCheckAeroTableV2(aeroTableV2);
   const p = loadBoatParamsCSV();
-  // F8 (work-order-2026-07-30): inertia is now three separate quantities,
-  // derived rather than a single fudge factor. A hull accelerating SIDEWAYS
-  // drags a large body of water with it (added mass); pushing it forward
-  // barely does. The old single 0.06*m*L^2 for yaw was below even a uniform
-  // rod's 1/12, which no mass distribution can justify — added mass only ever
-  // adds. Derivations, for L = 5.5 m and draft = lateralArea/L = 0.327 m:
-  //   added sway mass  ~ rho*pi*draft^2/4 per unit length, x L  = 474 kg
-  //   added yaw inertia = that strip mass integrated with x^2   = 1195 kg.m^2
-  //   rod term          = m*L^2/12                              =  479
-  //   ama at its spacing = ama.mass * spacing^2                 =  156
+  // Inertia is three separate quantities, each derived. A hull accelerating
+  // SIDEWAYS drags a large body of water with it (added mass); pushing it
+  // forward barely does. Yaw inertia must exceed a uniform rod's m*L^2/12,
+  // since added mass only ever adds. The terms:
+  //   added sway mass   ~ rho*pi*draft^2/4 per unit length, x L
+  //   added yaw inertia  = that strip mass integrated with x^2
+  //   rod term           = m*L^2/12
+  //   ama at its spacing = ama.mass * spacing^2
   // Surge added mass for a slender body is small (a few % — it is pushing
-  // water aside lengthwise, not broadside); 10% is used. ama.mass is now
-  // included in the translational masses, which it previously was not.
+  // water aside lengthwise, not broadside); 10% is used. ama.mass is included
+  // in the translational masses.
   // Yard inclination from horizontal at full hoist (docs/adr/0019). Needed
   // here first: sail.yardCERadius is derived from it below.
   const YARD_PEAK_ANGLE_DEG = 60;
@@ -311,16 +299,16 @@ function buildDefaultConfig() {
   // middle. The previous 1.5 was a length-ratio scaling of an older estimate.
   const HULL_LATERAL_AREA = 1.41;                        // m^2 — see hull.lateralArea below (same value, needed here first)
   const draft = HULL_LATERAL_AREA / p.boat_length_m;    // ~0.327 m
-  // kg/m, 2D cylinder analogy. AUDITED 2026-08-04 (docs/adr/0018) and kept at
-  // /4 deliberately, though the derivable plate value is /2: the free surface
-  // acts as the image plane for a section this plate-like (B/T = 1.4), and
-  // Clarke's Y_vdot regression implies ~1010 kg of added sway mass where this
-  // carries 455. Doubling it was tried. It REVERSES four of the owner's
-  // manual's steering rules -- the hull's own destabilising Munk moment grows
-  // until it swamps every trim control the manual describes (sheet-trim
-  // steering flips to weather at 9 of 16 points, the windward brail flips, and
-  // the parked hull pins itself at a fixed crab angle). The manual outranks a
-  // ship-hull regression extrapolated to this B/T, so the value stays.
+  // kg/m, 2D cylinder analogy, kept at /4 deliberately although the derivable
+  // plate value is /2 (docs/adr/0018): the free surface acts as the image
+  // plane for a section this plate-like (B/T = 1.4), and Clarke's Y_vdot
+  // regression implies ~1010 kg of added sway mass against the 455 carried
+  // here. Doubling it REVERSES four of the owner's manual's steering rules —
+  // the hull's own destabilising Munk moment grows until it swamps every trim
+  // control the manual describes (sheet-trim steering flips to weather at 9 of
+  // 16 points, the windward brail flips, and the parked hull pins itself at a
+  // fixed crab angle). The manual outranks a ship-hull regression extrapolated
+  // to this B/T, so the value stays. Do not raise it in isolation.
   const addedSwayPerLength = 1025 * Math.PI * draft * draft / 4;
   const dryMass = p.displacement_kg + p.ama_mass_kg;
 
@@ -352,52 +340,40 @@ function buildDefaultConfig() {
       windageAreaFrontal: 0.41,            // m^2 — END-ON area (bow, mast section, one crew); windageForce interpolates on sin^2 of the apparent-wind angle (scaled, ADR 0021)
       windageCD: 0.85,
       wettedSurface: 2.5,                  // m^2 — tunable estimate (slender canoe hull; scaled by the length ratio squared, ADR 0021)
-      // Cf is no longer a stored constant (round 7, R7-1) — hydro.js
-      // computes it per-call from the ITTC-57 model-ship line at the
-      // instantaneous Reynolds number (u*length/nu), which is the
-      // physically-grounded replacement for the old flat 0.0015 estimate.
-      // residuary (wave-making) resistance: round 9, R9-1
-      // (ROUND9_physics_fidelity_work_order.md). Replaces the old
-      // froudeThreshold/waveResistanceCoeff u^4-above-Fr-0.4 "wave wall",
-      // which was a displacement-monohull hull-speed model (Fr~0.4) applied
-      // to a slender L/B~12:1 canoe hull that has no such wall (Dierking;
-      // Pacific flying proas routinely ran Fr 0.5-1.0). Expressed in the
-      // SAME nondimensional form as skin friction (Cr, not a raw N-scaling
-      // coefficient) and bounded to the same order as Cf (~0.003) rather
-      // than the old term's 100-500x-friction blowup — see hydro.js
-      // hullResistance(). A Gaussian hump centered at the main prismatic
-      // hump (FrPeak) that rises from ~0 well below it and falls away
-      // again at high Fr (semi-planing relief), never growing unbounded.
+      // Cf is not a stored constant — hydro.js computes it per call from the
+      // ITTC-57 model-ship line at the instantaneous Reynolds number
+      // (u*length/nu).
+      // Residuary (wave-making) resistance (docs/adr/0001): a slender
+      // L/B~12:1 canoe hull has no displacement-monohull "hull speed" wall at
+      // Fr~0.4 (Dierking; Pacific flying proas routinely ran Fr 0.5-1.0).
+      // Expressed in the SAME nondimensional form as skin friction (Cr, not a
+      // raw N-scaling coefficient) and bounded to the same order as Cf
+      // (~0.003) — see hydro.js hullResistance(). A Gaussian hump centred at
+      // the main prismatic hump (FrPeak) that rises from ~0 well below it and
+      // falls away again at high Fr (semi-planing relief), never growing
+      // unbounded.
       residuaryPeakCr: 0.006,             // tunable — Cr at the hump's peak, ~2x Cf (slender-hull order of magnitude, not a monohull's 100x+)
       residuaryFrPeak: 0.5,               // tunable — Fr at which residuary resistance peaks (the main prismatic hump)
       residuaryFrWidth: 0.18,             // tunable — Gaussian width; keeps the hump's rise/fall gentle (naturally ~0 below Fr~0.3, per work order's "~0 below Fr~0.35")
-      // Tail plateau past the hump (P1, docs/work-order-2026-07-22.md;
-      // docs/diagnostic-2026-07-22-residuary-hump.md; docs/adr/0006):
-      // the pure Gaussian falls back toward 0 for Fr well past FrPeak,
-      // which let the polar's settle-gate bug hide a SECOND, unphysically
-      // fast branch (semi-planing relief past the hump is real, but a
-      // slender canoe hull doesn't shed residuary resistance all the way
-      // back to ~friction-only — Dierking's proa speed data tops out
-      // well short of that). Holds Cr at this fraction of its peak value
-      // for Fr > FrPeak instead of letting the Gaussian tail go to ~0,
-      // capping reach-speed at TWS6 well under the un-plateaued model's
-      // >14.4kn. The diagnostic's own 2-seed hysteresis probe (TWA135,
-      // u0=1.0 vs 6.5) only needs >=0.10 to lose the double branch there,
-      // but P1's own acceptance bar is stricter — total resistance
-      // genuinely non-decreasing across a fine 3-9 m/s sweep, not just at
-      // those two sample speeds — which a dense sweep showed first holds
-      // at ~0.32; 0.35 clears it with margin.
+      // Tail plateau past the hump (docs/adr/0006): a pure Gaussian falls
+      // back toward 0 for Fr well past FrPeak, which opens a SECOND,
+      // unphysically fast speed branch the polar's settle gate can reach.
+      // Semi-planing relief past the hump is real, but a slender canoe hull
+      // does not shed residuary resistance all the way back to
+      // ~friction-only — Dierking's proa speed data tops out well short of
+      // that. Holding Cr at this fraction of its peak caps reach speed at
+      // TWS6 well under the un-plateaued model's >14.4 kn.
+      // The acceptance bar is total resistance genuinely non-decreasing
+      // across a fine 3-9 m/s sweep, which first holds at ~0.32; 0.35 clears
+      // it with margin.
       residuaryTailPlateau: 0.35,          // tunable — fraction of residuaryPeakCr retained far past FrPeak (smallest value clearing a fine-grained non-decreasing-resistance sweep, 3-9 m/s)
-      // hullSideForceCoeff (round 10, R10-3, docs/adr/0004): replaces the
-      // old sideForceCoeff/leewaySaturationDeg/leewayMushingCoeff trio
-      // (a saturate-then-mush shape with NO measured basis) with a
-      // direct fit to Flay, Irwin & Viola 2025's towing-tank CS(leeway)
-      // for their V2 hull (narrow 70deg-keel Vee, the proa-like case):
+      // hullSideForceCoeff (docs/adr/0004): a direct fit to Flay, Irwin &
+      // Viola 2025's towing-tank CS(leeway) for their V2 hull (narrow
+      // 70deg-keel Vee, the proa-like case):
       // CS(lambda) = csV2A*lambda + csV2B*lambda^2 (lambda in DEGREES,
-      // matching the digitized source's own units), valid 0-16deg — the
-      // measured range shows NO saturation (rises superlinearly, a
-      // strengthening vortex-lift mechanism), contradicting the old
-      // model's 15deg knee. csBlendStartDeg..csBlendEndDeg (16-24deg)
+      // matching the digitized source's own units), valid 0-16deg. The
+      // measured range shows NO saturation — it rises superlinearly, a
+      // strengthening vortex-lift mechanism. csBlendStartDeg..csBlendEndDeg (16-24deg)
       // blends toward the V1 hull's (100deg keel, more rounded) own
       // fitted curve — V2 has no data past 16deg, so a naive continuation
       // of its own steeper quadratic would run away; V1's slower,
@@ -407,31 +383,29 @@ function buildDefaultConfig() {
       // holds FLAT (config.js validateConfig doesn't enforce this shape —
       // it's applied in hydro.js hullSideForce) — an explicitly
       // provenance-free extrapolation guard, not a measured claim.
-      csV2A: 0.00564, csV2B: 0.00042,     // fit residuals within the digitized +-0.01 uncertainty at all 4 V2 anchors (4/8/12/16deg) — see ROUND10_data_integration_findings.md
+      csV2A: 0.00564, csV2B: 0.00042,     // fit residuals within the digitized +-0.01 uncertainty at all 4 V2 anchors (4/8/12/16deg)
       csV1A: 0.00598, csV1B: 0.00019,     // V1 fit (4/8/16/24deg anchors), used only for the 16-24deg blend target
       csBlendStartDeg: 16,
       csBlendEndDeg: 24,
-      // sailingFreeReliefPeak (round 10, R10-3): qualitative reproduction
-      // of Flay's Fig 15 finding (CR decreases with leeway for V hulls) —
-      // see hydro.js hullSideForce's own comment for the full reasoning
-      // and the caveat that no quantitative CR-vs-leeway curve exists to
-      // fit against (Fig 15 is described qualitatively only). Ramps up
-      // 0..8deg, flat at full relief across 8-12deg (matching the
-      // harness's own direct assertion window), fades back to 0 by 24deg.
-      // 1.0 (magnitude — full induced-drag elimination within the
-      // plateau) is sized empirically so total resistance at 8-12deg
-      // leeway does not exceed the 0-deg value, not derived from a
-      // source number.
+      // sailingFreeReliefPeak: qualitative reproduction of Flay's Fig 15
+      // finding (CR decreases with leeway for V hulls) — see hydro.js
+      // hullSideForce's own comment for the full reasoning and the caveat
+      // that no quantitative CR-vs-leeway curve exists to fit against
+      // (Fig 15 is described qualitatively only). Ramps up 0..8deg, flat at
+      // full relief across 8-12deg (matching the harness's own direct
+      // assertion window), fades back to 0 by 24deg. The magnitude 1.0 —
+      // full induced-drag elimination within the plateau — is sized
+      // empirically so total resistance at 8-12deg leeway does not exceed
+      // the 0-deg value; it is not a source number.
       sailingFreeReliefPeak: 1.0,
       sailingFreeReliefPlateauStartDeg: 8,
       sailingFreeReliefPlateauEndDeg: 12,
       sailingFreeReliefFadeEndDeg: 24,
       lowSpeedSideDamping: 100,            // tunable — N per (m/s) of sway speed; linear-regime side resistance that keeps a near-stalled boat from drifting freely at very low absolute speed, independent of the (now measured) CS curve's own shape
-      crossFlowDragCoeff: 1.1,             // R9 follow-up — bluff-body cross-flow (broadside) drag coefficient on the lateral plane; past stall the hull is dragged side-on and meets huge resistance (fixes the spurious "sails sideways" state; see hydro.js hullSideForce and the ROUND9 findings)
-      // lateralArea (~Lwl*draft): dual-use since round 10, R10-3 — the
-      // cross-flow bluff-body term above (unchanged) AND the new
-      // hullSideForceCoeff CS(leeway) term (hydro.js) both reference this
-      // same projected-side-area estimate. Flay's own CS is referenced to
+      crossFlowDragCoeff: 1.1,             // bluff-body cross-flow (broadside) drag coefficient on the lateral plane; past stall the hull is dragged side-on and meets huge resistance, which is what stops a spurious "sails sideways" state — see hydro.js hullSideForce
+      // lateralArea (~Lwl*draft): dual-use — the cross-flow bluff-body term
+      // above AND the hullSideForceCoeff CS(leeway) term (hydro.js) both
+      // reference this same projected-side-area estimate. Flay's own CS is referenced to
       // THEIR test hull's projected side area (12m hull, 4.88 m2 full
       // scale) — since CS is a dimensionless coefficient, the "conversion"
       // to our geometry is simply computing Fy from OUR OWN area here
@@ -442,35 +416,32 @@ function buildDefaultConfig() {
       // provenance; no additional guard needed here since side force and
       // longitudinal resistance are independent terms.
       lateralArea: HULL_LATERAL_AREA,      // m^2 — hull lateral (broadside) plane area (~length*draft); tunable estimate (no direct measurement of THIS hull's draft)
-      // Yaw damping: NO LONGER A CONFIGURED PAIR (2026-08-04). F10 replaced a
-      // dimensionally-broken single coefficient with the two standard
-      // manoeuvring terms, yawDampingLinear (N_r) and yawDampingCrossFlow
-      // (N_rr), and derived the second from strip theory over the lateral
-      // plane while estimating the first. core/hydro.js's hullSideForce()
-      // now performs that strip integration directly, at run time, through
-      // the SAME measured CS(leeway) curve the side force uses (docs/adr/
-      // 0004) -- so both terms fall out of the integration and neither has to
-      // be estimated. Both parameters are deleted rather than left unread.
-      // ADR 0017 then folded the separate yawDamping() function into
-      // hullSideForce itself: one integral over stations that each see
-      // v + r*x, so the sway and yaw halves can no longer disagree about the
-      // flow, and the v-r cross term is captured instead of dropped.
-      //
-      // The magnitude changed a lot, and in the direction the owner predicted:
-      // -395 -> -1404 N*m at u=3.5, r=0.3, against the 0.15 m^2 steering oar's
-      // -1345. A 5.5 x 0.45 m hull is a 12:1 lateral foil with twelve times the
-      // blade's area, and it should damp about as hard. See hydro.js.
+      // NOTE: yaw damping has NO configured coefficient. core/hydro.js's
+      // hullSideForce() integrates it over stations that each see v + r*x,
+      // through the SAME measured CS(leeway) curve the side force uses
+      // (docs/adr/0004, 0017), so the sway and yaw halves cannot disagree
+      // about the flow and the v-r cross term is captured rather than
+      // dropped. Both terms fall out of the integration and neither is
+      // estimated. Do not reintroduce a standalone N_r/N_rr pair — it would
+      // double-count.
       clrXFraction: 0.05,                 // tunable — center-of-lateral-resistance offset from CG (aft), fraction of half-length
-      // clrDepth (F12, work-order-2026-07-30): depth of the centre of lateral
-      // resistance below the waterline. The sail's side force and the hull's
-      // hydrodynamic reaction form a COUPLE, so the heeling arm is
-      // CEheight + clrDepth, not CEheight alone. Band estimate like
-      // lateralArea (no direct measurement of this hull): lateralArea 1.8 m^2
-      // over a 5.5 m waterline implies ~0.33 m mean draft, and the centroid
-      // of that lateral plane sits near mid-draft — 0.35 m is that, rounded.
+      // clrDepth: depth of the centre of lateral resistance below the
+      // waterline. The sail's side force and the hull's hydrodynamic
+      // reaction form a COUPLE, so the heeling arm is CEheight + clrDepth,
+      // not CEheight alone. A band estimate like lateralArea (no direct
+      // measurement of this hull): the lateral plane over the waterline
+      // length implies the mean draft, and the centroid of that plane sits
+      // near mid-draft.
       clrDepth: 0.30,                     // m — tracks the lateral plane it is the centroid depth of; follows the derived 0.282 m draft (ADR 0022)
-      crewForeAftTrimCoeff: 0.15,          // tunable ("k_trim") — fraction of half-length the CLR shifts per unit crewPosX (FIX_REQUEST_round4_roll_dof.md 1.5)
-      crewTrimSign: 1,                     // +-1 — flips the crewPosX->CLR-shift direction; verified empirically against the 1.6 coupling-sign test (forward crew -> luff), see ARCHITECTURE doc
+      // crewForeAftTrimCoeff ("k_trim"): fraction of half-length the CLR shifts
+      // per unit crewPosX. A tunable estimate — there is no pitch DOF behind
+      // it, so this is the model's whole statement of fore-aft crew trim. At
+      // 0.25 a full aft trim moves the CLR 0.625 m, i.e. an eighth of the
+      // waterline, which is the upper end of what a crew shifting weight in a
+      // 5 m canoe can plausibly do to the immersed lateral plane. Do not raise
+      // it further without a real pitch model to justify it.
+      crewForeAftTrimCoeff: 0.25,
+      crewTrimSign: 1,                     // +-1 — flips the crewPosX->CLR-shift direction; verified empirically (forward crew -> luff)
       // yawHeelSign: scales AND signs the heel->yaw coupling (aero.js
       // yawMomentHeel). SET TO 0 — the term is DISABLED, and that needs its
       // own justification because it is not a claim that the physics is zero.
@@ -480,13 +451,11 @@ function buildDefaultConfig() {
       // it also makes the immersed HULL asymmetric, which produces an opposing
       // yaw moment and is the dominant real-world heel-to-yaw mechanism. The
       // model has the rig half and not the hull half. **A partial model of a
-      // cancelling pair has an essentially arbitrary sign**, and this one's
-      // sign was calibrated (round 4's "1.6 coupling-sign test") against a
-      // rule the owner's manual contradicts — see docs/sources/ ch. III.
+      // cancelling pair has an essentially arbitrary sign.**
       //
-      // Measured, with both of the manual's own named mechanisms now present
-      // (ama residuary drag for crew position, ceBrailXShift for the brail —
-      // docs/adr/0015), across the whole acceptance grid:
+      // Measured across the whole acceptance grid, with both of the manual's
+      // own named mechanisms present (ama residuary drag for crew position,
+      // ceBrailXShift for the brail — docs/adr/0015):
       //
       //   criterion                              +1     0     -1
       //   AC-1.1 crew to ama -> points up       2/6   5/6   5/6
@@ -504,76 +473,34 @@ function buildDefaultConfig() {
       // term, so the pair is modelled rather than one side of it. Kept as a
       // live parameter, not deleted, for exactly that.
       yawHeelSign: 0,
-      ceLeverSign: 1,                     // +-1 (aero.js xCE/yCE yaw-lever sign) — round 10 (R10-4, docs/adr/0004): CURRENTLY THE IDENTITY, not an active flip. Round 5-7 used -1 to match the old (now-retired) "sheet in bears away" manual rule; the round-9 lead fix (0.15->0.05*LWL) removed the structural lee-helm bias that rule was masking, and the naive, unflipped r x F derivation now matches the boat's real (standard, non-inverted) steering direction on its own — see aero.js's own comment at this line for the full history
-      // lead: round 7, D-6 (ROUND7_DECISION.md). Classical yacht-design
-      // "lead" — the CE-CLR longitudinal separation — order 5-25% of
-      // waterline length depending on hull/rig type (Larsson & Eliasson,
-      // Principles of Yacht Design). Replaces round 5's ad-hoc
-      // tackXFraction-based CE anchor (aero.js sailForces no longer uses
-      // tackXFraction for the yaw-moment geometry — it's still used by
-      // ui/app.js for drawing the mast/tack position, kept for that).
-      // Per-boat parameter; revisit if a specific hull's real lead is
-      // measured.
+      ceLeverSign: 1,                     // +-1 (aero.js xCE/yCE yaw-lever sign) — CURRENTLY THE IDENTITY, not an active flip: at the present `lead` the naive, unflipped r x F derivation matches the boat's real steering direction on its own
+      // lead: the classical yacht-design "lead" — the CE-CLR longitudinal
+      // separation — of order 5-25% of waterline length depending on hull and
+      // rig type (Larsson & Eliasson, Principles of Yacht Design). A per-boat
+      // parameter and an ESTIMATE; revisit if a specific hull's real lead is
+      // ever measured.
       //
-      // R9 follow-up: lowered from 0.15 (15% LWL) to 0.05 (~5%, low edge of
-      // the literature band). At 15% the CE sat so far forward of the CLR
-      // that ceLeverSign=+1 produced a STRUCTURAL lee-helm bias the sail and
-      // crew couldn't overcome — the boat bore away off any course tighter
-      // than ~97deg TWA and could not point without the rudder (which on a
-      // Pjoa is a last resort). Measured M(TWA) balance was negative across
-      // the whole close-hauled range at lead=0.825; at ~0.05*L it crosses
-      // zero near 55-58deg, giving a stable, rudder-free pointing attractor.
-      // Only the baseline shifts — the delta-dependent trim steering
-      // (halfChordEff*cos(delta)) is untouched, so T3/T4's directions hold.
+      // WHY THE VALUE MATTERS LESS THAN IT LOOKS. Sensitivity here is
+      // pathological: the rudder-free helm balance flips sign from weather to
+      // lee between 0.065*L and 0.070*L, a 2.7 cm window, against a
+      // trim-driven modulation ten times larger. Calibrating a boat onto that
+      // knife edge produces fragility, not accuracy.
       //
-      // Round 10d (H1, ROUND10d_helm_balance.md): 0.05*L passed every
-      // DIFFERENTIAL steering test (T1-4, C-bearaway, ...) but none of
-      // those bound the ABSOLUTE helm balance at a fixed trim — a gap this
-      // round's new "rudder-free release at the polar-optimal beam reach"
-      // test closes. At 0.05*L that test measured a genuine but marginal
-      // WEATHER-side drift (initial rate 0.31deg/s, fine; but 60s excursion
-      // 16.2deg, just over the 15deg ceiling). A fine sweep of lead within
-      // the mandated 5-25%*LWL band (probe: TWA90/TWS6/crewPos0.35, sheet
-      // re-optimized per point, rudder released after a 30s settle) found
-      // the balance is a KNIFE EDGE in this narrow window — the drift's own
-      // sign flips from weather to lee between lead=0.065*L and 0.07*L, so
-      // 0.05-0.065*L is the only sub-range that is BOTH in-range and
-      // weather-side. 0.06*L (initial rate 0.14deg/s, 60s excursion 7.2deg,
-      // both comfortably inside the acceptance band) is picked over values
-      // closer to the flip (e.g. 0.065*L, excursion 2.8deg) specifically
-      // for that margin from the knife edge — a boat this close to a sign
-      // flip is not a robustly-calibrated one, even though 0.065 alone also
-      // technically passes. Direction (weather) matches the manual's
-      // "hands-off canoe settles toward the wind" convention this round's
-      // acceptance criterion cites; the sail-trim-response DIRECTIONS this
-      // shift moves through are unchanged (still 0.05<lead<0.07, nowhere
-      // near the ~0.15-0.2*L range where D-6's original diagnosis found the
-      // opposite, structural lee-helm regime) — see
-      // ROUND10d_helm_balance_findings.md for the full before/after
-      // moment-budget table and the re-run D-6/T3/T4 differential numbers.
-      //
-      // S1 (work-order-2026-08-02): the round-10d test described above was
-      // later dropped from the suite, and this value — whose ONLY
-      // justification was that measurement — outlived it. The measurement is
-      // back, as harness/asserts.js's S1a/S1b, and now runs on a grid
-      // (TWA 70/90/110 x TWS 6/10) rather than at the single operating point
-      // the original used. It no longer passes anywhere: 21-52deg of
-      // excursion against the 15deg ceiling. That is NOT a call to re-pick
-      // lead. Nothing about this constant changed; F9 (the oar's real
-      // inflow-driven force) and F10 (removal of the artificial yaw damping)
-      // did, and between them the hull was left with no directional
-      // stability of its own for lead to balance against. Searching this
-      // 2.7cm knife-edge window again would only re-create the same
-      // fragility one audit further on. S2 of that work order removed the
-      // problem structurally, by giving the model the movable tack / mast
-      // rake that a real proa actually steers with -- Proafile: "traditional
+      // The structural answer is docs/adr/0011's movable tack: a real proa is
+      // steered by moving the CE against the CLR — Proafile, "traditional
       // proas are steered on all reaching and windward courses with no
       // rudder, paddle, or steering oar at all... by adjusting the relative
       // fore and aft positions of the sail centre of effort and the hull
-      // centre of lateral resistance". `lead` is now only the value at
-      // tackX=0: it no longer has to be RIGHT, because the boat can trim out
-      // whatever bias it leaves (see the S2 course-hold check). S1a/S1b stay
-      // xfail:STEERING with their numbers, deliberately not tuned green.
+      // centre of lateral resistance". So `lead` is only the value at
+      // tackX = 0. It does not have to be RIGHT, because the boat can trim
+      // out whatever bias it leaves (see the S2 course-hold check in
+      // harness/asserts.js).
+      //
+      // DO NOT re-pick this value to make a rudder-free balance assertion
+      // pass. S1a/S1b are xfail with their measured numbers on purpose: the
+      // hull has little directional stability of its own for `lead` to
+      // balance against, and searching the knife-edge window again would only
+      // re-create the same fragility.
       lead: 0.06 * p.boat_length_m,
     },
 
@@ -583,48 +510,32 @@ function buildDefaultConfig() {
       mass: p.ama_mass_kg,                 // 25 kg — resists lifting when windward (normal case)
       spacing: p.beam_overall_m,           // 2.5 m (hull-ama spacing, "B")
       wettedSurface: 0.5,                  // m^2 — tunable estimate, fully immersed (scaled by the length ratio squared, ADR 0021)
-      // residuaryPeakCr (AC-1, 2026-08-03): the ama's wave-making resistance,
-      // which it simply did not have — see core/hydro.js's amaDrag for why
-      // that was the real gap behind two rounds of putting steering authority
-      // into the form factor instead. Set EQUAL to the hull's 0.006: same
-      // phenomenon, same slender-body order of magnitude, and the ama is the
-      // stubbier body of the two (formFactor 1.2 vs the hull's fine entry), so
-      // equal is the conservative choice rather than a flattering one. The Fr
-      // hump shape (peak, width, tail plateau) is shared with the hull outright.
+      // residuaryPeakCr (docs/adr/0015): the ama's wave-making resistance —
+      // see core/hydro.js's amaDrag for why this, and not the form factor, is
+      // the honest home for the ama's steering authority. Set EQUAL to the
+      // hull's 0.006: same phenomenon, same slender-body order of magnitude,
+      // and the ama is the stubbier body of the two (formFactor 1.2 vs the
+      // hull's fine entry), so equal is the conservative choice rather than a
+      // flattering one. The Fr hump shape (peak, width, tail plateau) is
+      // shared with the hull outright.
       residuaryPeakCr: 0.006,
-      // formFactor: round 7, R7-1. The ama is a slender float trailing
-      // fore-aft through the water like a second, smaller hull — NOT a
-      // bluff cross-flow body — so its drag is ITTC-57 skin friction at
-      // its own length/Reynolds number (see hydro.js's shared ittc57Cf),
-      // same as the main hull, times this (1+k)-style form factor. This
-      // replaces the old flat dragCoeff=0.4 bluff-body estimate, which
-      // was ~100x too high for a body moving lengthwise and was the root
-      // cause of the ama out-dragging the main hull 26-30x (diagnosed
-      // from simpjoa-recording-20260716-155817.json, see recordings/ and
-      // ARCHITECTURE's calibration section). Round 7 set this to 3.3 — the
-      // TOP edge of the standard ITTC/Prohaska form-factor range (normally
-      // 1.1-1.4 for a slender body; 3.3 is 2-3x that) — specifically
-      // because it was the minimum ama-drag authority that kept T1's "crew
-      // toward ama" steering leg correctly signed (ROUND7_DECISION.md D-1).
-      // Round 9 (R9-3, ROUND9_physics_fidelity_work_order.md) corrects
-      // this to the genuinely physical 1.2 (mid-range): real proa steering
-      // is dominated by the sail CE/hull CLR balance and the steering oar,
-      // not by outrigger drag — T1's ama-drag-lever mechanism regressing
-      // here is the EXPECTED, intended consequence of removing an
-      // unphysical crutch, not a new bug (see ROUND9_physics_fidelity_
-      // findings.md for the resulting re-tag). The R7-4a drag-ratio hard
-      // anchor bands themselves were also re-derived (harness/asserts.js)
-      // since the old [0.4,1.0] max-immersion band is only reachable at
-      // formFactor>=~3 — it was an artifact of accommodating the
-      // unphysical value, not an independent physical constraint.
+      // formFactor: the ama is a slender float trailing fore-aft through the
+      // water like a second, smaller hull — NOT a bluff cross-flow body — so
+      // its drag is ITTC-57 skin friction at its own length/Reynolds number
+      // (hydro.js's shared ittc57Cf), same as the main hull, times this
+      // (1+k)-style form factor. 1.2 is mid-range for ITTC/Prohaska (normally
+      // 1.1-1.4 for a slender body).
+      //   DO NOT raise this to buy steering authority. Values of 2-3x the
+      // physical range have been used that way; real proa steering is
+      // dominated by the sail CE / hull CLR balance and the steering oar, not
+      // by outrigger drag, and the ama's genuine missing resistance is the
+      // residuary term above. The drag-ratio anchors in harness/asserts.js
+      // bound this.
       formFactor: 1.2,
-      // crewImmersionCoeff DELETED (F14, work-order-2026-07-30): the crew's
-      // effect on ama immersion is now DERIVED in hydro.js from the real
-      // buoyancy balance (crewPos*crew.mass vs ama.maxBuoyancy), not scaled by
-      // a tunable. The old 0.30 gave exactly 1/3 of the physical effect, and
-      // the comment it carried admitted it had been raised from 0.21 to keep a
-      // polar acceptance ratio in band — a knob fitted to a test threshold
-      // rather than to the float's buoyancy.
+      // NOTE: there is no crew-immersion coefficient. The crew's effect on
+      // ama immersion is DERIVED in hydro.js from the real buoyancy balance
+      // (crewPos*crew.mass vs ama.maxBuoyancy) rather than scaled by a
+      // tunable.
     },
 
     sail: {
@@ -636,289 +547,238 @@ function buildDefaultConfig() {
       // size reference (the streamwise chord, which does not change when the
       // sail is hoisted higher).
       //
-      // --- Vertical rig geometry (2026-08-04, docs/adr/0019) ---
+      // --- Vertical rig geometry (docs/adr/0019, 0020) ---
       // The manual's own control list (AC-6.3) names the halyard ("fal") and
       // the shroud ("wanta") alongside the sheet and the two brails, and three
       // of its techniques work through nothing else: AC-4.4 (mast stood
       // upright reinforces the carrot), AC-5.1a (halyard hauled to the
       // masthead cuts weather helm) and AC-5.1b (shroud tightened cuts weather
-      // helm). With CEheight a constant the model could answer none of them.
+      // helm). With CEheight a constant the model can answer none of them.
       //
-      // Two controls, both defaulting to the normal sailing state (hauled and
-      // tight), at which every term below is exactly zero -- so the model is
-      // bit-identical to what it was before this geometry existed, and none of
-      // hull.lead / ceSwingFraction / clrXFraction is retuned.
+      // The controls default to the normal sailing state (hauled and tight),
+      // at which every term below is exactly zero — so hull.lead,
+      // ceSwingFraction and clrXFraction are anchored against plain upright
+      // geometry and are not retuned by it.
       yardPeakAngleDeg: YARD_PEAK_ANGLE_DEG, // yard inclination from horizontal at full hoist; Oceanic lateen practice
       halyardDropDeg: 20,                  // how far the yard falls when the halyard is fully eased
       mastRakeMaxDeg: 12,                  // LATERAL mast lean from vertical with the shroud fully slack
       // Fore-aft rake, its own rigging (docs/adr/0020). The PJOA FOLK plan
       // sheet "Rigging - 8 sketches" draws the shroud (1) as a single line to
       // the AMA and the stays (2) as a fore-and-aft pair to eyebolts at both
-      // gunwales, with their own tensioner (2a). Two lines, adjusted
-      // separately -- so ADR 0019's single angle for both senses was wrong,
-      // and it left the model unable to rake the mast FORWARD at all, which
-      // is the classical cure for weather helm and a control the boat has.
+      // gunwales, with their own tensioner (2a) — two lines, adjusted
+      // separately. Keeping them separate is what lets the mast rake FORWARD,
+      // the classical cure for weather helm and a control the boat has.
       stayRakeMaxDeg: 12,                  // fore-aft lean at full stay travel, EACH WAY from upright
       // Derived, not chosen: the distance from the tack to the sail's CE along
       // the yard is whatever puts the CE at CEheight when the yard is at its
       // full-hoist angle. That is what keeps the default state identical.
       yardCERadius: p.CE_height_m / Math.sin(YARD_PEAK_ANGLE_DEG * Math.PI / 180),
-      // deltaMinDeg (S6, work-order-2026-08-02): the closest the SHEET can
-      // hold the yard to the centreline. A rig cannot be strapped flat just
-      // because the optimizer would like it to be: on an Oceanic lateen the
-      // tack is at the bow and the boom runs aft, so the sheet has to reach
-      // the clew from a point on the hull. Derived, not chosen —
-      // example_proa_parameters.csv fixes all three inputs:
-      //   spar length from the sail's own area and apex angle, treating the
-      //   sail as the triangle the aero table already models it as:
-      //     A = 0.5*L^2*sin(apex)  ->  L = sqrt(2A/sin(apex)) = 5.60 m
-      //   the clew must come within reach of the sternmost sheeting point,
-      //   a distance hull.length from the tack:
-      //     L*cos(deltaMin) <= hull.length  ->  deltaMin = acos(L_hull/L)
-      // At 12 m2 / 50 deg / 5.5 m that is 10.7 deg. A boom shorter than the
-      // hull imposes nothing and the expression correctly returns 0.
-      //
-      // ILL-CONDITIONED, and deliberately left visible rather than rounded
-      // into a tidy literal: L (5.60 m) and hull.length (5.5 m) are within
-      // 2% of each other, so acos() is evaluated where its slope is
-      // steepest. Sail area 11 m2 gives L=5.36 m and deltaMin=0; 13 m2 gives
-      // 19.3 deg. The VALUE is therefore a weak claim about this particular
-      // boat, even though the CONSTRAINT is a solid claim about the rig
-      // type. Do not tune it — measure what it costs and report that (see
-      // docs/findings-2026-08-02, stage 2). If a specific boat's real
-      // sheeting geometry ever becomes available, it belongs in
-      // example_proa_parameters.csv as its own measured parameter, which
-      // would retire this derivation rather than re-fit it.
-      // tackTravel (S2, work-order-2026-08-02): half-range, in metres, of the
-      // tack's fore-aft travel — controls.tackX = +-1 maps to +-this. An
-      // estimate, and unlike `hull.lead` an untroubling one, because the
-      // response to it is monotone and smooth over the whole range rather
-      // than a sign flip inside a 2.7 cm window. Measured before the control
-      // was built (by perturbing `lead`, which is mathematically the same
-      // displacement of xCE): the helm's zero crossing sits within 0.3 m of
-      // neutral at every one of TWA 70/90/110 x TWS 6/10, so 0.5 m of travel
-      // covers it roughly twice over at every operating point. The exact
-      // value therefore decides how much authority is left BEYOND neutral,
-      // not whether neutral is reachable — which is the property that
-      // matters and the one that is robust.
-      //
-      // 0.5 m is 9% of LWL. It is bounded above by the sail staying set as
-      // the tack moves and by the hull's own length; a specific boat's real
-      // tack-line travel would belong in example_proa_parameters.csv.
-      // ceBrailXShift (AC-4, 2026-08-03): metres the CE moves FORWARD at full
+      // ceBrailXShift (docs/adr/0015): metres the CE moves FORWARD at full
       // windward brail, as its own mechanism rather than as a modulation of
       // the trim swing. See core/aero.js for why it has to be its own term.
       //
       // Expressed in the same scaled chord the rest of the CE machinery uses
-      // (chord = CEheight/2 = 1.0 m), NOT in the rig's real streamwise extent
-      // (~5 m), so it stays consistent with ceSwingFraction and halfChord.
-      // chord/3 is the centroid shift from spilling the REAR HALF of the
-      // chord, which is what the manual describes at a full pull: "pull this
-      // brailing line ... unless it deform the sailcloth and continue to make
-      // rear part of the sail, breaking over to lee".
+      // (chord = CEheight/2), NOT in the rig's real streamwise extent, so it
+      // stays consistent with ceSwingFraction and halfChord. chord/3 is the
+      // centroid shift from spilling the REAR HALF of the chord, which is what
+      // the manual describes at a full pull: "pull this brailing line ...
+      // unless it deform the sailcloth and continue to make rear part of the
+      // sail, breaking over to lee".
       //
-      // Sensitivity checked rather than assumed: AC-4.2a/b reach 6/6 anywhere
-      // from 0.3 to 0.8 and collapse below ~0.25, so this sits at the
-      // conservative edge of a broad plateau rather than on a peak. A value
-      // picked to maximise the tally would have been 0.6.
-      ceBrailXShift: 0.333,
-      tackTravel: 0.5,
+      // Sensitivity checked rather than assumed: the brail acceptance criteria
+      // reach 6/6 anywhere from 0.3 to 0.8 and collapse below ~0.25, so any
+      // value in that band sits on a plateau rather than on a peak.
+      //   NOTE ON ITS REACH: this term enters the yaw moment as xCE*Fy, so its
+      // authority scales with the sail's SIDE force. That force collapses on
+      // deep courses (Fy is -24 N at TWA140 and -3 N at TWA160, against -185 N
+      // close-hauled), so raising this does essentially nothing downwind — the
+      // brail's deep-course authority is the LATERAL arm instead, yceBrailShift
+      // below. Do not reach for this knob to fix a downwind problem.
+      ceBrailXShift: 0.5,
+      // tackTravel: half-range, in metres, of the tack's fore-aft travel —
+      // controls.tackX = +-1 maps to +-this. An estimate, and unlike
+      // `hull.lead` an untroubling one, because the response to it is monotone
+      // and smooth over the whole range rather than a sign flip inside a
+      // 2.7 cm window. The helm's zero crossing sits within 0.3 m of neutral
+      // at every one of TWA 70/90/110 x TWS 6/10, so even half this travel
+      // covers it at every operating point. The exact value therefore decides
+      // how much authority is left BEYOND neutral, not whether neutral is
+      // reachable — which is the property that matters and the robust one.
+      //
+      // 0.8 m is 16% of LWL. It is bounded above by the sail staying set as
+      // the tack moves and by the hull's own length; a specific boat's real
+      // tack-line travel would belong in example_proa_parameters.csv.
+      //
+      // WHERE IT DOES AND DOES NOT HELP: this is a fore-aft arm, so it acts
+      // through xCE*Fy and its authority follows the sail's SIDE force.
+      // Measured, per +0.3 m of travel at tackX=+1: -56 N*m at TWA70, -7 N*m
+      // at TWA140, -1 N*m at TWA160. It is a close-hauled and reaching
+      // control. Growing it to buy DOWNWIND course holding does not work, and
+      // the moment it does add on deep courses has the round-up sign.
+      tackTravel: 0.8,
+      // deltaMinDeg (docs/adr/0010): the closest the SHEET can hold the yard
+      // to the centreline. A rig cannot be strapped flat just because the
+      // optimizer would like it to be: on an Oceanic lateen the tack is at the
+      // bow and the boom runs aft, so the sheet has to reach the clew from a
+      // point on the hull. Derived, not chosen — example_proa_parameters.csv
+      // fixes all three inputs:
+      //   spar length from the sail's own area and apex angle, treating the
+      //   sail as the triangle the aero table already models it as:
+      //     A = 0.5*L^2*sin(apex)  ->  L = sqrt(2A/sin(apex))
+      //   the clew must come within reach of the sternmost sheeting point,
+      //   a distance hull.length from the tack:
+      //     L*cos(deltaMin) <= hull.length  ->  deltaMin = acos(L_hull/L)
+      // A boom shorter than the hull imposes nothing and the expression
+      // correctly returns 0, which is the case on the current boat.
+      //
+      // ILL-CONDITIONED, and deliberately left as an expression rather than
+      // rounded into a tidy literal: when the spar and the hull are within a
+      // few percent of each other, acos() is evaluated where its slope is
+      // steepest, so a small change in sail area swings the result by many
+      // degrees. The VALUE is therefore a weak claim about any particular
+      // boat, even though the CONSTRAINT is a solid claim about the rig type.
+      // Do not tune it — measure what it costs and report that. A real
+      // measured sheeting geometry belongs in example_proa_parameters.csv as
+      // its own parameter, which would retire this derivation rather than
+      // re-fit it.
       deltaMinDeg: (() => {
         const sparLength = Math.sqrt(2 * p.sail_area_m2 / Math.sin(p.sail_apex_angle_deg * Math.PI / 180));
         if (sparLength <= p.boat_length_m) return 0;
         return Math.acos(p.boat_length_m / sparLength) * 180 / Math.PI;
       })(),
-      // camber/CD0/s: round 10 (R10-1, docs/adr/0003) retune. aero.js never
-      // reads the aeroTable's own CD column (only CL) — CD is recomputed
-      // at RUNTIME from CD0/s below, so switching the CL table to the v2
-      // measured-anchored curve does NOTHING to drag unless these two are
-      // ALSO updated to the same fit (crab_claw_CL_CD_v2.csv's own
-      // generation parameters, AERO_V2_PARAMS in config.js): CD0=0.040
-      // (identical for both apex 45/60 in the fit); `s` interpolated at
-      // apexAngleDeg=50 between the two apex fits (0.406/0.428) -> ~0.41.
-      // `camber`: SET TO 0, changed from round 9's 0.10 — the Di Piazza
-      // Santa Cruz curve is a MEASURED sail's actual CL, already carrying
-      // whatever real camber that sail had. Round 10d (C-C,
-      // ROUND10d_helm_balance.md) redefined what this value MEANS rather
-      // than just leaving it at 0: aero.js's camberCLDelta() now reads
-      // `camber` (and brailCamberGain below) as a DELTA beyond the active
-      // table's own built-in camber (aeroV2BuiltinCamber for v2, 0 for
-      // v1 — a genuinely flat theoretical table), not an absolute camber
-      // ratio applied on top of a flat plate — see camberCLDelta's own
-      // comment in aero.js for the double-counting this fixes (the OLD
-      // camberCLFactor call always assumed a flat-plate baseline, which
-      // was only ever true for v1). camber=0 stays a no-op for v2's own
-      // baseline exactly as before (delta=0); the fix specifically
-      // corrects brailCamberGain below, which is the only thing that
-      // makes camberEff nonzero by default.
+      // camber: a DELTA beyond the active table's own built-in camber
+      // (aeroV2BuiltinCamber for v2, 0 for v1 — a genuinely flat theoretical
+      // table), not an absolute ratio applied on top of a flat plate. See
+      // aero.js's camberCLDelta for the double-counting that distinction
+      // avoids. It is 0 here because the Di Piazza Santa Cruz curve is a
+      // MEASURED sail's actual CL and already carries that sail's real
+      // camber, so on v2 there is nothing to add. Only re-enable a nonzero
+      // value with a table that is genuinely flat.
+      //   NOTE: aero.js never reads the aeroTable's own CD column, only CL —
+      // CD is rebuilt at runtime from the CD model below. Switching the CL
+      // table therefore does NOTHING to drag unless those constants are
+      // switched to the same fit as well.
       camber: 0,
-      // aeroV2BuiltinCamber (round 10d, C-C): the v2 table's own built-in
-      // camber ratio, "1:10" per the work order (Di Piazza's Santa Cruz
-      // sail — a real rigid crab-claw, not a flat theoretical plate — this
-      // is an order-of-magnitude literature figure for that class of sail,
-      // not independently re-measured from the digitized curve itself).
+      // aeroV2BuiltinCamber: the v2 table's own built-in camber ratio, "1:10"
+      // (Di Piazza's Santa Cruz sail — a real rigid crab claw, not a flat
+      // theoretical plate). An order-of-magnitude literature figure for that
+      // class of sail, not independently re-measured from the digitized curve.
       // Only read when sail.aeroTableVersion is 'v2' (aero.js); v1 uses 0
-      // (a genuinely flat, uncambered theoretical table) unconditionally.
+      // unconditionally.
       aeroV2BuiltinCamber: 0.10,
-      // --- CD model (F7, work-order-2026-07-30, docs/adr/0007) ------------
+      // --- CD model (docs/adr/0007) ---------------------------------------
       // CD = CD0 + inducedK*CL_working^2 + CDbroadside*sin^4(alpha)
       //      + brailParasiticCD*max(brails) + flogging
       // Least-squares fit to Di Piazza's four measured Santa Cruz (CL,CD)
-      // pairs PLUS their reported L/D_max ~5.4 as a fifth constraint (the
-      // four pairs alone leave alpha<20deg unconstrained — the fit then runs
-      // peak L/D to 7.6). Residuals vs the four pairs: +0.029/+0.036/-0.021/
-      // +0.010, i.e. inside the digitisation uncertainty the source CSV
-      // states (+-0.05). Replaces the old CD0 + s*CLtable*tan(alpha): that
-      // form had a pole at 90deg, collapsed to CD0 there (CLtable=0 exactly)
-      // and drove induced drag from the TABLE CL rather than the working one.
-      // `s` is gone with it — it had no other runtime reader.
+      // pairs PLUS their reported L/D_max ~5.4 as a fifth constraint — the
+      // four pairs alone leave alpha<20deg unconstrained and let the fit run
+      // peak L/D to 7.6. Residuals vs the four pairs:
+      // +0.029/+0.036/-0.021/+0.010, inside the +-0.05 digitisation
+      // uncertainty the source CSV states.
       CD0: 0.0375,
       inducedK: 0.215,                         // induced-drag coefficient on the WORKING CL^2
       CDbroadside: 1.06,                       // CD at alpha=90 (flat-plate/separated limit); with sin^4 it is negligible at the low-alpha calibration point
-      brailParasiticCD: 0.06,                  // extra parasitic drag from gathered/flogging cloth, scaled by max(brailLee, brailWind) — F7: the brails' drag effect is an ADDITION, not a multiplier that cut drag
-      // --- Effective area under brail (F4) --------------------------------
-      // A brail gathers cloth: the working area shrinks. AGGRESSIVE variant
-      // (maintainer's call): a full TRIM-regime carrot keeps 55% of the area,
-      // so reefing genuinely depowers instead of adding force. The survival
-      // endpoint (0.20) is picked to land near the OLD CL x0.2 cut at
-      // brailWind=1, keeping the T6/stop/squall calibration at full pull.
+      brailParasiticCD: 0.06,                  // extra parasitic drag from gathered/flogging cloth, scaled by max(brailLee, brailWind) — an ADDITION, not a multiplier that cuts drag
+      // --- Effective area under brail --------------------------------------
+      // A brail gathers cloth: the working area shrinks. Deliberately
+      // aggressive — a full TRIM-regime carrot keeps 55% of the area, so
+      // reefing genuinely depowers instead of adding force. The survival
+      // endpoint (0.20) lands near a CL x0.2 cut at brailWind=1, which is
+      // where the panic / stop / squall scenarios are calibrated.
       areaAtTrimBrail: 0.55,                   // areaFactor at brailWind = brailTrimRange
       areaAtFullBrail: 0.20,                   // areaFactor at brailWind = 1
       areaAtFullLeeBrail: 0.35,                // areaFactor at brailLee = 1 (linear in brailLee)
-      // --- Sheet constraint (ROUND5_CONSOLIDATED_work_order.md P1) ---
-      yardSwingRateDegPerSec: 90,             // tunable — max slew rate for state.delta relaxing toward its equilibrium (request's own suggested 60-120deg/s band: "a swinging yard, not a teleport")
-      deltaMaxReleaseDeg: 90,                 // the sheet limit is released to this during a shunt's ease/transfer/swap phases, then closes back to the commanded controls.sheet once 'sheet' starts hauling it in (P1.1 point 3)
-      floggingCDFactor: 0.15,                 // tunable — extra parasite drag while luffing (delta held below the sheet limit by the wind, not by the sheet), as a fraction of CD0; request's own suggested 0.1-0.2 band
-      // --- CE geometry (P1.2, redone round 7 D-6) --- tackXFraction is
-      // now UI-rendering-only (ui/app.js draws the mast/tack at this
-      // fraction of hull half-length); aero.js's yaw-moment CE geometry no
-      // longer reads it — see hull.lead above and ceSwingFraction below.
-      tackXFraction: 0.06,                    // fraction of hull half-length — mast/tack position, active-bow side of CG (UI drawing only, round 7)
+      // --- Sheet constraint -------------------------------------------------
+      yardSwingRateDegPerSec: 90,             // tunable — max slew rate for state.delta relaxing toward its equilibrium; a swinging yard, not a teleport (60-120deg/s band)
+      deltaMaxReleaseDeg: 90,                 // the sheet limit is released to this during a shunt's ease/transfer/swap phases, then closes back to the commanded controls.sheet once 'sheet' starts hauling it in
+      floggingCDFactor: 0.15,                 // tunable — extra parasite drag while luffing (delta held below the sheet limit by the wind, not by the sheet), as a fraction of CD0; 0.1-0.2 band
+      // --- CE geometry ------------------------------------------------------
+      // tackXFraction is UI-RENDERING-ONLY: ui/app.js draws the mast/tack at
+      // this fraction of hull half-length. aero.js's yaw-moment CE geometry
+      // does not read it — see hull.lead above and ceSwingFraction below.
+      tackXFraction: 0.06,                    // fraction of hull half-length — mast/tack position, active-bow side of CG (UI drawing only)
       // ceRadius (docs/adr/0024) -- DERIVED distance from the tack to the
       // sail's own area centroid, along the bisector of the two spars:
       //   spar   = sqrt(2*A/sin(apex))
       //   rC     = 2*spar*cos(apex/2)/3        (centroid of a triangle with
       //                                         two equal sides from the tack)
-      // This is the base length for the LATERAL CE offset only. It is a
+      // This is the base length for the LATERAL CE offset ONLY. It is a
       // geometric fact about where the sail hangs, not a centre-of-pressure
-      // migration, and it is 11x the half-chord the model used to share
-      // between both axes (2.76 m against 0.25 m).
+      // migration, which is why it must not share the fore-aft swing's
+      // half-chord: the two differ by an order of magnitude (2.76 m against
+      // 0.25 m on this boat).
       ceRadius: 2 * Math.sqrt(2 * p.sail_area_m2 / Math.sin(p.sail_apex_angle_deg * Math.PI / 180))
         * Math.cos(p.sail_apex_angle_deg * Math.PI / 360) / 3,
       // yceFraction: how far along that tack->centroid line the lateral centre
       // of pressure actually sits. 1.0 is the area centroid; a vortex-lift
       // sail's CP sits closer to the leading edge, and this is where that
-      // belongs -- NOT in the base length, which is geometry. See ADR 0024 for
-      // the measurement that set it.
+      // belongs -- NOT in the base length, which is geometry. See docs/adr/0024
+      // for the measurement that set it.
       yceFraction: 0.35,
-      ceBrailShift: 0.3,                      // tunable (P2-3), fraction of the half-chord the CE shifts toward the tack at brailWind=1 (spilling the sail's rear/upper area), request's own suggested ~0.25-0.35 band
-      // yceBrailShift (round 10c, C1, ROUND10c_carrot_two_regime.md):
-      // SEPARATE from ceBrailShift above — round 10b (D2) unified xCE/yCE
-      // onto the same shrinking half-chord, but the manual's downwind
-      // "carrot" technique needs the LATERAL arm (yCE) to shrink harder
-      // than the fore-aft one: gathering the sail's rear/upper area toward
-      // the yard's pivot pulls the pressure centroid inboard/up on both
-      // axes, but it's specifically the lateral (yCE) collapse that attacks
-      // the deep-course luffing/yaw moment (-yCE*Fx in aero.js's
-      // yawMoment) — the mechanism this round's bear-away/dead-run-release
-      // acceptance tests depend on. Set stronger than ceBrailShift (0.3);
-      // kept < 1 so halfChordEffY never reverses sign at brailWind=1.
+      ceBrailShift: 0.3,                      // tunable — fraction of the half-chord the CE shifts toward the tack at brailWind=1 (spilling the sail's rear/upper area); ~0.25-0.35 band
+      // yceBrailShift: SEPARATE from ceBrailShift above, and deliberately
+      // stronger. Gathering the sail's rear/upper area toward the yard's pivot
+      // pulls the pressure centroid inboard and up on BOTH axes, but it is
+      // specifically the lateral (yCE) collapse that attacks the deep-course
+      // luffing/yaw moment (-yCE*Fx in aero.js's yawMoment), which is the
+      // mechanism the manual's downwind "carrot" technique relies on. Kept < 1
+      // so halfChordEffY never reverses sign at brailWind=1.
       yceBrailShift: 0.6,
-      // brailTrimRange (round 10c, C1): the windward brail's two real
-      // roles per the manual — TRIM (partial pull: deepens the belly,
-      // shifts CE toward the tack, sail keeps drawing) vs SURVIVAL (pull
-      // past this point: spills power, panic/furl territory) — were
-      // conflated by round 5's single linear CL/moment cut. Below this
-      // fraction of brailWind, aero.js's brailRegimeBlend() applies only
-      // the mild TRIM-regime cuts; above it, cuts ramp to the original
-      // strong SURVIVAL-regime values (preserving T6/panic and the stop/
-      // squall scenarios). 0.6 is this round's own suggested default —
-      // not independently measured, same status as ceBrailShift/
-      // ceSwingFraction.
+      // brailTrimRange: the split point between the windward brail's two real
+      // roles per the manual — TRIM (partial pull: deepens the belly, shifts
+      // the CE toward the tack, sail keeps drawing) and SURVIVAL (pull past
+      // this point: spills power, panic/furl territory). Below this fraction
+      // of brailWind, aero.js's brailRegimeBlend() applies only the mild
+      // TRIM-regime cuts; above it, cuts ramp to the strong SURVIVAL values
+      // the panic and stop/squall scenarios are calibrated against. Not
+      // independently measured, same status as ceBrailShift/ceSwingFraction.
       brailTrimRange: 0.6,
-      // brailCamberGain (round 10c, C1): the manual's TRIM-regime
-      // technique deepens the sail's belly under partial windward-brail
-      // pull (gathering the leech doesn't just spill area, it also bags
-      // the remaining draft) — reuses the existing camber->CL machinery
-      // (camberCLDelta/camberCDf in aero.js) rather than a new curve.
-      // Peaks at brailTrimRange (full TRIM-regime pull) via
-      // brailRegimeBlend, fading back to 0 by brailWind=1 (a fully spilled
-      // SURVIVAL-regime sail is gathered, not bagged). Round 10d (C-C)
-      // fixed two things this round 10c comment used to flag as known
-      // gaps: (1) this value is now read as a DELTA beyond the v2 table's
-      // own built-in camber (aeroV2BuiltinCamber above), not an absolute
-      // ratio double-counting it — the OLD camberCLFactor call was
-      // silently applying MORE bonus than a value this size should give,
-      // on top of a curve that was already cambered; (2) camberCLFactor's
-      // own fade window was extended 45deg -> 75deg (aero.js
-      // CAMBER_FADE_END_DEG) — deep-course TRIM-regime trims sampled at
-      // 32-85deg alphaSailor (D4/C's own recipes), mostly PAST the old
-      // 45deg cutoff, so this term was silently near-inactive for most of
-      // its own intended use case. Magnitude itself (0.45) unchanged —
-      // still this round's own suggested default, not independently
-      // measured, same status as ceBrailShift/ceSwingFraction; the C2
-      // deep-course speed-ratio test is re-anchored against the corrected
-      // (smaller, since it no longer double-counts) effective bonus — see
-      // ROUND10d_helm_balance_findings.md.
-      //
-      // F6 (work-order-2026-07-30): cut 0.45 -> 0.10. At 0.45 the DELTA is
-      // added to the table's own 0.10, so camberCLFactor was evaluated at
-      // c = 0.55 — a 55%-of-chord draft, i.e. a half-circle, roughly 4x
-      // outside the c ~ 0.05-0.15 band the linear 1+1.75c fit is valid over.
-      // 0.10 keeps the sum (camber + gain + builtin) at the 0.20 ceiling
-      // validateConfig now enforces, and still gives a real TRIM-regime
-      // bonus: CL x1.15 at low alpha. The area model (F4) now carries the
-      // brail's force change; this term only carries the BAGGING effect it
-      // was always meant to describe.
+      // brailCamberGain: the manual's TRIM-regime technique deepens the
+      // sail's belly under partial windward-brail pull — gathering the leech
+      // does not just spill area, it also bags the remaining draft. Reuses the
+      // camber->CL machinery (aero.js's camberCLDelta) rather than a new
+      // curve. Peaks at brailTrimRange via brailRegimeBlend, fading back to 0
+      // by brailWind=1, since a fully spilled SURVIVAL-regime sail is
+      // gathered, not bagged. Read as a DELTA beyond the table's own built-in
+      // camber.
+      //   The magnitude is bounded by validity, not by taste: camber + gain +
+      // built-in must stay inside the c ~ 0.05-0.15 band the linear 1+1.75c
+      // fit is valid over, and validateConfig enforces a 0.20 ceiling on that
+      // sum. 0.10 sits at the ceiling and still gives a real TRIM-regime bonus
+      // (CL x1.15 at low alpha). The area model carries the brail's force
+      // change; this term carries only the BAGGING effect.
       brailCamberGain: 0.10,
-      // ceSwingFraction: round 7, D-6. The yard's swing (delta) still
-      // moves the CE fore-aft/athwartship (a real crab-claw's CE genuinely
-      // shifts with trim — that's the whole mechanism by which trimming
-      // steers), but round 5's model let the FULL geometric half-chord
-      // excursion reach the CE, which the owner's field datum (D-6) says
-      // is far too responsive for a real Pjoa. A flow-attached aerodynamic
-      // center tracks closer to the leading edge across the practical trim
-      // range than the raw geometric midchord, so only a fraction of the
-      // full swing should reach it.
-      // Round 10b (D1) audit: this comment used to claim "0.2 is
-      // empirically landed against the D-6 target", contradicting the
-      // 0.5 checked in right below it. git history (`git log -p --
-      // core/config.js`) shows 0.5 is the ONLY value ever committed here —
-      // there is no commit where 0.2 was the active, tested value. The
-      // referenced tests (T1/T3/T4/T5) were also retired and replaced by
-      // the R9 follow-up's "Sail steers"/"T2" steeringDrift+steeringOk
-      // checks below. Re-verified directly this round: at 0.5 the current
-      // "Sail steers: trimming the sheet in points up" probe drifts
-      // 2.3deg (passes steeringOk's 2deg floor); at 0.2 it drifts only
-      // 0.17deg — noise-level, FAILS. So 0.5 is what's actually validated
-      // today; the old "0.2" claim was dropped rather than restored.
+      // ceSwingFraction: the yard's swing (delta) moves the CE fore-aft and
+      // athwartship — a real crab claw's CE genuinely shifts with trim, which
+      // is the whole mechanism by which trimming steers — but only a FRACTION
+      // of the full geometric half-chord excursion should reach it: a
+      // flow-attached aerodynamic centre tracks closer to the leading edge
+      // across the practical trim range than the raw geometric midchord.
+      // Letting the full excursion through makes the boat far more
+      // trim-responsive than the owner's field datum for a real Pjoa.
+      //   Sensitivity: at 0.5 the "Sail steers" probe drifts 2.3deg and passes
+      // steeringOk's floor; at 0.2 it drifts 0.17deg, which is noise.
       ceSwingFraction: 0.5,
-      // verticalLiftFraction: round 9, R9-4. Fraction of the sail's force
-      // treated as vertical (upward) lift on a normally-trimmed crab claw,
-      // unloading the heel arm for the same drive (see aero.js
-      // sailForces()'s heelMoment comment for the Marchaj-vs-Di-Piazza
-      // literature tension). Defaulted to 0 (mechanism present, inactive)
-      // rather than the work order's suggested ~0.15-0.25: empirically,
-      // post R9-1/R9-2/R9-3's already-higher sail power, the established
-      // capsize-safety scenarios (T6's held-sheet gust, T10, the aback
-      // scenario) sit on a genuine knife-edge at this operating point —
-      // even verticalLiftFraction=0.01 flips T6's held-sheet gust from a
-      // clean capsize (maxPhi=65deg) to none (34deg); there is no
-      // meaningful nonzero value that both matches the work order's
-      // ~0.15-0.25 intent and preserves those scenarios' validated
-      // capsize margins. This is a fresh capsize-margin recalibration
-      // exercise (re-deriving gust/trim severity for T6/T10/aback) beyond
-      // this round's scope — deferred, not abandoned; see
-      // ROUND9_physics_fidelity_findings.md.
+      // verticalLiftFraction: fraction of the sail's force treated as vertical
+      // (upward) lift on a normally-trimmed crab claw, unloading the heel arm
+      // for the same drive — see aero.js's heelMoment comment for the
+      // Marchaj-vs-Di-Piazza tension over whether the effect is large or
+      // modest.
+      //   DEFAULTED TO 0: mechanism present, inactive. The capsize-safety
+      // scenarios sit on a genuine knife edge at this operating point — even
+      // 0.01 flips the held-sheet gust test from a clean capsize (maxPhi
+      // 65deg) to none (34deg) — so there is no nonzero value that both
+      // matches the literature's ~0.15-0.25 intent and preserves those
+      // scenarios' validated margins. Enabling it requires re-deriving the
+      // gust/trim severity of the capsize scenarios first. Deferred, not
+      // abandoned.
       verticalLiftFraction: 0,
-      // aeroTableVersion (round 10, R10-1, docs/adr/0003): 'v2' (default)
-      // = Di Piazza 2014 measured-anchored table; 'v1' = the original
-      // Marchaj/Polhamus theoretical table. Kept switchable (not a one-way
-      // migration) per the round-0 design intent ("wymienne zestawy
-      // krzywych" — swappable curve sets) so Marchaj-vs-DiPiazza stays a
-      // live comparison, not just a historical note. createConfig()
-      // re-derives `aeroTable` from this field on every call, so the
-      // boat-design tab can switch it at runtime.
+      // aeroTableVersion (docs/adr/0003): 'v2' (default) = Di Piazza 2014
+      // measured-anchored table; 'v1' = the Marchaj/Polhamus theoretical one.
+      // Kept switchable rather than migrated one-way, so Marchaj-vs-Di-Piazza
+      // stays a live comparison. createConfig() re-derives `aeroTable` from
+      // this field on every call, so the boat-design tab can switch it at
+      // runtime.
       aeroTableVersion: 'v2',
     },
 
@@ -926,124 +786,105 @@ function buildDefaultConfig() {
       mass: 90,                // kg
       posMin: -0.3,
       posMax: 1.0,
-      posXMin: -1.0,            // fore-aft crew position range (FIX_REQUEST_round4_roll_dof.md 1.5)
+      posXMin: -1.0,            // fore-aft crew position range
       posXMax: 1.0,
     },
 
     stability: {
-      abackCapsizeTime: 6,       // s — sustained aback before capsize (acceptance criterion 3; unchanged, R8-1(b): already physical)
-      amaLoadDisplayCap: 3.0,    // UI-safe ceiling for amaLoad readouts (FIX_REQUEST_step1_round2.md R2-3); the raw value stays unclamped for the aback timer above
-      // --- Roll as a 4th DOF (FIX_REQUEST_round4_roll_dof.md Part 1) ---
-      // I_roll: the extension request's own suggested starting estimate
-      // (displacement*(0.4*ama.spacing)^2 = 190*1.0^2 = 190 kg*m^2) gave a
-      // roll period of only ~1.0s at a representative 8deg step, well
-      // under the requested 1.5-4s band — raised (tunable, as the request
-      // itself flags this default) to hit the target: 1500 kg*m^2 gives a
-      // measured period of ~2.6s (empirical step-response probe, 8deg
-      // initial displacement, zero wind).
+      abackCapsizeTime: 6,       // s — sustained full submersion before capsize
+      amaLoadDisplayCap: 3.0,    // UI-safe ceiling for amaLoad readouts; the raw value stays unclamped for the aback timer and the flying-ama warning
+      // --- Roll calibration -------------------------------------------------
+      // I_roll and rollDampingCoeff are TUNED AS A PAIR against a target roll
+      // response, not derived from a mass distribution: an 8deg step should
+      // give a period inside 1.5-4 s and settle (|phi|<0.4deg) within 2-4
+      // oscillation periods. A first-principles estimate of the form
+      // displacement*(0.4*ama.spacing)^2 gives a period near 1.0 s, well under
+      // that band, which is why the value here is larger.
+      //
+      // CAVEAT, worth knowing before trusting either number: these two, and
+      // phiLiftoffDeg/phiSubmergeDeg below, all predate the re-parameterisation
+      // onto the real PJOA FOLK (docs/adr/0021), which changed ama mass,
+      // buoyancy and spacing and therefore the roll stiffness they were paired
+      // against. They still land inside the acceptance bands, so no test flags
+      // them, but they are the model's weakest calibration.
       I_roll: 1500,
-      phiLiftoffDeg: 12,          // deg — roll angle at which the ama's weight-restoring moment saturates ("ama just clear of the water", amaLoad == 1.0 exactly here)
-      phiSubmergeDeg: 10,         // deg — roll angle (negative side) at which the ama's buoyancy-restoring moment saturates ("ama fully submerged", amaLoad == 1.0 exactly here)
-      // rollDampingCoeff: paired with I_roll=1500 above, originally tuned
-      // so an 8deg step settles (|phi|<0.4deg) in ~3.2 oscillation periods
-      // (within the requested 2-4 period, damped-overshoot band), which
-      // Round 7 sec 6 cross-checked as implying a damping ratio zeta~0.152
-      // — plausible but on the low side of the zeta~0.2-0.4 cited for a
-      // beamy multihull form with an ama sweeping through water. Round 9
-      // (R9-5, ROUND9_physics_fidelity_work_order.md): modest bump toward
-      // that range (zeta~0.19 at this value, same I_roll/stiffness) —
-      // independent, small, opportunistic; not re-tuned to any specific
-      // downstream test.
-      rollDampingCoeff: 1100,
-      // phiCapsizeDeg (EXTENSION_round5_sheet_constraint.md R5-2.1): past
-      // this angle (symmetric on both sides) the ama's restoring arm
-      // reverses into a genuine capsizing arm — see stability.js
-      // rollRestoreMoment. 50deg is 38deg past phiLiftoffDeg (12) and 40deg
-      // past phiSubmergeDeg (10), both within the request's own suggested
-      // "~35-40deg past liftoff" band, and comfortably below the 58deg
-      // runaway heel the round-4 review found holding as a spurious stable
-      // equilibrium (verified fixed — see ARCHITECTURE doc).
+      // phiLiftoffDeg / phiSubmergeDeg are the roll angles at which the ama's
+      // weight- and buoyancy-restoring moments saturate — "just clear of the
+      // water" and "fully submerged" — and amaLoad reads exactly 1.0 at each.
+      // They are free constants, NOT derived from the ama's own geometry and
+      // spacing, which is what they physically are.
+      phiLiftoffDeg: 12,          // deg — ama's weight-restoring moment saturates ("ama just clear of the water")
+      phiSubmergeDeg: 10,         // deg — ama's buoyancy-restoring moment saturates ("ama fully submerged")
+      rollDampingCoeff: 1100,     // N*m per (rad/s), linear — see the I_roll note above; the pair sets the damping ratio
+      // phiCapsizeDeg: past this angle (symmetric on both sides) the ama's
+      // restoring arm reverses into a genuine capsizing arm — see stability.js
+      // rollRestoreMoment. It sits ~35-40deg past liftoff/submergence, and
+      // must stay well below the heel at which a flat-forever restoring curve
+      // would let the boat find a spurious stable equilibrium.
       phiCapsizeDeg: 50,
-      // capsizeTriggerMarginDeg (round 8, R8-1): the flying-side (phi>=0)
-      // capsize trigger is now purely physical — phi crossing
-      // phiCapsizeDeg + this margin, not a timer. The margin exists so
-      // the boat visibly rolls PAST the capsizing-arm reversal before
-      // integrate()'s freeze-on-capsize catches it (R5-2.2) — freezing
-      // exactly AT the reversal would look like the state stopping the
-      // instant it goes unstable, not "rolling over". 15deg (round doc's
-      // own suggested value) is comfortably inside the capped capsizing-
-      // arm's own span (stability.js's rollRestoreMoment ramps to zero
-      // and on into the capped reversed arm over the SAME span past
-      // phiCapsizeDeg used to hold the old timer-based trigger, HOLD_FRAC
-      // through to phiCapsizeDeg + (phiCapsizeDeg-phiLiftoffDeg)), so the
-      // boat is already accelerating hard under a genuine capsizing
-      // moment for the whole 15deg, not coasting on residual momentum.
+      // capsizeTriggerMarginDeg: how far PAST the capsizing-arm reversal the
+      // capsize trigger fires. The margin exists so the boat visibly rolls
+      // past the point of no return before integrate()'s freeze catches it —
+      // freezing exactly AT the reversal would look like the state stopping
+      // the instant it goes unstable, not like rolling over. 15deg sits
+      // comfortably inside the capped capsizing arm's own span, so the boat is
+      // accelerating under a genuine capsizing moment for the whole of it
+      // rather than coasting on residual momentum.
       capsizeTriggerMarginDeg: 15,
     },
 
     rudder: {
       maxDeflectionDeg: 35,
-      // area (F9, work-order-2026-07-30): 0.4 m^2 was an unanchored "tunable
-      // estimate" and is a DINGHY RUDDER blade, not a hand-held steering oar —
-      // it is what produced 2.2 kN (1.2 g on this boat) at 6 kn, eight times
-      // the sail's own side force. A Polynesian steering paddle's blade is
-      // roughly 0.75 m x 0.20 m. ADR 0005's coeff stays as derived; this is
-      // the term that was wrong.
+      // area: this is a hand-held Polynesian steering PADDLE, roughly
+      // 0.75 x 0.20 m — not a dinghy rudder blade. The distinction is not
+      // cosmetic: at 0.4 m^2 the oar produces 2.2 kN at 6 kn, which is 1.2 g
+      // laterally on this boat and eight times the sail's own side force.
       area: 0.15,               // m^2 — steering-oar blade (~0.75 x 0.20 m)
-      // stallAngleDeg (F9): a low-AR (~1.5) plate separates around 20-25deg;
-      // past it core/rudder.js's lift shape falls away instead of climbing to
-      // the mechanical limit. Below it the shape is exactly the old
-      // sin(deflection), so ADR 0005's slope derivation is untouched.
+      // stallAngleDeg: a low-AR (~1.5) plate separates around 20-25deg; past
+      // it core/rudder.js's lift shape falls away instead of climbing to the
+      // mechanical limit. Below it the shape is exactly sin(deflection), so
+      // ADR 0005's slope derivation applies unmodified.
       stallAngleDeg: 22,
-      // Blade drag (F9): steering was previously free — rudderForce returned
-      // no Fx at all. CD0 is a thin plate's parasitic drag; inducedK gives the
-      // lift-induced part, so hard steering costs speed and hard-over-past-
+      // Blade drag: CD0 is the thin plate's parasitic drag, inducedK the
+      // lift-induced part, so hard steering costs speed and hard-over past
       // stall costs a lot of it.
-      // CD0 referenced to the blade's PLANFORM area: skin friction on both
+      // CD0 is referenced to the blade's PLANFORM area: skin friction on both
       // faces (~2*Cf ~ 0.008) plus section/form drag for a plain oar blade.
-      // 0.02 is that; an initial 0.05 was measured to make a CENTRED oar 22%
-      // of total drag, which is bluff-strut territory, not a blade.
+      // For scale, 0.05 here would make a CENTRED oar 22% of total drag, which
+      // is bluff-strut territory, not a blade.
       CD0: 0.02,
       // inducedK ~ 1/(pi*AR*e) with AR~1.5 and e~0.7 gives 0.30; 0.35 keeps a
       // little margin for a square-tipped blade.
       inducedK: 0.35,
-      // coeff: round 10b (D3, docs/adr/0005) — derived, not felt. The blade
-      // is a low-AR (~1-2) lifting surface; core/rudder.js's CL(deflection)
-      // = coeff*sin(deflection) stays in the small/moderate-angle range
-      // for the whole 35deg mechanical travel, so coeff is matched against
-      // the Helmbold low-AR lift-curve SLOPE (2*pi*AR/(2+sqrt(AR^2+4))),
-      // not a stall CLmax the model doesn't represent. AR=1-2 spans
-      // 1.48-2.60/rad; AR=1.5 midpoint gives 2.09 (rounded 2.1). Cross-
-      // checks against Hoerner's independently measured CLmax~1.0-1.2 for
-      // AR~1-2 flat plates at high AoA: CL(35deg)=2.1*sin(35deg)=1.20,
-      // inside that range. Replaces the previous feel-based "halved from
-      // 3.5" (1.75) — see ADR 0005 for the full derivation and why the
-      // "too sharp" ergonomic complaint that motivated that halving
-      // belongs in UI input shaping (ui/app.js), not the blade physics.
+      // coeff: DERIVED, not felt (docs/adr/0005). The blade is a low-AR (~1-2)
+      // lifting surface, and core/rudder.js's CL = coeff*sin(alpha) stays in
+      // the small/moderate-angle range over the whole 35deg mechanical travel,
+      // so coeff is matched against the Helmbold low-AR lift-curve SLOPE
+      // (2*pi*AR/(2+sqrt(AR^2+4))), not a stall CLmax the model does not
+      // represent. AR=1-2 spans 1.48-2.60/rad; the AR=1.5 midpoint gives 2.09.
+      // Cross-checked against Hoerner's independently measured CLmax~1.0-1.2
+      // for AR~1-2 flat plates at high AoA: CL(35deg) = 2.1*sin(35deg) = 1.20,
+      // inside that range.
+      //   If steering feels too sharp, that belongs in UI input shaping
+      // (ui/app.js), NOT in this coefficient.
       coeff: 2.1,
     },
 
 
-    // P4 (docs/work-order-2026-07-22.md; docs/diagnostic-2026-07-22-
-    // residuary-hump.md Result 6): the shipped speedLockout=4 m/s (7.8kn)
-    // and 5.0s total sequence let a proa shunt near full reach speed —
-    // the literature is unanimous a proa comes to a genuine stop first,
-    // with the crew physically carrying the yard heel end to end (a
-    // materially slower process than a quick automatic animation).
-    // speedLockout is lowered toward "nearly stopped," bounded below by
-    // harness/scenarios.js's scenarioShunt — an unmodified structural test
-    // of shunt continuity on a steady TWA90/TWS6 beam reach, not a "ease
-    // down to a stop" maneuver test (see its own header comment) — whose
-    // fixed sheet=60deg trim settles to 2.49 m/s by the time it requests
-    // its first shunt. A value below that would simply never fire the
-    // scenario's shunts rather than model a real stop; fully closing that
-    // gap would mean reworking the scenario to ease down before
-    // requesting a shunt, out of this item's small-effort scope. Phase
-    // durations are lengthened ~3x (5.0s -> 16.4s total) to reflect the
-    // same "this is a deliberate human process, not a quick trim" finding
-    // — transferDuration (physically carrying the yard) gets the largest
-    // share; swapDuration (bookkeeping bow/stern relabel, no physical
-    // action) is left unchanged.
+    // Shunt timing. The literature is unanimous that a proa comes to a
+    // genuine stop before shunting, with the crew physically carrying the
+    // yard heel from one end to the other — a deliberate human process, not a
+    // quick trim. Hence a low speedLockout and a ~16 s total sequence, with
+    // transferDuration (carrying the yard) taking the largest share and
+    // swapDuration near-instant, since the bow/stern relabel is bookkeeping
+    // with no physical action behind it.
+    //   speedLockout is bounded BELOW by harness/scenarios.js's
+    // scenarioShunt, a structural test of shunt continuity on a steady
+    // TWA90/TWS6 beam reach rather than an "ease down to a stop" manoeuvre
+    // test: its fixed trim settles to 2.49 m/s by the time it requests its
+    // first shunt, so a lower value here would simply never fire that
+    // scenario's shunts. Lowering it further means reworking the scenario to
+    // ease down first.
     shunt: {
       speedLockout: 2.6,        // m/s — shunt locked out above this speed
       easeDuration: 4.0,        // s
@@ -1061,16 +902,14 @@ function buildDefaultConfig() {
 // configFromRecordingSnapshot(snapshot) -> a validated config, with stale
 // field SEMANTICS from older recordings migrated forward.
 //
-// Recordings store a raw config snapshot, and some fields have changed
-// meaning since. `sail.camber` is the one that matters: before the v2 aero
-// table (round 10, ADR 0003) it was an ABSOLUTE camber ratio against a flat
-// Polhamus table, so 0.10 was an ordinary value; on the v2 table — which
-// already carries the source sail's own ~0.10 camber — the same field is a
-// DELTA on top of that. Replaying an old snapshot verbatim therefore
-// double-counts exactly what round 10d's C-C fix removed, and since F6's
-// total-camber ceiling (0.20) it would be rejected outright, making archived
-// recordings unloadable. Normalise instead: on v2, a pre-v2 snapshot's
-// absolute camber is already represented by the table itself.
+// Recordings store a raw config snapshot, and `sail.camber` has changed
+// meaning: against a flat Polhamus table (v1) it is an ABSOLUTE camber ratio,
+// so 0.10 is an ordinary value; on the v2 table — which already carries the
+// source sail's own ~0.10 camber — the same field is a DELTA on top of that.
+// Replaying an old snapshot verbatim would therefore double-count, and would
+// now be rejected outright by the total-camber ceiling in validateConfig,
+// making archived recordings unloadable. Normalise instead: on v2, a pre-v2
+// snapshot's absolute camber is already represented by the table itself.
 export function configFromRecordingSnapshot(snapshot) {
   const snap = snapshot ?? {};
   const sail = snap.sail ?? {};
@@ -1089,12 +928,12 @@ export function validateConfig(config) {
   if (!['v1', 'v2'].includes(config.sail.aeroTableVersion)) errs.push(`sail.aeroTableVersion must be 'v1' or 'v2', got ${config.sail.aeroTableVersion}`);
   inRange(config.sail.apexAngleDeg, 45, 60, 'sail.apexAngleDeg');
   inRange(config.sail.camber, 0, 0.20, 'sail.camber');
-  // F6 (work-order-2026-07-30): the TOTAL camber the CL curve is ever
-  // evaluated at — the table's own built-in camber plus sail.camber plus the
-  // brail's TRIM-regime bagging gain — must stay inside the band the linear
-  // 1+1.75c fit is valid over. Bounding only sail.camber (as before) left
-  // brailCamberGain entirely unchecked, which is how c=0.55 (a half-circle
-  // "sail") became the default operating point on deep courses.
+  // The TOTAL camber the CL curve is ever evaluated at — the table's own
+  // built-in camber plus sail.camber plus the brail's TRIM-regime bagging
+  // gain — must stay inside the band the linear 1+1.75c fit is valid over.
+  // Bounding sail.camber alone leaves brailCamberGain unchecked, which admits
+  // c = 0.55: a 55%-of-chord draft, i.e. a half-circle, roughly 4x outside
+  // the fit's validity.
   {
     const builtin = config.sail.aeroTableVersion === 'v2' ? (config.sail.aeroV2BuiltinCamber ?? 0.10) : 0;
     const totalCamber = config.sail.camber + (config.sail.brailCamberGain ?? 0) + builtin;
@@ -1102,13 +941,12 @@ export function validateConfig(config) {
       errs.push(`sail.camber + sail.brailCamberGain + built-in table camber = ${totalCamber.toFixed(3)} exceeds the 0.20 physical ceiling`);
     }
   }
-  // ceSwingFraction is a fraction of the half-chord (round 7, D-6 — see the
-  // comment on its default above for the provenance audit this bound comes
-  // from); values outside (0,1] were never validated by any committed test.
+  // ceSwingFraction is a fraction of the half-chord, so values outside (0,1]
+  // are meaningless and have never been validated by any committed test.
   inRange(config.sail.ceSwingFraction, 0, 1, 'sail.ceSwingFraction');
-  // brailTrimRange (round 10c, C1): the TRIM/SURVIVAL regime split point
-  // (aero.js brailRegimeBlend) — must stay strictly inside (0,1) since it's
-  // used as a division denominator on both sides of the split.
+  // brailTrimRange is the TRIM/SURVIVAL regime split point (aero.js
+  // brailRegimeBlend) — must stay strictly inside (0,1), since it is used as
+  // a division denominator on both sides of the split.
   inRange(config.sail.brailTrimRange, 0.01, 0.99, 'sail.brailTrimRange');
   inRange(config.crew.posMin, -1, 0, 'crew.posMin');
   inRange(config.crew.posMax, 0, 2, 'crew.posMax');
@@ -1146,13 +984,11 @@ export function deepMerge(base, patch) {
 export function createConfig(userConfig) {
   const base = buildDefaultConfig();
   const merged = deepMerge(base, userConfig);
-  // Re-derive the active aero table from sail.aeroTableVersion every call
-  // (round 10, R10-1) — a patch touching only sail.aeroTableVersion (e.g.
-  // from the boat-design tab) must not need to also carry the whole table
-  // object; deepMerge only overlays what a patch actually mentions, and
-  // aeroTable/aeroTableV1/aeroTableV2 are never part of a boat-design
-  // patch, so this is the one place that keeps them in sync with the
-  // version flag after any merge.
+  // Re-derive the active aero table from sail.aeroTableVersion on every call.
+  // A patch touching only sail.aeroTableVersion (e.g. from the boat-design
+  // tab) must not have to carry the whole table object as well, and deepMerge
+  // only overlays what a patch actually mentions — so this is the one place
+  // that keeps aeroTable in sync with the version flag after any merge.
   merged.aeroTable = merged.sail.aeroTableVersion === 'v1' ? merged.aeroTableV1 : merged.aeroTableV2;
   return validateConfig(merged);
 }
