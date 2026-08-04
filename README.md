@@ -316,12 +316,15 @@ Step 2, since the UI doesn't change them):
   shroud to cut weather helm, and using the sheet as a substitute windward
   shroud to recover from a backwind — and the model can answer none of them.
   This is currently the largest single gap between it and the source.
-- **The hull cannot weathercock.** `hullSideForce` acts at a fixed `clrX`, so
-  the centre of lateral resistance does not move with the flow angle. Its yaw
-  DAMPING is now derived properly by strip integration (`docs/adr/0016`), which
-  is what restored rudder-free course holding, but the sway half of the same
-  treatment is still missing — which is why the boat cannot yet sail with the
-  oar shipped.
+- **Sailing with the steering oar shipped works at 3 of 6 test points.** The
+  hull's whole lateral force is now strip-integrated (`docs/adr/0017`), so it
+  weathercocks and damps its own yaw properly, and with the tack and the crew's
+  fore-aft position trimmed the boat holds a course rudder-free on three of the
+  six grid points instead of none. The other three run out of bear-away
+  authority against the Munk moment, which at the reference state is +382 N·m
+  against everything else's combined −350. The ADR records the moment budget and
+  why the gap is a missing measurement (Flay's yaw moment was never digitised)
+  rather than a parameter to turn.
 - **The vertical force balance is not closed** (F11/F13,
   `work-order-2026-07-30-physics-audit.md`). There is no heave degree of
   freedom, so two real vertical effects have nowhere to go. The heeled sail's

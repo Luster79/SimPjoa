@@ -7,7 +7,7 @@
 // aback-timer / capsize statics (now derived from phi, see stability.js).
 
 import { sailForces, windageForce } from './aero.js';
-import { hullResistance, hullSideForce, amaDrag, yawDamping } from './hydro.js';
+import { hullResistance, hullSideForce, amaDrag } from './hydro.js';
 import { rudderForce } from './rudder.js';
 import { computeAmaLoad, updateAback, rollRestoreMoment, crewRollMoment, rollDampingMoment } from './stability.js';
 import { shuntStep } from './shunt.js';
@@ -30,15 +30,14 @@ export function computeForces(state, controls, config) {
   const amaLoadDisplay = Math.min(amaLoad, config.stability.amaLoadDisplayCap);
 
   const resist = hullResistance(state.u, config);
-  const side = hullSideForce(state.u, state.v, controls.crewPosX ?? 0, config);
+  const side = hullSideForce(state.u, state.v, state.r, controls.crewPosX ?? 0, config);
   const drag = amaDrag(state.u, state.phi, controls.crewPos, state.end, config);
   const rudder = rudderForce(state, controls, config);
-  const damp = yawDamping(state.r, state.u, config);
   const windage = windageForce(state, controls, config);
 
   const Fx = aero.Fx + resist + side.Fx + drag.Fx + rudder.Fx + windage.Fx;
   const Fy = aero.Fy + side.Fy + rudder.Fy + windage.Fy;
-  const M = aero.yawMoment + side.yawMoment + rudder.yawMoment + damp + drag.yawMoment;
+  const M = aero.yawMoment + side.yawMoment + rudder.yawMoment + drag.yawMoment;
 
   // Roll dynamics (4th DOF, FIX_REQUEST_round4_roll_dof.md Part 1):
   // sail heel (boat-frame heelMoment converted to the physical-frame roll
@@ -64,7 +63,6 @@ export function computeForces(state, controls, config) {
       hullSide: { Fx: side.Fx, Fy: side.Fy, yawMoment: side.yawMoment },
       amaDrag: { Fx: drag.Fx, yawMoment: drag.yawMoment },
       rudder: { Fx: rudder.Fx, Fy: rudder.Fy, yawMoment: rudder.yawMoment },
-      yawDamping: { M: damp },
       windage: { Fx: windage.Fx, Fy: windage.Fy },
       roll: { Msail, Mrestore, Mcrew, Mdamp, Mroll },
     },

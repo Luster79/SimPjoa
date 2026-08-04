@@ -23,7 +23,13 @@
    given). Its section B (CR vs theta) is withdrawn — see file 3.
 6. **flay_2025_hull_sideforce_digitized.csv** — digitized hull
    side-force (CS vs leeway) for U/V1/V2 slender hull forms, feeding
-   `core/hydro.js`'s `hullSideForce()` (round 10, R10-3).
+   `core/hydro.js`'s `hullSideForce()` (round 10, R10-3). **Known gap:**
+   only the force was digitized, never the yaw moment, so where that side
+   force ACTS is a model assumption (the lateral-area centroid) rather than
+   a measurement. Since ADR 0017 that assumption is what stands between the
+   model and a boat that sails with its steering oar shipped — see the ADR
+   for the moment budget and the possible double-count against the Munk
+   term.
 
 ## Methodology and data provenance
 

@@ -14,6 +14,9 @@
 // switching discontinuously at u=0 (block F, work-order-2026-07-30). Matches
 // the ittc57Cf Reynolds floor, so the two low-speed regularisations agree.
 const U_SMOOTH = 0.05; // m/s
+// Stations for the hull's lateral strip integration (hullSideForce). The
+// integral is converged to <0.5% by 21 (checked against 41 and 81).
+const HULL_STATIONS = 21;
 const NU_SEAWATER = 1.19e-6; // m^2/s, kinematic viscosity of seawater at ~15degC (ITTC standard condition)
 
 function ittc57Cf(u, length) {
@@ -106,7 +109,35 @@ export function clrXPosition(crewPosX, config) {
     + crewTrimSign * (hull.crewForeAftTrimCoeff ?? 0) * crewPosX * (hull.length / 2);
 }
 
-export function hullSideForce(u, v, crewPosX, config) {
+// stationWeights(crewPosX, config) -> per-strip lateral areas, bow-last.
+//
+// The lateral plane is NOT distributed uniformly along the length: its
+// centroid is the centre of lateral resistance, which sits aft of the CG
+// (hull.clrXFraction) and moves with fore-aft crew trim. A uniform strip
+// distribution would put the centroid at the CG and delete the hull's
+// weathercocking entirely -- so the distribution carries the same clrX the
+// model already uses, rather than a second, independent statement of it.
+//
+// Linear taper w(x) = 1 + k*x over [-L/2, L/2]: mean 1 by construction (so
+// the strips still sum to hull.lateralArea), centroid k*L^2/12, hence
+// k = 12*xc/L^2. Clamped to |k| <= 2/L, past which the taper would ask for
+// negative area at one end; the clamp binds only at crew trims beyond
+// xc = L/6, which is well outside the configured crew range.
+function stationWeights(crewPosX, config) {
+  const { hull } = config;
+  const L = hull.length;
+  const xc = clrXPosition(crewPosX, config);
+  const k = Math.max(-2 / L, Math.min(2 / L, (12 * xc) / (L * L)));
+  const dA = (hull.lateralArea ?? 0) / HULL_STATIONS;
+  const out = [];
+  for (let i = 0; i < HULL_STATIONS; i++) {
+    const x = -L / 2 + (i + 0.5) * (L / HULL_STATIONS);
+    out.push({ x, dA: dA * (1 + k * x) });
+  }
+  return out;
+}
+
+export function hullSideForce(u, v, r, crewPosX, config) {
   const { hull, rho_w } = config;
   const DEG = Math.PI / 180;
   // Block F (work-order-2026-07-30): the drift angle is measured against the
@@ -121,96 +152,117 @@ export function hullSideForce(u, v, crewPosX, config) {
   // going forward. A V-sectioned hull travelling backwards is not the same
   // foil. Folding is the better of the two available approximations, not a
   // claim that direction does not matter.
-  const leewayRaw = Math.atan2(v, u);
-  const leewayFoldedRad = Math.abs(leewayRaw) <= Math.PI / 2
-    ? Math.abs(leewayRaw)
-    : Math.PI - Math.abs(leewayRaw);
-  const leewayAbs = leewayFoldedRad;
-  const leewayAbsDeg = leewayAbs / DEG;
+  //   STRIP INTEGRATION (2026-08-04, docs/adr/0017). Every term below is
+  // evaluated per station and summed, because the station at x sees its own
+  // transverse velocity v + r*x, not the boat's v. That single substitution
+  // is what lets the hull weathercock and damp its own yaw: it is the same
+  // local-inflow treatment F9 gave the steering oar and ADR 0016 gave the
+  // yaw-rate term, now applied to the whole side-force model at once so the
+  // sway and yaw halves come from one integral instead of two functions that
+  // each knew half the flow.
+  const stations = stationWeights(crewPosX, config);
+  let Fy = 0;
+  let Fx = 0;
+  let yawMoment = 0;
+  for (const st of stations) {
+    const vLocal = v + r * st.x;
+    const leewayRaw = Math.atan2(vLocal, u);
+    const leewayFoldedRad = Math.abs(leewayRaw) <= Math.PI / 2
+      ? Math.abs(leewayRaw)
+      : Math.PI - Math.abs(leewayRaw);
+    const leewayAbs = leewayFoldedRad;
+    const leewayAbsDeg = leewayAbs / DEG;
 
-  const CS = hullSideForceCoeff(leewayAbsDeg, hull);
-  const V2 = u * u + v * v;
-  const FyQuadratic = -Math.sign(v) * CS * 0.5 * rho_w * (hull.lateralArea ?? 0) * V2;
-  // The lift-like term above is quadratic in speed and vanishes as V -> 0,
-  // but real hull/ama drag has a linear (viscous-regime) component that
-  // dominates at very low speed instead of disappearing — without it, a
-  // near-stalled boat (e.g. drifting close to head-to-wind) has
-  // essentially no resistance to being blown sideways until it's already
-  // picked up meaningful leeway speed. Independent of CS's own shape, so
-  // it doesn't reopen that escape valve at normal sailing speeds, where
-  // the quadratic term already dominates.
-  const FyLinear = -hull.lowSpeedSideDamping * v;
-  const FyFoil = FyQuadratic + FyLinear;
+    const CS = hullSideForceCoeff(leewayAbsDeg, hull);
+    const V2 = u * u + vLocal * vLocal;
+    const FyQuadratic = -Math.sign(vLocal) * CS * 0.5 * rho_w * st.dA * V2;
+    // The lift-like term above is quadratic in speed and vanishes as V -> 0,
+    // but real hull/ama drag has a linear (viscous-regime) component that
+    // dominates at very low speed instead of disappearing — without it, a
+    // near-stalled boat (e.g. drifting close to head-to-wind) has
+    // essentially no resistance to being blown sideways until it's already
+    // picked up meaningful leeway speed. Independent of CS's own shape, so
+    // it doesn't reopen that escape valve at normal sailing speeds, where
+    // the quadratic term already dominates.
+    //   Per strip it carries the station's own share of the lateral area, so
+    // the strips still sum to exactly -lowSpeedSideDamping*v at r = 0.
+    const areaShare = (hull.lateralArea ?? 0) > 0 ? st.dA / hull.lateralArea : 0;
+    const FyLinear = -hull.lowSpeedSideDamping * areaShare * vLocal;
+    const FyFoil = FyQuadratic + FyLinear;
 
-  // --- Cross-flow (broadside) drag (R9 follow-up; role updated R10-3) ---
-  // A genuinely different physical regime from the foil-lift term above:
-  // near true beam-on (90deg) the hull stops being a foil at all and
-  // becomes a BLUFF BODY dragged side-on through the water (Cd ~ 1.1) —
-  // an order of magnitude past anything the measured CS curve reaches
-  // (CS holds flat at ~0.25 beyond its own 24deg extrapolation guard,
-  // nowhere near a true flat-plate coefficient). Standard ship-
-  // maneuvering cross-flow term Y_{v|v|}: opposes the TRANSVERSE
-  // velocity, quadratic in it, so it is negligible at normal leeway
-  // (v tiny) yet dominant near 90deg — it makes sailing sideways feel
-  // like hitting a wall, exactly where the foil term's own physically-
-  // reasonable flat hold would otherwise under-resist (the original,
-  // still-valid motivation: see the ROUND9 findings for the spurious
-  // "sails sideways" state this fixed).
-  // Scaled by sin(leewayAbs): the full broadside coefficient only applies
-  // near beam-on (90deg) — at small-to-moderate drift the flow stays more
-  // attached and the effective cross-flow Cd is lower, so this does not
-  // over-damp the ordinary leeway/yaw transients of normal maneuvers (e.g.
-  // the backwind-slam yaw yank) while still arresting a genuine beam-on
-  // slide (sin ~ 1 there).
-  const FyCross = -Math.sign(v) * (hull.crossFlowDragCoeff ?? 0) * 0.5 * rho_w * (hull.lateralArea ?? 0) * v * v * Math.sin(leewayAbs);
+    // --- Cross-flow (broadside) drag (R9 follow-up; role updated R10-3) ---
+    // A genuinely different physical regime from the foil-lift term above:
+    // near true beam-on (90deg) the hull stops being a foil at all and
+    // becomes a BLUFF BODY dragged side-on through the water (Cd ~ 1.1) —
+    // an order of magnitude past anything the measured CS curve reaches
+    // (CS holds flat at ~0.25 beyond its own 24deg extrapolation guard,
+    // nowhere near a true flat-plate coefficient). Standard ship-
+    // maneuvering cross-flow term Y_{v|v|}: opposes the TRANSVERSE
+    // velocity, quadratic in it, so it is negligible at normal leeway
+    // (v tiny) yet dominant near 90deg — it makes sailing sideways feel
+    // like hitting a wall, exactly where the foil term's own physically-
+    // reasonable flat hold would otherwise under-resist (the original,
+    // still-valid motivation: see the ROUND9 findings for the spurious
+    // "sails sideways" state this fixed).
+    // Scaled by sin(leewayAbs): the full broadside coefficient only applies
+    // near beam-on (90deg) — at small-to-moderate drift the flow stays more
+    // attached and the effective cross-flow Cd is lower, so this does not
+    // over-damp the ordinary leeway/yaw transients of normal maneuvers (e.g.
+    // the backwind-slam yaw yank) while still arresting a genuine beam-on
+    // slide (sin ~ 1 there).
+    const FyCross = -Math.sign(vLocal) * (hull.crossFlowDragCoeff ?? 0) * 0.5 * rho_w * st.dA * vLocal * vLocal * Math.sin(leewayAbs);
 
-  const Fy = FyFoil + FyCross;
-  // Induced drag is a FOIL property (side force tilted aft by the leeway
-  // angle); the cross-flow term is already a pure resistance and must not be
-  // re-counted as induced drag, so Fx uses the foil part only.
-  //
-  // "Sailing free" relief (round 10, R10-3): Flay's Fig 15 reports CR
-  // (total resistance) DECREASING with leeway for V-shaped hulls — the
-  // opposite of what a standard 2D induced-drag formula gives (Fx above
-  // grows with sin(leeway) regardless of hull shape). The physical
-  // picture: a V-hull's leeway-induced lift vector isn't purely
-  // perpendicular to the flow the way a simple 2D foil's is — 3D effects
-  // at the veed underwater sections give it a small FORWARD-projecting
-  // component this model's induced-drag formula doesn't capture on its
-  // own. No quantitative CR-vs-leeway curve was digitized (Fig 15 is
-  // described qualitatively only), so this is a conservative, EXPLICITLY
-  // qualitative reproduction, not a fitted curve: a relief fraction that
-  // ramps up from 0 at leeway=0, peaks around sailingFreeReliefPeakDeg,
-  // and fades back to 0 by sailingFreeReliefEndDeg (beyond which Flay's
-  // own claim isn't made). Verified against a direct assertion (harness/
-  // asserts.js): total resistance at 8-12deg leeway must not exceed the
-  // 0-deg value.
-  const reliefPeak = hull.sailingFreeReliefPeak ?? 0;
-  const reliefPlateauStartDeg = hull.sailingFreeReliefPlateauStartDeg ?? 8;
-  const reliefPlateauEndDeg = hull.sailingFreeReliefPlateauEndDeg ?? 12;
-  const reliefFadeEndDeg = hull.sailingFreeReliefFadeEndDeg ?? 24;
-  let relief = 0;
-  if (leewayAbsDeg > 0 && leewayAbsDeg <= reliefPlateauStartDeg) {
-    relief = reliefPeak * (leewayAbsDeg / reliefPlateauStartDeg);
-  } else if (leewayAbsDeg <= reliefPlateauEndDeg) {
-    relief = reliefPeak;
-  } else if (leewayAbsDeg <= reliefFadeEndDeg) {
-    relief = reliefPeak * (1 - (leewayAbsDeg - reliefPlateauEndDeg) / (reliefFadeEndDeg - reliefPlateauEndDeg));
+    const FyStrip = FyFoil + FyCross;
+    // Induced drag is a FOIL property (side force tilted aft by the leeway
+    // angle); the cross-flow term is already a pure resistance and must not be
+    // re-counted as induced drag, so Fx uses the foil part only.
+    //
+    // "Sailing free" relief (round 10, R10-3): Flay's Fig 15 reports CR
+    // (total resistance) DECREASING with leeway for V-shaped hulls — the
+    // opposite of what a standard 2D induced-drag formula gives (Fx above
+    // grows with sin(leeway) regardless of hull shape). The physical
+    // picture: a V-hull's leeway-induced lift vector isn't purely
+    // perpendicular to the flow the way a simple 2D foil's is — 3D effects
+    // at the veed underwater sections give it a small FORWARD-projecting
+    // component this model's induced-drag formula doesn't capture on its
+    // own. No quantitative CR-vs-leeway curve was digitized (Fig 15 is
+    // described qualitatively only), so this is a conservative, EXPLICITLY
+    // qualitative reproduction, not a fitted curve: a relief fraction that
+    // ramps up from 0 at leeway=0, peaks around sailingFreeReliefPeakDeg,
+    // and fades back to 0 by sailingFreeReliefEndDeg (beyond which Flay's
+    // own claim isn't made). Verified against a direct assertion (harness/
+    // asserts.js): total resistance at 8-12deg leeway must not exceed the
+    // 0-deg value.
+    const reliefPeak = hull.sailingFreeReliefPeak ?? 0;
+    const reliefPlateauStartDeg = hull.sailingFreeReliefPlateauStartDeg ?? 8;
+    const reliefPlateauEndDeg = hull.sailingFreeReliefPlateauEndDeg ?? 12;
+    const reliefFadeEndDeg = hull.sailingFreeReliefFadeEndDeg ?? 24;
+    let relief = 0;
+    if (leewayAbsDeg > 0 && leewayAbsDeg <= reliefPlateauStartDeg) {
+      relief = reliefPeak * (leewayAbsDeg / reliefPlateauStartDeg);
+    } else if (leewayAbsDeg <= reliefPlateauEndDeg) {
+      relief = reliefPeak;
+    } else if (leewayAbsDeg <= reliefFadeEndDeg) {
+      relief = reliefPeak * (1 - (leewayAbsDeg - reliefPlateauEndDeg) / (reliefFadeEndDeg - reliefPlateauEndDeg));
+    }
+    // Block F: the direction of induced drag was `-Math.sign(u)`, a genuine C0
+    // jump at u=0 — and unlike the u*|u| terms elsewhere in this file it does NOT
+    // vanish there, because |FyFoil| keeps the nonzero low-speed linear part. RK4
+    // loses its order across such a step, and the boat crosses u=0 on every
+    // shunt. Same magnitude, smoothed over a small speed scale.
+    const uDirection = u / Math.sqrt(u * u + U_SMOOTH * U_SMOOTH);
+    const FxStrip = -uDirection * Math.abs(FyFoil) * Math.sin(leewayAbs) * (1 - relief);
+
+    Fy += FyStrip;
+    Fx += FxStrip;
+    // The yaw moment is now the integral of x*f(x) rather than clrX*Fy. At
+    // r = 0 the two are identical -- every strip sees the same leeway, so the
+    // sum factors into Fy times the area centroid, which IS clrX by
+    // construction (stationWeights above). What it adds is everything r does:
+    // the hull's own yaw damping, and the v-r cross term ADR 0016 had to
+    // record as an omission because the sway and yaw halves lived apart.
+    yawMoment += st.x * FyStrip;
   }
-  // Block F: the direction of induced drag was `-Math.sign(u)`, a genuine C0
-  // jump at u=0 — and unlike the u*|u| terms elsewhere in this file it does NOT
-  // vanish there, because |FyFoil| keeps the nonzero low-speed linear part. RK4
-  // loses its order across such a step, and the boat crosses u=0 on every
-  // shunt. Same magnitude, smoothed over a small speed scale.
-  const uDirection = u / Math.sqrt(u * u + U_SMOOTH * U_SMOOTH);
-  const Fx = -uDirection * Math.abs(FyFoil) * Math.sin(leewayAbs) * (1 - relief);
-
-  // Center of lateral resistance offset from CG (slightly aft, tunable) — gives
-  // a modest weather-helm-like turning tendency rather than zero yaw coupling.
-  // crewTrimSign*crewForeAftTrimCoeff*crewPosX shifts it fore/aft with
-  // fore-aft crew position (FIX_REQUEST_round4_roll_dof.md 1.5).
-  const clrX = clrXPosition(crewPosX, config);
-  const yawMoment = clrX * Fy;
 
   return { Fx, Fy, yawMoment };
 }
@@ -332,80 +384,3 @@ export function amaDrag(u, phi, crewPos, end, config) {
   return { Fx, yawMoment };
 }
 
-// yawDamping(r, u, config) -> N*m, the BARE HULL's resistance to yawing.
-//
-// F10 (work-order-2026-07-30) replaced `-yawDampingCoeff * r * (1 + |u|)`.
-// Two faults. Dimensionally, `1 + |u|` adds a bare 1 to a speed in m/s, so the
-// expression has no consistent units and does not survive a change of them.
-// Physically, the consequence: at u = 0 it still returned FULL damping
-// (-270 N*m at r = 0.3), i.e. a boat sitting still resisted being spun as if
-// it were making way.
-//
-// Standard manoeuvring form instead, two terms with distinct physics:
-//   N_r    * u * r      — the lifting/circulatory term. Needs flow over the
-//                         hull, so it vanishes at u = 0, as it must.
-//   N_rr   * r * |r|    — cross-flow drag on the hull's own transverse motion
-//                         as it rotates. Quadratic in r, and present at rest,
-//                         which is what actually damps a stationary boat.
-//
-// The coefficient also had to SHRINK, not carry over. The old 900 was doing
-// two jobs: the hull's own damping and, silently, the rudder's — because
-// before F9 the steering oar contributed exactly zero yaw damping (no inflow
-// term at all). With F9's oar in the water the measured split at u = 3,
-// r = 0.3 is 52% rudder / 48% hull, so leaving 900 in place would double-count
-// the half the oar now supplies. These values keep the bare hull (oar shipped)
-// damping in the same range it had, while the deployed oar adds its own real
-// contribution on top rather than being stood in for.
-export function yawDamping(r, u, config) {
-  // STRIP INTEGRATION (2026-08-04). Derived from the hull's own measured
-  // CS(leeway) curve instead of two estimated coefficients, on the owner's
-  // hypothesis that a hull this sharp and narrow stabilises much like the oar
-  // does. It does, and the model was badly understating it.
-  //
-  // The hull is 5.5 m x 0.45 m -- a 12:1 lateral foil with twelve times the
-  // steering oar's area. But hullSideForce() takes only u and v: it is blind
-  // to yaw rate, so the hull generated no r-dependent side force at all, and
-  // its one yaw contribution acted at a FIXED clrX. All of the hull's
-  // resistance to yawing therefore had to come from this function, whose two
-  // coefficients F10 could only estimate.
-  //
-  // Measured at u = 3.5, r = 0.3, the gap was large:
-  //     phenomenological (yawDampingLinear/CrossFlow):  -395 N*m
-  //     strip integration of the same CS curve:        -1409 N*m
-  //     the 0.15 m^2 steering oar, for comparison:     -1345 N*m
-  // A properly-treated hull supplies about as much yaw damping as the oar --
-  // which is what twelve times the area should do, and is exactly the
-  // hypothesis. The old value left the blade out-stabilising the whole hull by
-  // 3.4x, which is why the boat had no directional stability without it (S1b).
-  //
-  // Method, the same local-inflow idea F9 gave the oar, applied along the
-  // length: station x sees sway r*x, hence its own leeway angle, hence its own
-  // CS from the SAME curve hullSideForce uses (docs/adr/0004). Each strip
-  // carries lateralArea/N. The moment is the integral of x*f(x).
-  //   Evaluated at v = 0, i.e. the standard N_r linearisation: this function's
-  // job is the yaw-rate part, and hullSideForce still owns the sway part. The
-  // v-r cross term is not captured by either, and is left as a known omission
-  // rather than double-counted here.
-  //   Both of F10's physical requirements survive by construction: the term
-  // vanishes at r = 0, and it does NOT vanish at u = 0, because a strip at
-  // station x still sees r*x of flow when the boat is not making way. That is
-  // the cross-flow behaviour F10's second coefficient existed to provide, now
-  // falling out of the integration rather than being estimated.
-  const { hull, rho_w } = config;
-  const L = hull.length;
-  const N = 21; // stations; the integral is converged to <0.5% by 21 (checked)
-  const dA = (hull.lateralArea ?? 0) / N;
-  let moment = 0;
-  for (let i = 0; i < N; i++) {
-    const x = -L / 2 + (i + 0.5) * (L / N);
-    const vLocal = r * x;
-    const V2 = u * u + vLocal * vLocal;
-    if (V2 < 1e-9) continue;
-    let lambda = Math.abs(Math.atan2(vLocal, u));
-    if (lambda > Math.PI / 2) lambda = Math.PI - lambda;
-    const CS = hullSideForceCoeff(lambda / (Math.PI / 180), hull);
-    const f = -Math.sign(vLocal) * 0.5 * rho_w * dA * CS * V2;
-    moment += x * f;
-  }
-  return moment;
-}

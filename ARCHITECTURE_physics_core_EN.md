@@ -408,10 +408,26 @@ cross-check at startup as required by the main prompt. Fixed schema version: a
                                             // CE geometry can reference the
                                             // SAME CLR point (see aero.js
                                             // sailForces' `lead` note below).
-    hullSideForce(u, v, crewPosX, config) -> { Fx, Fy, yawMoment }  // low-AR
-                                            // foil, saturation ~15 deg leeway,
-                                            // then degrades (mushing); Fx is
-                                            // the induced drag cost of Fy.
+    hullSideForce(u, v, r, crewPosX, config) -> { Fx, Fy, yawMoment }
+      // THE HULL'S WHOLE LATERAL FORCE, BY STRIP INTEGRATION (2026-08-04,
+      // docs/adr/0017). Station x sees its own transverse velocity v + r*x,
+      // hence its own leeway, hence its own CS from the measured curve
+      // (docs/adr/0004). Every term is per-station and summed -- foil force,
+      // low-speed linear damping, cross-flow, induced drag -- and the yaw
+      // moment is the integral of x*f(x), not clrX*Fy.
+      //   The lateral area is NOT uniform along the length: it carries a
+      // linear taper w(x) = 1 + 12*xc*x/L^2, mean 1 (so the strips still sum
+      // to hull.lateralArea) and centroid exactly clrXPosition(). A uniform
+      // distribution would put the centroid at the CG and delete the hull's
+      // weathercocking; this way the crew's fore-aft trim still moves the CLR
+      // through the model's one existing statement of it.
+      //   Reduces to the old model exactly at r=0: every strip sees the same
+      // leeway, the sum factors, and the moment is clrX*Fy to the last digit.
+      //   What it adds is everything r does. The v-r cross term ADR 0016 had
+      // to record as an omission is now captured (-268 N*m of extra damping at
+      // u=3.5, v=-0.3, r=0.3), and pure rotation produces side force of its
+      // own (85 N at r=0.3) from the tapered plane's asymmetry.
+      // Fx is still the induced drag cost of Fy, now strip by strip.
                                             // crewPosX (round 4, 1.5) shifts
                                             // the CLR fore/aft via clrXPosition:
                                             // clrX += hull.crewTrimSign *
@@ -472,27 +488,15 @@ cross-check at startup as required by the main prompt. Fixed schema version: a
                                             // config.js's comment and the
                                             // re-derived R7-4a drag-ratio
                                             // bands this now satisfies.
-    yawDamping(r, u, config) -> moment
-      // The BARE HULL's resistance to yawing, DERIVED BY STRIP INTEGRATION
-      // (2026-08-04, docs/adr/0016) rather than configured. Station x sees
-      // sway r*x, hence its own leeway angle, hence its own CS from the SAME
-      // measured curve hullSideForce uses (docs/adr/0004); each strip carries
-      // lateralArea/N; the moment is the integral of x*f(x), 21 stations.
-      // Evaluated at v=0 — the standard N_r linearisation. This owns the
-      // yaw-rate part; hullSideForce owns the sway part. The v-r cross term
-      // is captured by neither and is a known omission.
-      //   Supersedes F10's configured pair (yawDampingLinear/CrossFlow, both
-      // DELETED). F10's two physical requirements now fall out by
-      // construction: zero at r=0, and NOT zero at u=0, because a strip at x
-      // still sees r*x of flow when the boat is not making way.
-      //   The magnitude was badly short. hullSideForce takes only u and v, so
-      // it is blind to yaw rate, and its own yaw contribution acts at a fixed
-      // clrX — everything the hull did about yawing came from this function's
-      // two estimated coefficients. Measured at u=3.5, r=0.3: -395 -> -1404
-      // N*m, against the 0.15 m^2 steering oar's -1345. A 5.5 x 0.45 m hull
-      // is a 12:1 lateral foil with twelve times the blade's area and damps
-      // about as hard, which is what put S2's rudder-free course hold back to
-      // 6/6 and finally settled TWA 110.
+    yawDamping() -- DELETED (2026-08-04, docs/adr/0017). It was the yaw-rate
+      // half of the integral above, evaluated at v=0 while hullSideForce did
+      // the sway half at r=0, so neither owned the cross term. ADR 0016 had
+      // already replaced F10's configured pair (yawDampingLinear/CrossFlow,
+      // both deleted) with a strip integration; ADR 0017 merged that
+      // integration into hullSideForce so the two halves cannot disagree about
+      // the flow. F10's two physical requirements still hold by construction:
+      // no moment at r=0, and a real one at u=0, because a strip at x still
+      // sees r*x of flow when the boat is not making way.
 
 ### rudder.js
     rudderForce(state, controls, config) -> { Fx, Fy, yawMoment }

@@ -422,11 +422,15 @@ function buildDefaultConfig() {
       // dimensionally-broken single coefficient with the two standard
       // manoeuvring terms, yawDampingLinear (N_r) and yawDampingCrossFlow
       // (N_rr), and derived the second from strip theory over the lateral
-      // plane while estimating the first. core/hydro.js's yawDamping() now
-      // performs that strip integration directly, at run time, through the
-      // SAME measured CS(leeway) curve the side force uses (docs/adr/0004) --
-      // so both terms fall out of the integration and neither has to be
-      // estimated. Both parameters are deleted rather than left unread.
+      // plane while estimating the first. core/hydro.js's hullSideForce()
+      // now performs that strip integration directly, at run time, through
+      // the SAME measured CS(leeway) curve the side force uses (docs/adr/
+      // 0004) -- so both terms fall out of the integration and neither has to
+      // be estimated. Both parameters are deleted rather than left unread.
+      // ADR 0017 then folded the separate yawDamping() function into
+      // hullSideForce itself: one integral over stations that each see
+      // v + r*x, so the sway and yaw halves can no longer disagree about the
+      // flow, and the v-r cross term is captured instead of dropped.
       //
       // The magnitude changed a lot, and in the direction the owner predicted:
       // -395 -> -1404 N*m at u=3.5, r=0.3, against the 0.15 m^2 steering oar's

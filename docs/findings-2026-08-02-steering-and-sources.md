@@ -1265,3 +1265,86 @@ so the hull's centre of lateral resistance does not move with the flow and it
 cannot weathercock. Doing for the sway part what this did for the yaw part is
 the obvious next step, and it is now the last structural piece between the
 model and a boat that sails without its oar.
+
+---
+
+## Sailing without the oar — the sway half (2026-08-04, ADR 0017)
+
+The previous section ended by naming the last structural piece: `hullSideForce`
+acting at a fixed `clrX`. This closes it.
+
+### One integral instead of two half-blind functions
+
+`hullSideForce(u, v, r, …)` now strip-integrates the hull's whole lateral
+force. Station *x* sees `v + r·x` — its own transverse velocity, hence its own
+leeway, hence its own CS from the measured curve. Foil force, low-speed linear
+damping, cross-flow and induced drag are all per-station; `Fy` is the sum and
+the yaw moment is `Σ x·f(x)`. `yawDamping()` is deleted: it was the same
+integral evaluated at `v = 0`, and keeping both would double-count.
+
+The lateral area carries a linear taper whose centroid is exactly
+`clrXPosition()`. A uniform distribution would have put the centroid at the CG
+and deleted the hull's weathercocking outright — the crew's fore-aft trim still
+moves the CLR through the model's one existing statement of it.
+
+**It reduces to the old model where the old model was right.** At `r = 0` the
+sum factors and the moment is `clrX·Fy` to the last digit: −64.1 N·m at
+u = 3.5, v = −0.3, the same entry as in the table above.
+
+### What it added
+
+| at u = 3.5 | old | new |
+|---|---|---|
+| yaw damping (r = 0.3, v = 0) | −1404 N·m | −1567 N·m |
+| v–r cross term | absent | −268 N·m |
+| side force from pure rotation | 0 | 85 N |
+
+### What it bought
+
+**With the oar shipped: 0/6 → 3/6.** Searched over the two controls the manual
+names for this — the tack and the crew's fore-aft position — TWS6/TWA70 holds
+at 3.6°, TWS6/TWA90 at 6.1°, TWS10/TWA70 at 14.3°, all at full speed. Before
+the change no setting of anything rescued any point, and two capsized. This is
+the new **S1c** check.
+
+S1b's own text was carrying a claim that is now false ("No tack setting rescues
+it either") — measured before the hull could weathercock. Corrected in place.
+
+### What it did not buy, and the number that says why
+
+The three remaining points fail at the **same corner of the search**, tack
+fully forward and crew fully aft. That is an authority limit, not a stability
+limit. The moment budget at the TWS6/TWA90 steady state:
+
+| term | N·m |
+|---|---|
+| Munk, `(m_x − m_y)·u·v` | **+382** |
+| steering oar, centred (inflow only) | −315 |
+| sail | −59 |
+| hull side force | −46 |
+| ama drag | +38 |
+
+The oar is not mostly a rudder here — at 1.5 % deflection it is carrying −315
+N·m of almost pure inflow force, and it is the only thing of that size opposing
+the Munk moment. The whole trim authority the model has is worth about −350
+N·m, which is what buys the three points it buys.
+
+**Not tuned.** `massSway` and `clrXFraction` could each close the gap and both
+would be the error this project has paid for twice. The open question is
+instead a **source** one: Flay's measured CS is a *total* side force, which
+already contains the potential-flow contribution, while the Munk moment is
+added on top from ideal-flow added mass — the two may partly double-count.
+Flay's yaw-moment data would settle it and was never digitised. That is the
+next acquisition, not the next parameter.
+
+### H3 changed instrument, not intent
+
+The parked hull is no longer a fixed point: it hunts slowly between TWA 89 and
+116 with a ~90 s period, speed swinging 0.16–0.90 m/s. A boat lying ahull does
+hunt, but a single-instant probe at 60 s reads whatever phase it lands in. H3
+now asserts the windowed mean (0.43 m/s over 60–180 s) and the TWA window —
+which is what "it drifts, it is not stuck, it does not sail off" always meant.
+
+`out/polar.csv` is unchanged to three decimals: mean +0.003 %, worst +0.08 %.
+The sweep holds course under an autopilot, so a change that only affects yaw
+behaviour has nothing to move there.

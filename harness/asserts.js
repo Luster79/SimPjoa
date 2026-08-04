@@ -162,8 +162,36 @@ export function runAsserts(config, { slow = true } = {}) {
       abackTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
     const controls = { windDirFrom: HEADING0 + 90 * DEG, windSpeed: 6, sheet: 0, rudder: 0, rudderUp: true,
       brailLee: 1, brailWind: 1, crewPos: 0, crewPosX: 0, shuntRequest: false };
-    for (let i = 0; i < Math.round(60 / config.dt); i++) state = integrate(state, controls, config, config.dt);
-    const speed = Math.hypot(state.u, state.v);
+    // Measured as a WINDOWED MEAN over 60-180s, not an instantaneous sample at
+    // 60s. With the hull's full strip-integrated side force (docs/adr/0017) the
+    // parked state is not a fixed point at all: it is a slow, bounded yaw
+    // oscillation -- the hull weathervanes toward beam-on, overshoots, drifts
+    // back, period ~90s, TWA staying inside [89,116] and speed swinging 0.16 to
+    // 0.90 m/s across the cycle. A boat lying ahull hunting slowly about the
+    // wind is the real behaviour, but it means a single-instant probe reads
+    // whatever phase of the cycle it lands in. The mean is the stable quantity,
+    // so the mean is what is asserted, together with the invariant that
+    // actually carries the check's intent: the TWA window it stays inside.
+    let sumSpeed = 0;
+    let nSamples = 0;
+    let minTwa = 360;
+    let maxTwa = -360;
+    const parkedTwaOf = (heading) => {
+      const a = (((controls.windDirFrom - heading) / DEG) % 360 + 360) % 360;
+      return a > 180 ? 360 - a : a;
+    };
+    const parkedSteps = Math.round(180 / config.dt);
+    const parkedWindowStart = Math.round(60 / config.dt);
+    for (let i = 0; i < parkedSteps; i++) {
+      state = integrate(state, controls, config, config.dt);
+      if (i < parkedWindowStart) continue;
+      sumSpeed += Math.hypot(state.u, state.v);
+      nSamples += 1;
+      const twa = parkedTwaOf(state.heading);
+      minTwa = Math.min(minTwa, twa);
+      maxTwa = Math.max(maxTwa, twa);
+    }
+    const speed = sumSpeed / nSamples;
     // Band re-anchored for F10 (work-order-2026-07-30). The old [0.05,0.4]
     // was set around a measured 0.063 m/s, which depended on the parked hull
     // being held nearly beam-on by the old yaw damping — that term returned
@@ -187,8 +215,11 @@ export function runAsserts(config, { slow = true } = {}) {
     // is the same reason a drifting boat lies beam to the wind rather than
     // wandering off downwind. The check's own stated intent is unchanged: it
     // drifts, it is not stuck, and it does not sail off.
-    check('H3: parked hull, beam TWS6, sail furled -> downwind drift speed in [0.10,0.25] m/s within 60s',
-      speed >= 0.10 && speed <= 0.25, `speed=${speed.toFixed(4)} m/s (u=${state.u.toFixed(4)} v=${state.v.toFixed(4)}) -- was 0.57 under the old estimated damping, when the hull weathervaned instead of holding beam-on`);
+    check('H3: parked hull, beam TWS6, sail furled -> lies beam-ish (TWA in [60,130]) and drifts at a mean 0.2-0.8 m/s over 60-180s',
+      speed >= 0.2 && speed <= 0.8 && minTwa >= 60 && maxTwa <= 130,
+      `mean speed=${speed.toFixed(4)} m/s over the window, TWA range [${minTwa.toFixed(0)},${maxTwa.toFixed(0)}] -- ` +
+      '0.43 m/s is ~0.8kn of bare-pole drift in a 12kn breeze, lying between beam-on and slightly off. ' +
+      'The band is deliberately an order-of-magnitude one: the check exists to say the hull drifts, is not pinned, and does not sail off, and the TWA window is what asserts the last of those. Earlier readings under earlier models: 0.06 (stiff estimated damping, effectively pinned), 0.57 (weak estimated damping, weathervaned 54deg and slid)');
   }
 
   // --- 2b. Sheeting tolerance (S5, work-order-2026-08-02) ---
@@ -561,7 +592,7 @@ export function runAsserts(config, { slow = true } = {}) {
   // steering a real proa actually uses (Proafile: traditional proas steer on
   // all reaching and windward courses with no rudder or oar at all).
   {
-    const helmRelease = (row, oarUp, tackX = 0) => {
+    const helmRelease = (row, oarUp, tackX = 0, crewPosX = 0) => {
       const windDirFrom = HEADING0 + row.twa * DEG;
       const twaOf = (heading) => {
         const a = (((windDirFrom - heading) / DEG) % 360 + 360) % 360;
@@ -582,6 +613,7 @@ export function runAsserts(config, { slow = true } = {}) {
       controls.rudder = 0;
       controls.rudderUp = oarUp;
       controls.tackX = tackX;
+      controls.crewPosX = crewPosX;
       for (let i = 0; i < Math.round(60 / config.dt); i++) state = integrate(state, controls, config, config.dt);
       return {
         twa: row.twa, tws: row.tws,
@@ -620,7 +652,41 @@ export function runAsserts(config, { slow = true } = {}) {
       nSailing === shipped.length,
       `${nSailing}/${shipped.length} points still sailing, ${nCapsized} capsized -- ` +
       shipped.map((s) => `TWS${s.tws}/TWA${s.twa}:->TWA${s.twaAfter.toFixed(0)} v${(s.speedRatio * 100).toFixed(0)}%${s.capsized ? ' CAPSIZED' : ''}`).join(' ') +
-      ' -- measured with the tack at neutral. The boat has no directional stability of its own: the 0.15m2 blade on the stern supplies it, and almost all of that force comes from INFLOW (leeway + yaw rate), not from deflection. No tack setting rescues it either (searched -1..1) -- balancing the helm removes a steady BIAS, it does not create damping. This is the model\'s standing limitation: on this boat the deep-V hull is the whole lateral plane, so there is nothing else to trim against. See docs/adr/0013',
+      ' -- measured with BOTH trim controls at neutral, which is what this line is for: it is the boat with the oar out of the water and nobody trimming it. What the trim controls can do about it is S1c below, and since docs/adr/0017 the answer is no longer "nothing" -- 3 of these 6 points hold. The claim this line used to carry, that no tack setting rescues any of them, was measured before the hull could weathercock and is false now. See docs/adr/0017',
+      'STEERING');
+
+    // (b2) S1c -- the actual capability the manual describes, and the one the
+    // owner asked for: holding a course with the oar SHIPPED, using the trim
+    // controls the manual names rather than a blade in the water. Searched
+    // over the tack and the crew's fore-aft position together, since the
+    // manual's rule I couples them (aft crew bears away, tack forward bears
+    // away) and neither alone has the authority.
+    //   Before docs/adr/0017 this was 0/6 with 2 capsizes at any setting. The
+    // three points that still fail all fail the same way and at the SAME
+    // corner of the search (tack fully forward, crew fully aft): the boat runs
+    // out of bear-away authority, not out of damping. The bottleneck is
+    // measured and named rather than tuned away -- at the TWS6/TWA90 steady
+    // state the Munk moment is +382 N*m against the hull's own -46 and the
+    // sail's -58, so once the oar (-315) leaves the water almost nothing
+    // opposes it. Buying the difference by shrinking massSway or moving
+    // clrXFraction is exactly the compensate-in-the-wrong-parameter error this
+    // project has paid for twice (docs/README, "Lessons"), so it is left
+    // failing with its number.
+    const shippedTrials = [];
+    for (const t of [0, 0.5, 1]) for (const x of [0, -0.25, -0.5, -0.75, -1]) shippedTrials.push({ t, x });
+    const shippedHolders = grid.map((row) => {
+      const found = shippedTrials
+        .map(({ t, x }) => ({ t, x, ...helmRelease(row, true, t, x) }))
+        .filter((r) => r.excursion <= 15 && r.speedRatio >= 0.5 && !r.capsized)
+        .sort((a, b) => a.excursion - b.excursion);
+      return { twa: row.twa, tws: row.tws, found };
+    });
+    const nShippedHeld = shippedHolders.filter((h) => h.found.length > 0).length;
+    check('S1c: oar SHIPPED -- a course hold exists using the trim controls alone (tack + crew fore-aft), 15deg/60s',
+      nShippedHeld === shippedHolders.length,
+      `${nShippedHeld}/${shippedHolders.length} points hold -- ` +
+      shippedHolders.map((h) => `TWS${h.tws}/TWA${h.twa}:${h.found.length ? `tack=${h.found[0].t} crewX=${h.found[0].x} exc=${h.found[0].excursion.toFixed(1)}deg v=${(h.found[0].speedRatio * 100).toFixed(0)}%` : 'none'}`).join(' ') +
+      ' -- was 0/6 before the hull\'s side force was strip-integrated (docs/adr/0017). The failures are an authority limit at the stops of both controls, not a stability limit; see the comment above for the measured moment budget',
       'STEERING');
 
     // (c) S2's payoff, and the reason S1a is left failing rather than
@@ -632,10 +698,11 @@ export function runAsserts(config, { slow = true } = {}) {
     //   This is what "hull.lead stops being the knob" actually looks like.
     // The old value is untouched; it simply no longer has to be right,
     // because the boat can now trim out whatever bias it leaves.
-    //   Note what it does NOT fix: S1b (oar shipped) still fails at every
-    // point, and no tack setting rescues it. Balancing the helm removes a
-    // steady bias; it does not create directional STABILITY, which is what
-    // the shipped-oar case is missing. That is S3's job.
+    //   Note what it does NOT fix: with the oar shipped the trim controls
+    // still only reach 3 of the 6 points (S1c above). Balancing the helm
+    // removes a steady bias, and docs/adr/0017 gave the hull real directional
+    // stability of its own, but neither buys the bear-away authority the
+    // remaining three points need against the Munk moment.
     // The whole control range, not a sub-range. This is an EXISTENCE search
     // ("is there a setting that holds?"), so restricting it would be assuming
     // the answer: when the AC-3 sheet reversal moved the neutral helm, a
@@ -1742,8 +1809,8 @@ export function runAsserts(config, { slow = true } = {}) {
     // range (the whole point of re-grounding it) — check it's still
     // rising, not flattening, between two points well inside that range.
     const u = 3;
-    const fLow = hullSideForce(u, u * Math.tan(6 * DEG), 0, config);
-    const fHigh = hullSideForce(u, u * Math.tan(14 * DEG), 0, config);
+    const fLow = hullSideForce(u, u * Math.tan(6 * DEG), 0, 0, config);
+    const fHigh = hullSideForce(u, u * Math.tan(14 * DEG), 0, 0, config);
     check('R10-3: hull side force does not saturate within the measured 0-16deg leeway range',
       Math.abs(fHigh.Fy) > Math.abs(fLow.Fy) * 1.5,
       `|Fy|(6deg)=${Math.abs(fLow.Fy).toFixed(0)} |Fy|(14deg)=${Math.abs(fHigh.Fy).toFixed(0)}`);
@@ -1758,7 +1825,7 @@ export function runAsserts(config, { slow = true } = {}) {
     let worstRatio = 0;
     for (let leewayDeg = 8; leewayDeg <= 12; leewayDeg += 1) {
       const uu = V * Math.cos(leewayDeg * DEG), vv = V * Math.sin(leewayDeg * DEG);
-      const f = hullSideForce(uu, vv, 0, config);
+      const f = hullSideForce(uu, vv, 0, 0, config);
       const totalFx = Math.abs(hullResistance(uu, config)) + Math.abs(f.Fx);
       worstRatio = Math.max(worstRatio, totalFx / baseRes);
     }
