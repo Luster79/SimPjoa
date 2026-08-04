@@ -441,7 +441,47 @@ export function sailForces(state, controls, config) {
   // capacity — a spurious effect driven by a known bug. Revisit after F9.
   //   F11: the heeling force is the IN-PLANE transverse force, not the
   // twice-projected horizontal one.
-  const heelArm = config.sail.CEheight + (config.hull.clrDepth ?? 0);
+  // --- Vertical rig geometry (docs/adr/0019) -------------------------------
+  // Three of the manual's techniques work through the halyard and the shroud
+  // and through nothing else, and with CEheight a constant the model could
+  // answer none of them (AC-4.4, AC-5.1a, AC-5.1b were all NOT REPRESENTABLE).
+  //
+  // The halyard sets the YARD's inclination. Hauled to the masthead the yard
+  // peaks up and its CE rides high and well forward, toward the tack; eased,
+  // the yard falls, and its CE drops AND swings aft -- which is the manual's
+  // stated weather-helm cause. One radius, derived so that full hoist
+  // reproduces the nominal CEheight exactly (config.js sail.yardCERadius).
+  //
+  // The shroud runs to the ama, so slackening it lets the mast fall away from
+  // the ama -- to LEEWARD -- and aft. The manual describes standing the mast
+  // up as one action ("loosened backstay + shortened shroud"), so one angle
+  // drives both senses; splitting them would be a control the manual does not
+  // give.
+  //
+  // At halyard = shroud = 1 every term here is exactly zero and the geometry
+  // is what it was before this block existed. hull.lead, ceSwingFraction and
+  // clrXFraction are untouched.
+  const DEGR = Math.PI / 180;
+  const halyard = Math.max(0, Math.min(1, controls.halyard ?? 1));
+  const shroud = Math.max(0, Math.min(1, controls.shroud ?? 1));
+  const yardPeak = (config.sail.yardPeakAngleDeg ?? 60) * DEGR;
+  const yardPsi = yardPeak - (config.sail.halyardDropDeg ?? 0) * DEGR * (1 - halyard);
+  const yardR = config.sail.yardCERadius ?? (config.sail.CEheight / Math.sin(yardPeak));
+  const mastRake = (config.sail.mastRakeMaxDeg ?? 0) * DEGR * (1 - shroud);
+  // Height of the CE above the water: up the yard, then tipped by the rake.
+  const CEheightEff = yardR * Math.sin(yardPsi) * Math.cos(mastRake);
+  // Fore-aft: only the CHANGE from full hoist, so the baseline lever that
+  // `lead` anchors is untouched (the same discipline as the AC-3 swing).
+  const xHalyard = -yardR * (Math.cos(yardPsi) - Math.cos(yardPeak));
+  // The mast rakes toward the ACTIVE STERN on both ends -- the boat frame's +x
+  // already points at the active bow, so there is no `end` factor here. That
+  // is the same trap the steering oar's lever arm fell into (docs/adr/0016).
+  const xRake = -CEheightEff * Math.sin(mastRake);
+  // Laterally it falls to LEEWARD, the -end side (the ama is windward and the
+  // shroud runs to it), so this one DOES carry `end`.
+  const yRake = -state.end * CEheightEff * Math.sin(mastRake);
+
+  const heelArm = CEheightEff + (config.hull.clrDepth ?? 0);
   const heelMoment = FyInPlane * heelArm * (1 - verticalLiftFraction) * brailWindHeelFactor;
 
   // CE geometry — round 7, D-6 (ROUND7_DECISION.md): rebuilt around a
@@ -572,8 +612,8 @@ export function sailForces(state, controls, config) {
   // Sized from the geometry rather than fitted: spilling the rear third of a
   // chord moves the remaining area's centroid forward by about chord/6.
   const ceBrailXShift = (config.sail.ceBrailXShift ?? 0) * brailWind;
-  const xCE = clrXNeutral + lead + tackOffset + swing + ceBrailXShift;
-  const yCE = -state.end * halfChordEffY * Math.sin(delta);
+  const xCE = clrXNeutral + lead + tackOffset + swing + ceBrailXShift + xHalyard + xRake;
+  const yCE = -state.end * halfChordEffY * Math.sin(delta) + yRake;
 
   // Heel-course coupling (pure geometry, FIX_REQUEST_round4_roll_dof.md
   // 1.4): heeling tips the mast, offsetting the CE laterally by
@@ -587,7 +627,7 @@ export function sailForces(state, controls, config) {
   // a SEPARATE mechanism from the x_CE/y_CE geometry above (mast RAKE
   // under heel vs. the yard's OWN swing angle) and stays additive with it.
   const yawHeelSign = config.hull.yawHeelSign ?? 1;
-  const yawMomentHeel = yawHeelSign * state.end * config.sail.CEheight * Math.sin(phi) * Fx;
+  const yawMomentHeel = yawHeelSign * state.end * CEheightEff * Math.sin(phi) * Fx;
   // ceLeverSign: history below; CURRENTLY AN IDENTITY (+1) — round 10
   // (R10-4, ROUND10_data_integration.md, docs/adr/0004) re-examined this
   // TODO and found the flip is no longer active. Round 5-7's derivation

@@ -1468,6 +1468,51 @@ export function runAsserts(config, { slow = true } = {}) {
       !aft.capsized && steeringOk(aft.drift, -1), `drift=${aft.drift.toFixed(1)}deg`);
   }
 
+  // --- Vertical rig geometry (docs/adr/0019): the manual's halyard and shroud.
+  // Three of its techniques work through nothing else, and until the rig had a
+  // vertical geometry all three were NOT REPRESENTABLE in the acceptance run.
+  // Measured on a grid rather than at one point, and reported as a tally.
+  {
+    const rigGrid = [70, 90, 110];
+    const rigBase = (twa, extra) => ({
+      windDirFrom: HEADING0 + twa * DEG, windSpeed: 6, sheet: 40 * DEG,
+      brailLee: 0, brailWind: 0, crewPos: 0.3, crewPosX: 0, tackX: 0,
+      halyard: 1, shroud: 1, shuntRequest: false, ...extra,
+    });
+
+    // AC-5.1a: "Given the halyard is not hauled to the masthead, when the
+    // player hauls it fully, then the weather-helm tendency falls." Hauling
+    // peaks the yard, which lifts its CE and swings it FORWARD toward the tack.
+    const halyardRuns = rigGrid.map((twa) => ({ twa, ...steeringDrift(config, rigBase(twa, { halyard: 0 }), (c) => { c.halyard = 1; }) }));
+    const halyardOk = halyardRuns.filter((r) => !r.capsized && steeringOk(r.drift, -1)).length;
+    check('AC-5.1a: hauling the halyard to the masthead cuts weather helm (bears away)',
+      halyardOk === halyardRuns.length,
+      `${halyardOk}/${halyardRuns.length} points -- ` + halyardRuns.map((r) => `TWA${r.twa}:${r.drift.toFixed(1)}deg`).join(' ') +
+      ' -- the reverse (easing from hauled) luffs by 7.4-7.8deg on the same grid, and at TWS10 the response grows past steeringOk\'s 20deg ceiling (-20.4deg), which is why this is asserted at TWS6');
+
+    // AC-5.1b: "Given the mast is raked too far to leeward (away from the ama),
+    // when the player tightens the shroud, then the weather-helm tendency
+    // falls." The shroud runs to the ama, so slack lets the mast fall to
+    // leeward -- an off-centre drive force, which yaws the bow to windward.
+    const shroudRuns = rigGrid.map((twa) => ({ twa, ...steeringDrift(config, rigBase(twa, { shroud: 0 }), (c) => { c.shroud = 1; }) }));
+    const shroudOk = shroudRuns.filter((r) => !r.capsized && steeringOk(r.drift, -1)).length;
+    check('AC-5.1b: tightening the shroud (mast upright) cuts weather helm (bears away)',
+      shroudOk === shroudRuns.length,
+      `${shroudOk}/${shroudRuns.length} points -- ` + shroudRuns.map((r) => `TWA${r.twa}:${r.drift.toFixed(1)}deg`).join(' '));
+
+    // AC-4.4: "Given a broad course set up per AC-4.3, when the mast is
+    // additionally stood closer to upright, then the AC-4.3 effect is
+    // REINFORCED (a further forward shift of the driving force)." Measured
+    // with the carrot already set, which is what AC-4.3 is.
+    const carrotGrid = [150, 160];
+    const rakeRuns = carrotGrid.map((twa) => ({ twa, ...steeringDrift(config, rigBase(twa, { sheet: 70 * DEG, brailWind: 0.5, shroud: 0 }), (c) => { c.shroud = 1; }) }));
+    const rakeOk = rakeRuns.filter((r) => !r.capsized && Math.sign(r.drift) === -1 && Math.abs(r.drift) >= 2).length;
+    check('AC-4.4: with the carrot set on a broad course, standing the mast upright reinforces the bear-away',
+      rakeOk === rakeRuns.length,
+      `${rakeOk}/${rakeRuns.length} points -- ` + rakeRuns.map((r) => `TWA${r.twa}:${r.drift.toFixed(1)}deg`).join(' ') +
+      ' -- steeringOk\'s 2-20deg band is applied as a floor only here: the criterion is that the effect is REINFORCED, so its size is bounded below, not above');
+  }
+
   // --- Hard-trim stability (was T3's counterintuitive "sheet-in-bears-away"
   // rule — RETIRED R9; the sail's steering direction is the normal one now
   // and lives in the SAIL block above). What remains worth asserting is

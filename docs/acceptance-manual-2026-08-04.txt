@@ -1,0 +1,71 @@
+
+Acceptance criteria — Kryteria_Akceptacji_Symulator_Pjoa.md
+(+turn = bow points UP / toward the wind; -turn = bears away)
+
+AC-1.1    PARTIAL              crew toward the ama -> bow points UP
+          5/6 points -- T70/6:+1.1 T90/6:+1.0 T110/6:+0.8 T70/10:+0.7C T90/10:+3.5 T110/10:+2.1  [direction correct at 6/6; 1 point(s) capsized inside the window, marked C]
+
+AC-1.2    PARTIAL              crew away from the ama (toward the hull) -> bow BEARS AWAY
+          4/6 points -- T70/6:+0.2C T90/6:-0.9 T110/6:-0.9 T70/10:-0.7C T90/10:-3.5 T110/10:-2.3  [direction correct at 5/6; 2 point(s) capsized inside the window, marked C]
+
+AC-1.3    PARTIAL              centred crew sits between the two extremes (no turning tendency of its own)
+          3/6 points -- min(both sides) - centred, T70/6:-0.2C T90/6:+0.9 T110/6:+0.8 T70/10:+0.5C T90/10:+0.5C T110/10:+2.1  [direction correct at 6/6; 3 point(s) capsized inside the window, marked C]
+
+AC-2.1    PASS                 crew FORWARD -> bow points UP
+          6/6 points -- T70/6:+11.5 T90/6:+9.2 T110/6:+5.7 T70/10:+17.7 T90/10:+12.7 T110/10:+7.8
+
+AC-2.2    PASS                 crew AFT -> bow BEARS AWAY
+          6/6 points -- T70/6:-12.0 T90/6:-9.2 T110/6:-5.7 T70/10:-15.7 T90/10:-11.7 T110/10:-7.5
+
+AC-2.3    PARTIAL              crew aft + breaking brail beats crew aft alone (beam wind)
+          1/2 beam points -- T90/6:+1.0 T90/10:-2.9
+
+AC-3.1    PARTIAL              sheet IN -> bow BEARS AWAY
+          2/6 points -- T70/6:+0.0 T90/6:-1.8 T110/6:-3.1 T70/10:+4.0C T90/10:-2.8C T110/10:-3.4C  [direction correct at 4/6; 3 point(s) capsized inside the window, marked C]
+
+AC-3.2    PASS                 sheet EASED -> bow points UP
+          6/6 points -- T70/6:+4.8 T90/6:+4.7 T110/6:+2.9 T70/10:+9.6 T90/10:+6.5 T110/10:+7.0
+
+AC-3.3    PARTIAL              a luffing sail does not give the textbook sheet response
+          5/6 points -- (drawing response - luffing response) T70/6:+0.0 T90/6:+1.4 T110/6:+0.8 T70/10:+4.0 T90/10:+2.8 T110/10:+0.4
+
+AC-4.1    PARTIAL              the preparation step is smaller than the manoeuvre it prepares (|brail-wind effect| > |brail-lee alone|)
+          2/6 points -- T70/6: prep+2.1 full+1.6 T90/6: prep+1.6 full+1.0 T110/6: prep+0.5 full-1.3 T70/10: prep+5.2 full+0.2 T90/10: prep+2.3 full-3.4 T110/10: prep+2.5 full-0.4
+
+AC-4.2a   PASS                 breaking brail -> bow BEARS AWAY
+          6/6 points -- T70/6:-1.4 T90/6:-1.2 T110/6:-2.3 T70/10:-3.5 T90/10:-4.9 T110/10:-1.2
+
+AC-4.2b   PASS                 the effect grows with the degree of breaking (monotone)
+          6/6 points -- (heavy - light) T70/6:-0.4 T90/6:-0.3 T110/6:-0.8 T70/10:-3.8 T90/10:-2.9 T110/10:-1.4
+
+AC-4.3    PASS                 the "carrot" helps hold a deep course / bears away
+          2/2 deep points -- T150/6:-2.0 T165/6:-1.3
+
+AC-4.4    PASS                 mast raked more upright reinforces the carrot
+          2/2 deep points -- T110/6:-12.2 T110/10:-18.1
+
+AC-5.1    PASS                 halyard hauled to the masthead / shroud tightened reduce weather helm
+          halyard 6/6 -- T70/6:-23.7 T90/6:-20.0 T110/6:-11.8 T70/10:-32.7 T90/10:-27.4 T110/10:-21.4 || shroud 6/6 -- T70/6:-21.5 T90/6:-20.1 T110/6:-15.7 T70/10:-31.0 T90/10:-27.7 T110/10:-21.3
+
+AC-5.2    PASS                 the paddle is always available and its authority grows with boat speed
+          u=1: 133 N*m  u=2: 534 N*m  u=4: 2136 N*m -- 4x speed gives 16.0x moment, i.e. exactly the V^2 a foil should give
+
+AC-5.3    PASS                 backwind (sail caught on the wrong side) is detected and signalled
+          abackTimer rose within 20s: true; final=6.00s. UI shows the "ABACK" banner from this same flag
+
+AC-5.4a   PASS                 a shunt swaps which end is the bow
+          eased to 2.40 m/s (lockout 2.6), then end 1 -> -1, phase=none
+
+AC-5.4b   PASS                 the crew's fore/aft reference swaps with the bow
+          "crew forward" turns the bow toward the wind by 5.1deg before the shunt and 5.1deg after (end=-1). clrXPosition() carries no explicit `end` term, but it is a BOAT-FRAME quantity and the boat frame itself flips at the shunt, so crewPosX=+1 keeps meaning "toward the active bow" on its own
+
+AC-6.1    PASS                 no control change turns the boat instantly (inertia)
+          every control slammed at once: |r| 0.000 -> 0.040 deg/s in one step (+0.0405), 1.558 at 0.5s, 1.431 at 2s
+
+AC-6.2    PASS (by inspection) the UI shows which side the ama is on
+          ui/app.js draws the ama and platform in plan view, on the state.end side, plus the "balance (bow-on)" inset and the crew pad art labelled ama/leeward; the HUD carries Ama load and Heel
+
+AC-6.3    PASS                 controls are independent and their effects combine, not exclude
+          crew aft alone -9.2deg, tack fwd alone -13.1deg, together -21.1deg (linear sum would be -22.3, departure 1.2deg — nonlinear, as a coupled model should be, but same direction and neither is ignored)
+
+summary: PARTIAL 7, PASS 15

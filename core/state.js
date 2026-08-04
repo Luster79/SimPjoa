@@ -89,6 +89,16 @@ export function createDefaultControls() {
     // docs/adr/0011. 0 is the neutral setting, at which the model is
     // identical to what it was before this control existed.
     tackX: 0,
+    // halyard / shroud (docs/adr/0019): the two rigging controls the manual's
+    // own list names (AC-6.3, "fal" and "wanta"). 1 is the normal sailing
+    // state -- hoisted to the masthead, mast held upright -- and at 1/1 the
+    // rig geometry is exactly what it was before these existed.
+    //   halyard: 1 = yard peaked at the masthead, 0 = fully eased (yard falls,
+    //   its CE drops and moves aft -> weather helm; AC-5.1a).
+    //   shroud:  1 = mast upright, 0 = fully slack (mast leans aft AND to
+    //   leeward -> CE aft and outboard -> weather helm; AC-4.4, AC-5.1b).
+    halyard: 1,
+    shroud: 1,
     shuntRequest: false,
   };
 }

@@ -90,6 +90,8 @@ otherwise. Documentation (this file, code comments) stays English-only.
 | Rudder | `A` / `D` (auto-centers on release), or slider |
 | Oar in the water | checkbox — a steering oar, not a fixed rudder. **Unchecked by default**: shipped is its resting state, and it costs speed while down. The rudder slider is disabled until it is ticked |
 | Tack (fore/aft) | slider — the rig's fore-aft position, **the proa's primary steering control**. Forward bears away, aft points up; the oar is a last resort (`docs/adr/0011`) |
+| Halyard | slider — the yard's hoist. Hauled to the masthead the CE rides high and forward (least weather helm); eased, the yard falls and its CE swings aft (`docs/adr/0019`) |
+| Shroud | slider — how upright the mast stands. Tight cuts weather helm and reinforces the downwind carrot; slack lets the mast fall aft and to leeward (`docs/adr/0019`) |
 | Crew position | `J` toward leeward, `L` toward the ama, or slider |
 | Shunt | `Space` (held or click), respects the speed lockout |
 | Reset (after capsize, or any time) | `R` |
@@ -267,7 +269,8 @@ Step 2, since the UI doesn't change them):
   angle (`state.delta`) and the windward brail combine into a real, moving CE
   — see `ARCHITECTURE_physics_core_EN.md`'s aero.js section, and
   `docs/adr/0011` (the tack as a control), `0014` (which way the CE travels
-  with trim) and `0015` (the brail's own shift). Note `sail.tackXFraction` is
+  with trim), `0015` (the brail's own shift) and `0019` (the halyard and shroud,
+  which make the CE's HEIGHT derived rather than constant). Note `sail.tackXFraction` is
   a DRAWING parameter only; round 7 removed it from the physics.
 - **Roll is a real 2nd-order DOF** (`phi`, `p` — integrated roll angle
   and rate, round 4), not a static ratio; `amaLoad` is derived from
@@ -309,13 +312,15 @@ Step 2, since the UI doesn't change them):
   term dominated two groups of manual-stated criteria and forced them to share
   a direction. Restore it only together with the hull's own term; see
   `core/config.js` at `yawHeelSign` for the measured matrix.
-- **The rig has no vertical degree of freedom.** `sail.CEheight` is a constant
-  2.0 m, and there is no halyard, shroud or backstay. The manual describes
-  three techniques that work through exactly these — raking the mast upright to
-  reinforce the downwind "carrot", hauling the halyard and shortening the
-  shroud to cut weather helm, and using the sheet as a substitute windward
-  shroud to recover from a backwind — and the model can answer none of them.
-  This is currently the largest single gap between it and the source.
+- **The rig's vertical geometry is a single rake angle.** The halyard and the
+  shroud are now controls (`docs/adr/0019`) and the CE height is derived from
+  them rather than constant, so three of the manual's techniques that were
+  unrepresentable now measure and pass. The simplification that remains: the
+  manual describes standing the mast up as one action (ease the backstay,
+  shorten the shroud), so one angle drives both the fore-aft and the lateral
+  lean. A boat whose two riggings were tuned independently would need two.
+  The one technique still unmodelled is using the sheet as a substitute
+  windward shroud to recover from a backwind.
 - **Sailing with the steering oar shipped works at 3 of 6 test points.** The
   hull's whole lateral force is now strip-integrated (`docs/adr/0017`), so it
   weathercocks and damps its own yaw properly, and with the tack and the crew's

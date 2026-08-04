@@ -498,6 +498,26 @@ cross-check at startup as required by the main prompt. Fixed schema version: a
       // no moment at r=0, and a real one at u=0, because a strip at x still
       // sees r*x of flow when the boat is not making way.
 
+    Vertical rig geometry (docs/adr/0019)
+      // controls.halyard and controls.shroud, both 1 in the normal sailing
+      // state, at which every term is exactly ZERO and the geometry is what it
+      // was before they existed. hull.lead / ceSwingFraction / clrXFraction are
+      // untouched -- the same add-the-CHANGE discipline as the AC-3 swing.
+      //   halyard sets the YARD's inclination about sail.yardCERadius (derived,
+      // = CEheight / sin(yardPeakAngleDeg), so full hoist reproduces the
+      // nominal height). Easing drops the CE and swings it AFT -> weather helm,
+      // which is the manual's own stated cause (AC-5.1a).
+      //   shroud sets the mast rake. The shroud runs to the ama, so slack lets
+      // the mast fall AWAY from it -- to leeward -- and aft. One angle drives
+      // both senses because the manual describes one action.
+      //   CEheight is now the sail's SIZE reference (the streamwise chord,
+      // which does not change with hoist); the EFFECTIVE height feeds the heel
+      // arm and the heel->yaw term.
+      //   Fore-aft rake carries NO `end` factor (the mast rakes toward the
+      // active stern on both ends, and +x already points at the active bow --
+      // the ADR 0016 trap); the lateral term DOES, since the ama is bolted to
+      // one physical side.
+
 ### rudder.js
     rudderForce(state, controls, config) -> { Fx, Fy, yawMoment }
       // F9 (work-order-2026-07-30): a proper foil, not coeff*sin(deflection).

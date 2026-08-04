@@ -344,12 +344,37 @@ export function runAcceptance(config) {
       `${t.ok}/${t.n} deep points -- ${t.detail}`);
   }
 
-  record('AC-4.4', 'mast raked more upright reinforces the carrot', 'NOT REPRESENTABLE',
-    'the model has no mast-rake DOF: sail.CEheight is a constant 2.0 m and there is no shroud/backstay control');
+  // AC-4.4: with the carrot set, standing the mast upright must REINFORCE the
+  // bear-away. Measured as a differential against the same trim with the
+  // shroud slack, on the deep half of the grid -- the criterion is stated for
+  // a broad course ("kurs pelny"), so it is measured there.
+  {
+    const rows = differential(config,
+      (c) => { c.brailWind = 0.5; c.shroud = 1; },
+      (c) => { c.brailWind = 0.5; c.shroud = 0; });
+    const deep = rows.filter((r) => r.point.twa >= 110);
+    const t = tally(deep, (r) => r.diff < 0);
+    record('AC-4.4', 'mast raked more upright reinforces the carrot',
+      t.ok === t.n ? 'PASS' : (t.ok === 0 ? 'FAIL' : 'PARTIAL'),
+      `${t.ok}/${t.n} deep points -- ${t.detail}`);
+  }
 
   // ---- 5. Combinations and failure states ---------------------------------
-  record('AC-5.1', 'halyard hauled to the masthead / shroud tightened reduce weather helm', 'NOT REPRESENTABLE',
-    'no halyard and no shroud control exist; controls.tackX (S2) moves the CE fore-aft but is not either of these lines');
+  // AC-5.1: the manual gives two independent cures for excessive weather helm
+  // -- haul the halyard to the masthead, and tighten the shroud so the mast
+  // stands up. Both are measured as differentials against the slack setting;
+  // both must bear the bow AWAY (diff < 0).
+  {
+    const hal = tally(differential(config,
+      (c) => { c.halyard = 1; }, (c) => { c.halyard = 0; }), (r) => r.diff < 0);
+    const shr = tally(differential(config,
+      (c) => { c.shroud = 1; }, (c) => { c.shroud = 0; }), (r) => r.diff < 0);
+    const ok = hal.ok + shr.ok;
+    const n = hal.n + shr.n;
+    record('AC-5.1', 'halyard hauled to the masthead / shroud tightened reduce weather helm',
+      ok === n ? 'PASS' : (ok === 0 ? 'FAIL' : 'PARTIAL'),
+      `halyard ${hal.ok}/${hal.n} -- ${hal.detail} || shroud ${shr.ok}/${shr.n} -- ${shr.detail}`);
+  }
 
   // AC-5.2, the part that IS representable: the oar is always available and its
   // authority grows with boat speed.

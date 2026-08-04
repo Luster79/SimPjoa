@@ -295,6 +295,9 @@ function buildDefaultConfig() {
   // Surge added mass for a slender body is small (a few % — it is pushing
   // water aside lengthwise, not broadside); 10% is used. ama.mass is now
   // included in the translational masses, which it previously was not.
+  // Yard inclination from horizontal at full hoist (docs/adr/0019). Needed
+  // here first: sail.yardCERadius is derived from it below.
+  const YARD_PEAK_ANGLE_DEG = 60;
   const HULL_LATERAL_AREA = 1.8;                        // m^2 — see hull.lateralArea below (same value, needed here first)
   const draft = HULL_LATERAL_AREA / p.boat_length_m;    // ~0.327 m
   // kg/m, 2D cylinder analogy. AUDITED 2026-08-04 (docs/adr/0018) and kept at
@@ -616,7 +619,31 @@ function buildDefaultConfig() {
     sail: {
       area: p.sail_area_m2,                // 12 m^2
       apexAngleDeg: p.sail_apex_angle_deg,  // 50 deg (45-60 valid range)
-      CEheight: p.CE_height_m,              // 2.0 m
+      CEheight: p.CE_height_m,              // 2.0 m — NOMINAL: the CE height at
+      // full hoist and an upright mast. aero.js derives the EFFECTIVE height
+      // from the halyard and shroud controls below; this stays the sail's own
+      // size reference (the streamwise chord, which does not change when the
+      // sail is hoisted higher).
+      //
+      // --- Vertical rig geometry (2026-08-04, docs/adr/0019) ---
+      // The manual's own control list (AC-6.3) names the halyard ("fal") and
+      // the shroud ("wanta") alongside the sheet and the two brails, and three
+      // of its techniques work through nothing else: AC-4.4 (mast stood
+      // upright reinforces the carrot), AC-5.1a (halyard hauled to the
+      // masthead cuts weather helm) and AC-5.1b (shroud tightened cuts weather
+      // helm). With CEheight a constant the model could answer none of them.
+      //
+      // Two controls, both defaulting to the normal sailing state (hauled and
+      // tight), at which every term below is exactly zero -- so the model is
+      // bit-identical to what it was before this geometry existed, and none of
+      // hull.lead / ceSwingFraction / clrXFraction is retuned.
+      yardPeakAngleDeg: YARD_PEAK_ANGLE_DEG, // yard inclination from horizontal at full hoist; Oceanic lateen practice
+      halyardDropDeg: 20,                  // how far the yard falls when the halyard is fully eased
+      mastRakeMaxDeg: 12,                  // mast lean from vertical with the shroud fully slack
+      // Derived, not chosen: the distance from the tack to the sail's CE along
+      // the yard is whatever puts the CE at CEheight when the yard is at its
+      // full-hoist angle. That is what keeps the default state identical.
+      yardCERadius: p.CE_height_m / Math.sin(YARD_PEAK_ANGLE_DEG * Math.PI / 180),
       // deltaMinDeg (S6, work-order-2026-08-02): the closest the SHEET can
       // hold the yard to the centreline. A rig cannot be strapped flat just
       // because the optimizer would like it to be: on an Oceanic lateen the

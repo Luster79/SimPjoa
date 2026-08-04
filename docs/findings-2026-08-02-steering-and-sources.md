@@ -1410,3 +1410,66 @@ boat holds a course indefinitely with the oar out of the water.
 
 The measurement that would settle it is unchanged: Flay's yaw moment, never
 digitised.
+
+---
+
+## The rig's vertical geometry (2026-08-04, ADR 0019)
+
+The largest single gap against the manual, and the last one that was structural
+rather than a missing measurement. `sail.CEheight` was a constant 2.0 m, there
+was no mast rake, no halyard and no shroud — and the manual's own control list
+(AC-6.3) names the halyard and the shroud, because three of its techniques work
+through nothing else. All three read `NOT REPRESENTABLE` in the acceptance run.
+
+### Two controls, geometry derived
+
+`halyard` sets the **yard's** inclination about a radius that is derived, not
+chosen: `yardCERadius = CEheight / sin(yardPeakAngleDeg)` — whatever puts the
+CE at the nominal height when the yard is fully peaked. Easing drops the CE
+from 2.00 m to 1.48 m and swings it 0.61 m **aft**, which is the manual's own
+stated cause of weather helm.
+
+`shroud` sets the mast rake. The shroud runs to the ama, so slack lets the mast
+fall away from it — to leeward — and aft. One angle drives both senses because
+the manual describes standing the mast up as one action.
+
+`CEheight` becomes the sail's **size** reference (the streamwise chord, which
+does not change with hoist); the effective height feeds the heel arm and the
+heel→yaw term. Fore-aft rake carries **no `end` factor** — the mast rakes
+toward the active stern on both ends and +x already points at the active bow,
+the exact trap ADR 0016 documented; the lateral term does carry it.
+
+### The property that made it safe
+
+At `halyard = shroud = 1` every new term is **exactly zero**. 83/83 assertions
+came out unchanged before the new checks were added, and `hull.lead`,
+`ceSwingFraction` and `clrXFraction` were not retuned — the same
+add-the-change-from-the-reference discipline the AC-3 reformulation used.
+
+### Measured
+
+TWS 6, TWA 70/90/110:
+
+| criterion | drift |
+|---|---|
+| AC-5.1a hauling the halyard bears away | −6.5° / −8.4° / −7.8° |
+| AC-5.1b tightening the shroud bears away | −8.0° / −11.7° / −12.0° |
+| AC-4.4 mast upright reinforces the carrot (TWA 150/160) | −4.2° / −3.6° |
+
+Reverse direction holds too: easing from hauled luffs 7.4–7.8°. At TWS 10 the
+response passes `steeringOk`'s 20° ceiling (−20.4°), so the assertions sit at
+TWS 6 and the TWS 10 number is reported rather than asserted.
+
+**The acceptance run is 15 PASS / 7 PARTIAL — nothing failing, nothing
+unrepresentable.** It was 12 PASS / 7 PARTIAL / 1 FAIL / 2 NOT REPRESENTABLE.
+
+Two UI sliders, both languages, verified in a real browser: present, the model
+responds to dragging, no console errors.
+
+### Still open
+
+No heave DOF — this is rig *geometry*, not a new degree of freedom in the
+dynamics, so S8 is untouched. The single rake angle is the manual's own
+framing but simplifies two real riggings into one. And the manual's remaining
+unmodelled technique is using the sheet as a substitute windward shroud to
+recover from a backwind.

@@ -31,7 +31,9 @@ criterion — see the "Conventions" note below.
 grid and prints a tally. It is a **report, not a build gate**, deliberately:
 some criteria describe controls the model does not have. Run it with
 `node harness/acceptance-manual.js`; the last full output is
-`acceptance-manual-2026-08-03.txt`.
+`acceptance-manual-2026-08-04.txt` (**15 PASS / 7 PARTIAL, nothing failing and
+nothing unrepresentable** since the rig gained its vertical geometry, ADR 0019).
+The 08-03 snapshot is kept beside it because the findings cite its numbers.
 
 ## Decision records — `adr/`
 
@@ -57,6 +59,7 @@ Append-only. Never edit an old ADR; supersede it with a new one.
 | 0016 | Hull yaw damping by strip integration, and the oar's lever arm |
 | 0017 | The hull's whole lateral force by strip integration -- supersedes 0016's *split* between sway and yaw, not its finding |
 | 0018 | The Munk moment is not double-counted -- closes 0017's open question; the model has *less* destabilising moment than the literature, not more |
+| 0019 | Vertical rig geometry: the halyard and the shroud, and a CE height that is derived rather than constant |
 
 ## Work orders — what to do
 
@@ -76,7 +79,8 @@ the findings document, not here — see its last four sections.
 | `findings-2026-07-22-work-order.md` | Execution of the 07-22 order |
 | `findings-2026-07-30-physics-audit.md` | Execution of the physics audit, with the measured numbers behind every change |
 | `findings-2026-08-02-steering-and-sources.md` | Execution of the 08-02 order stage by stage, **then** the acceptance run against the manual and everything it uncovered |
-| `acceptance-manual-2026-08-03.txt` | Raw output of `harness/acceptance-manual.js` |
+| `acceptance-manual-2026-08-04.txt` | Raw output of `harness/acceptance-manual.js` — current |
+| `acceptance-manual-2026-08-03.txt` | The previous snapshot, cited by the findings |
 | `capsize-margins-2026-07-30.md` | Margin sweep run as a precondition for the audit's block D |
 | `diagnostic-2026-07-22-residuary-hump.md` | The investigation that produced the 07-22 physics items |
 
