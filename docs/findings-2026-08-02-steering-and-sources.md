@@ -1,10 +1,34 @@
 # Findings — work-order-2026-08-02 (steering and sources)
 
-*Last reviewed: 2026-08-02*
+*Last reviewed: 2026-08-04*
 
-Evidence for the execution of `work-order-2026-08-02-steering-and-sources.md`.
+Evidence for the execution of `work-order-2026-08-02-steering-and-sources.md`,
+and then for the work that came out of the owner's own manual once it arrived.
 One section per stage, written as the stage lands. Measurements are
 reproducible from the repo root with the snippets quoted in each section.
+
+**Contents**
+
+| Section | What it settled |
+|---|---|
+| Verification of the work order's claims | All three reproduce |
+| Stage 0 — S5, S1 | Guards first; `hull.lead` outlived its own measurement |
+| Stage 1 — S4a | The paper, obtained; the source is consistent, our digitisation was not |
+| Stage 2 — S6 | Geometric sheeting floor; the grid edge was never the problem |
+| Stage 3a — S2 | The tack becomes a steering control |
+| Stage 3b — S3 | Leeboard: implemented, then **withdrawn** (ADR 0013) |
+| Acceptance criteria run | 12 PASS / 7 PARTIAL / 2 not representable |
+| AC-3 accepted | Sheet steering reversed to the manual's rule |
+| Stage 4a — S4b | The last data file gets a reader |
+| AC-1 diagnosed / re-diagnosed | A transcription error in the derived criteria; the original settles it |
+| AC-1/AC-4 mechanisms supplied | The ama's missing wave drag, the brail's missing CE shift |
+| AC-1 resolved | The heel term was half of a cancelling pair |
+| **The boat only works on one shunt** | The oar was modelled at the bow on one end |
+| **The hull stabilises like the oar** | Yaw damping derived by strip integration |
+
+The last four sections are not work-order items. They came from the manual and
+from checking a measurement I did not trust, and between them they account for
+most of what actually changed in the model.
 
 ---
 

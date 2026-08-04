@@ -1,6 +1,6 @@
 # PROMPT SUPPLEMENT: Physics core architecture (Step 1 — headless)
 
-*Last reviewed: 2026-07-20*
+*Last reviewed: 2026-08-04*
 
 **Round 10d note:** `ROUND10d_helm_balance.md` closed three defects the
 user's field ride exposed (spontaneous uncontrolled bear-away, TWA113
@@ -294,13 +294,45 @@ cross-check at startup as required by the main prompt. Fixed schema version: a
       // cos(state.phi) (heel foreshortens the sail's projected area), and
       // yawMomentHeel = config.hull.yawHeelSign * state.end *
       // sail.CEheight * sin(phi) * Fx — the heeled mast offsets the CE
-      // laterally, so the drive force Fx now produces a yaw moment too
-      // (pure geometry, no free coefficient beyond the verified sign flip
-      // knob). Empirically verified (not just derived) against the
-      // coupling-sign test in harness/asserts.js: crew toward the ama
-      // measurably bears the boat away on a steady reach with the rudder
-      // locked, matching the extension request's expected direction with
-      // yawHeelSign=+1 — no flip needed.
+      // laterally, so the drive force Fx produces a yaw moment too.
+      //   DISABLED since 2026-08-04 (yawHeelSign = 0), and not because the
+      // physics is zero: this models one half of a cancelling pair. Heel
+      // swings the RIG's CE to leeward (computed here) and also makes the
+      // immersed HULL asymmetric, which opposes it and is the dominant
+      // real-world heel-to-yaw mechanism — and which the model does not have
+      // at all. A partial model of a cancelling pair has an essentially
+      // arbitrary sign, and this one's was calibrated against a rule the
+      // owner's manual contradicts. At +-1 it DOMINATED both the crew-lateral
+      // and the brail criteria and forced them to share a direction, so no
+      // sign satisfied the source; at 0 each of the manual's own named
+      // mechanisms governs its own criterion. Restore only together with the
+      // hull's term. See core/config.js at yawHeelSign for the measured
+      // matrix, and docs/findings-2026-08-02.
+      // CE GEOMETRY, current form (2026-08-03/04):
+      //   xCE = clrXNeutral + hull.lead + tackOffset + swing + ceBrailXShift
+      // three of whose four terms are newer than the round-7 text below.
+      //   tackOffset = state.end * controls.tackX * sail.tackTravel — the rig's
+      // own fore-aft position, referenced to the ACTIVE bow so it flips at a
+      // shunt. THE proa steering control (docs/adr/0011): before it, `lead`
+      // (0.33 m) exceeded the entire trim-driven excursion (0.25 m), so the
+      // helm lever xCE-clrX was positive by construction and the sail could
+      // modulate the SIZE of a yaw moment but never its DIRECTION.
+      //   swing = -halfChordEff * (1 - cos delta) when sail.ceSwingMode is
+      // 'manual' (the default), -halfChordEff * cos delta when 'geometric'.
+      // The manual form makes the CE move AFT as the sail is eased, i.e.
+      // sheeting in bears away — the owner's source states this outright
+      // ("pulling the sheet forces the bow to turn off the wind as the sail's
+      // centre of effort moves forward"), and it is the opposite of what the
+      // rigid-triangle geometry gives. Written as (1-cos) rather than by
+      // flipping a sign so the lever's RANGE is untouched. See docs/adr/0014;
+      // 'geometric' is kept switchable because the losing side is a real
+      // argument, not an error.
+      //   ceBrailXShift * brailWind — the windward brail's OWN forward CE
+      // shift (docs/adr/0015), independent of trim, because the manual gives
+      // it its own mechanism and no trim dependence. Without it the brail's
+      // only path to xCE was modulating the swing amplitude, which the (1-cos)
+      // form collapses to ~2 cm at close trims.
+      //
       // Round 5 introduced `yawMoment = ceLeverSign * (x_CE*Fy - y_CE*Fx) +
       // yawMomentHeel` with x_CE/y_CE derived from a tack position
       // (config.sail.tackXFraction) and the yard's own swing. Round 7
@@ -390,6 +422,18 @@ cross-check at startup as required by the main prompt. Fixed schema version: a
                                             // with crewTrimSign=+1 — no flip
                                             // needed (see coupling-sign test).
     amaDrag(u, phi, crewPos, end, config) -> { Fx, yawMoment }
+                                            // 2026-08-04 (docs/adr/0015): now
+                                            // friction + RESIDUARY, the same
+                                            // bounded Fr hump the hull has had
+                                            // since R9-1. The ama had wave
+                                            // drag of exactly zero while the
+                                            // hull had it, and being shorter
+                                            // it sits at a HIGHER Froude
+                                            // number (0.68 vs 0.54 at 4 m/s).
+                                            // This is the honest home for
+                                            // authority round 7 put in
+                                            // formFactor (3.3) and round 9
+                                            // rightly removed.
                                             // F1 (work-order-2026-07-30):
                                             // takes phi (not amaLoad) and
                                             // derives immersion WITH SIGN —
@@ -429,13 +473,26 @@ cross-check at startup as required by the main prompt. Fixed schema version: a
                                             // re-derived R7-4a drag-ratio
                                             // bands this now satisfies.
     yawDamping(r, u, config) -> moment
-      // F10 (work-order-2026-07-30): the BARE HULL's term only, as the two
-      // standard manoeuvring components — N_r*|u|*r (circulatory, vanishes
-      // at u=0) + N_rr*r*|r| (cross-flow, present at rest). Replaces
-      // `coeff*r*(1+|u|)`, which was dimensionally inconsistent and gave a
-      // stopped boat full damping. The magnitude also came down: before F9
-      // the steering oar supplied zero yaw damping, so the old single
-      // coefficient was covering the rudder's share as well.
+      // The BARE HULL's resistance to yawing, DERIVED BY STRIP INTEGRATION
+      // (2026-08-04, docs/adr/0016) rather than configured. Station x sees
+      // sway r*x, hence its own leeway angle, hence its own CS from the SAME
+      // measured curve hullSideForce uses (docs/adr/0004); each strip carries
+      // lateralArea/N; the moment is the integral of x*f(x), 21 stations.
+      // Evaluated at v=0 — the standard N_r linearisation. This owns the
+      // yaw-rate part; hullSideForce owns the sway part. The v-r cross term
+      // is captured by neither and is a known omission.
+      //   Supersedes F10's configured pair (yawDampingLinear/CrossFlow, both
+      // DELETED). F10's two physical requirements now fall out by
+      // construction: zero at r=0, and NOT zero at u=0, because a strip at x
+      // still sees r*x of flow when the boat is not making way.
+      //   The magnitude was badly short. hullSideForce takes only u and v, so
+      // it is blind to yaw rate, and its own yaw contribution acts at a fixed
+      // clrX — everything the hull did about yawing came from this function's
+      // two estimated coefficients. Measured at u=3.5, r=0.3: -395 -> -1404
+      // N*m, against the 0.15 m^2 steering oar's -1345. A 5.5 x 0.45 m hull
+      // is a 12:1 lateral foil with twelve times the blade's area and damps
+      // about as hard, which is what put S2's rudder-free course hold back to
+      // 6/6 and finally settled TWA 110.
 
 ### rudder.js
     rudderForce(state, controls, config) -> { Fx, Fy, yawMoment }
@@ -446,9 +503,15 @@ cross-check at startup as required by the main prompt. Fixed schema version: a
       // boat axes, so Fx exists and steering costs speed. The oar sits at
       // the PHYSICAL STERN, -(L/2)*end; the old +(L/2) was invisible without
       // an inflow term and inconsistent with it.
-      // lever arm = -(half hull length) * state.end — the PHYSICAL stern
-      // (F9 corrected the sign; see core/rudder.js for why it was invisible
-      // before an inflow term existed). Dead at |u| ~ 0.
+      // lever arm = -(half hull length), with NO `end` factor: the boat
+      // frame's +x already points at the ACTIVE bow (see Conventions), so the
+      // stern is at -L/2 on BOTH ends. F9 wrote -(L/2)*state.end and verified
+      // the signs at end=+1 only, where the two are the same number; at
+      // end=-1 that put the oar at the BOW, failing two of F9's own three
+      // required properties and making the boat round up 81deg and stop
+      // instead of bearing away 11deg at 3.93 m/s. Fixed 2026-08-04
+      // (docs/adr/0016); harness/polar.js's headingHoldRudder lost its
+      // compensating state.end at the same time. Dead at |u| ~ 0.
       // controls.rudderUp short-circuits to { Fx: 0, Fy: 0, yawMoment: 0 } —
       // a Pjoa's "rudder" is a steering OAR, normally shipped clear of the
       // water, not centered. createDefaultControls() therefore defaults it
@@ -554,6 +617,12 @@ cross-check at startup as required by the main prompt. Fixed schema version: a
       // this rig). Returns end*(awAngle+PI), normalized — NOT clamped to
       // [0, delta_max]; the caller's clamp is what selects the regime.
     effectiveDeltaMax(state, controls, config) -> rad
+      // FLOORED at config.sail.deltaMinDeg (S6, docs/adr/0010): the rig cannot
+      // be sheeted closer to the centreline than its own geometry allows —
+      // acos(hull.length / sparLength) = 10.7deg for this boat, derived from
+      // area/apex/length with nothing fitted. It bounds the SHEET, not the
+      // yard: a sheet is a rope and can only stop the yard swinging OUT, so
+      // the wind may still push it inside deltaMin (the luffing regime below).
       // The sheet ceiling actually in force: released to
       // config.sail.deltaMaxReleaseDeg during a shunt's ease/transfer/swap
       // phases, closed back to the commanded controls.sheet once 'sheet'

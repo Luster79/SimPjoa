@@ -1,6 +1,6 @@
 # Input data for a crab-claw proa simulator
 
-*Last reviewed: 2026-08-02*
+*Last reviewed: 2026-08-04*
 
 ## Files
 
@@ -86,11 +86,16 @@ the curve constrained to never exceed the paper's own labeled L/Dmax
 fit derivation: `ROUND10_data_integration_findings.md`.
 
 **Runtime note:** `core/aero.js` never reads a table's CD column
-directly — CD is recomputed at runtime from `CONFIG.sail.CD0`/`sail.s`
-(the table only supplies CL). Switching `aeroTableVersion` therefore
-requires `sail.CD0`/`sail.s` to also be updated to the matching fit (v2
-sets them to 0.040/0.41 by default; v1's own values were 0.06/0.80 —
-see `core/config.js`'s sail block comment for both). `sail.camber` is
+directly — the table supplies CL only, and CD is recomputed at runtime.
+The form is no longer the `CD0 + s*CL*tan(alpha)` suction-loss one this
+paragraph used to describe: block B replaced it with the composite
+    CD = CD0 + inducedK*CL^2 + CDbroadside*sin^4(alpha) + brail/flogging terms
+and **deleted `sail.s`** (docs/adr/0007). Switching `aeroTableVersion`
+therefore requires `sail.CD0`, `sail.inducedK` and `sail.CDbroadside` to
+be updated to the matching fit — see `core/config.js`'s sail block and
+ADR 0007 for why the quadratic term alone cannot reproduce the measured
+post-stall rise, which is what made the separation term necessary rather
+than optional. `sail.camber` is
 set to 0 by default (v2): the measured curve already carries whatever
 real camber the Santa Cruz sail had, so applying the theoretical
 camber-boost multiplier on top would double-count it. Re-enable
