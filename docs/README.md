@@ -31,6 +31,7 @@ Append-only. Never edit an old ADR; supersede it with a new one.
 | 0013 | Withdrawing the leeboard — it is a modern option, not this deep-V boat's fit; supersedes 0012 |
 | 0014 | Sheet steering follows the owner's manual, not the rigid-triangle geometry |
 | 0015 | The ama's missing wave drag and the brail's missing CE shift |
+| 0016 | Hull yaw damping by strip integration, and the oar's lever arm |
 
 ## Work orders — what to do
 

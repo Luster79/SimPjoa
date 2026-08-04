@@ -418,27 +418,20 @@ function buildDefaultConfig() {
       // provenance; no additional guard needed here since side force and
       // longitudinal resistance are independent terms.
       lateralArea: HULL_LATERAL_AREA,      // m^2 — hull lateral (broadside) plane area (~length*draft); tunable estimate (no direct measurement of THIS hull's draft)
-      // Yaw damping (F10, work-order-2026-07-30) — replaces the single
-      // yawDampingCoeff: 900 with `r*(1+|u|)`, which was dimensionally
-      // inconsistent (a bare 1 added to m/s) and gave a STOPPED boat full
-      // damping. Split into the two standard manoeuvring terms; see
-      // core/hydro.js yawDamping() for the derivation and for why the
-      // magnitude had to come down (before F9 the steering oar supplied ZERO
-      // yaw damping, so 900 was silently covering the rudder's share too —
-      // measured 52% rudder / 48% hull at u=3, r=0.3 once the oar became a
-      // real foil).
-      // yawDampingCrossFlow is DERIVED, not picked: a hull rotating at r moves
-      // its section at x sideways at r*x, so strip theory over the lateral
-      // plane gives N = 0.5*rho*Cd*draft*r^2 * integral(|x|x^2) =
-      // 0.5*rho*Cd*draft*r^2 * L^4/32. With rho=1025, Cd=crossFlowDragCoeff
-      // (1.1, the same bluff-body value hullSideForce uses), draft =
-      // lateralArea/L = 0.327 m and L = 5.5 m, that is 5276. Halved to 2640:
-      // the full value assumes fully separated cross-flow along the whole
-      // hull, which is an upper bound at the modest yaw rates this boat
-      // actually sees. Order of magnitude is the derivation's; the 0.5 is an
-      // explicit, labelled reduction, not a fitted constant.
-      yawDampingLinear: 150,              // N*m per (m/s * rad/s) — bare-hull circulatory term, vanishes at u=0; the rudder (F9) now supplies most of the circulatory damping
-      yawDampingCrossFlow: 2640,          // N*m per (rad/s)^2 — derived above; present at rest, which is what damps a stationary boat
+      // Yaw damping: NO LONGER A CONFIGURED PAIR (2026-08-04). F10 replaced a
+      // dimensionally-broken single coefficient with the two standard
+      // manoeuvring terms, yawDampingLinear (N_r) and yawDampingCrossFlow
+      // (N_rr), and derived the second from strip theory over the lateral
+      // plane while estimating the first. core/hydro.js's yawDamping() now
+      // performs that strip integration directly, at run time, through the
+      // SAME measured CS(leeway) curve the side force uses (docs/adr/0004) --
+      // so both terms fall out of the integration and neither has to be
+      // estimated. Both parameters are deleted rather than left unread.
+      //
+      // The magnitude changed a lot, and in the direction the owner predicted:
+      // -395 -> -1404 N*m at u=3.5, r=0.3, against the 0.15 m^2 steering oar's
+      // -1345. A 5.5 x 0.45 m hull is a 12:1 lateral foil with twelve times the
+      // blade's area, and it should damp about as hard. See hydro.js.
       clrXFraction: 0.05,                 // tunable — center-of-lateral-resistance offset from CG (aft), fraction of half-length
       // clrDepth (F12, work-order-2026-07-30): depth of the centre of lateral
       // resistance below the waterline. The sail's side force and the hull's

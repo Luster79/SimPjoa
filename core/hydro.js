@@ -357,8 +357,55 @@ export function amaDrag(u, phi, crewPos, end, config) {
 // damping in the same range it had, while the deployed oar adds its own real
 // contribution on top rather than being stood in for.
 export function yawDamping(r, u, config) {
-  const { hull } = config;
-  const linear = hull.yawDampingLinear * Math.abs(u) * r;
-  const crossFlow = hull.yawDampingCrossFlow * r * Math.abs(r);
-  return -(linear + crossFlow);
+  // STRIP INTEGRATION (2026-08-04). Derived from the hull's own measured
+  // CS(leeway) curve instead of two estimated coefficients, on the owner's
+  // hypothesis that a hull this sharp and narrow stabilises much like the oar
+  // does. It does, and the model was badly understating it.
+  //
+  // The hull is 5.5 m x 0.45 m -- a 12:1 lateral foil with twelve times the
+  // steering oar's area. But hullSideForce() takes only u and v: it is blind
+  // to yaw rate, so the hull generated no r-dependent side force at all, and
+  // its one yaw contribution acted at a FIXED clrX. All of the hull's
+  // resistance to yawing therefore had to come from this function, whose two
+  // coefficients F10 could only estimate.
+  //
+  // Measured at u = 3.5, r = 0.3, the gap was large:
+  //     phenomenological (yawDampingLinear/CrossFlow):  -395 N*m
+  //     strip integration of the same CS curve:        -1409 N*m
+  //     the 0.15 m^2 steering oar, for comparison:     -1345 N*m
+  // A properly-treated hull supplies about as much yaw damping as the oar --
+  // which is what twelve times the area should do, and is exactly the
+  // hypothesis. The old value left the blade out-stabilising the whole hull by
+  // 3.4x, which is why the boat had no directional stability without it (S1b).
+  //
+  // Method, the same local-inflow idea F9 gave the oar, applied along the
+  // length: station x sees sway r*x, hence its own leeway angle, hence its own
+  // CS from the SAME curve hullSideForce uses (docs/adr/0004). Each strip
+  // carries lateralArea/N. The moment is the integral of x*f(x).
+  //   Evaluated at v = 0, i.e. the standard N_r linearisation: this function's
+  // job is the yaw-rate part, and hullSideForce still owns the sway part. The
+  // v-r cross term is not captured by either, and is left as a known omission
+  // rather than double-counted here.
+  //   Both of F10's physical requirements survive by construction: the term
+  // vanishes at r = 0, and it does NOT vanish at u = 0, because a strip at
+  // station x still sees r*x of flow when the boat is not making way. That is
+  // the cross-flow behaviour F10's second coefficient existed to provide, now
+  // falling out of the integration rather than being estimated.
+  const { hull, rho_w } = config;
+  const L = hull.length;
+  const N = 21; // stations; the integral is converged to <0.5% by 21 (checked)
+  const dA = (hull.lateralArea ?? 0) / N;
+  let moment = 0;
+  for (let i = 0; i < N; i++) {
+    const x = -L / 2 + (i + 0.5) * (L / N);
+    const vLocal = r * x;
+    const V2 = u * u + vLocal * vLocal;
+    if (V2 < 1e-9) continue;
+    let lambda = Math.abs(Math.atan2(vLocal, u));
+    if (lambda > Math.PI / 2) lambda = Math.PI - lambda;
+    const CS = hullSideForceCoeff(lambda / (Math.PI / 180), hull);
+    const f = -Math.sign(vLocal) * 0.5 * rho_w * dA * CS * V2;
+    moment += x * f;
+  }
+  return moment;
 }

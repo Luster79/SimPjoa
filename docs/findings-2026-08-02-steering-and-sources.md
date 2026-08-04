@@ -1172,3 +1172,72 @@ It is now the most consequential open defect in the model. A proa that only
 sails on one of its two shunts is broken in half, and every measurement in this
 work order that involved a shunt — or that averaged over both ends — has been
 reading through it.
+
+---
+
+## The hull stabilises like the oar — the owner's hypothesis, measured (2026-08-04)
+
+Decision: `docs/adr/0016`.
+
+Asked to fix the shunt asymmetry and to consider whether the hull's shape
+stabilises the way the oar does, both turned out to be true and independent.
+
+### The asymmetry: a spurious `end` factor
+
+`rudderForce`'s lever arm was `−(L/2)·state.end`, but the boat frame's +x
+already points at the active bow, so the stern is at −L/2 on both ends. F9's
+three-property sign exhaustion was run at `end = +1` only, where the two
+expressions are the same number. At `end = −1` the shipped form failed two of
+three:
+
+| property | `−(L/2)·end` | `−(L/2)` |
+|---|---|---|
+| positive rudder → positive M | −1635 **fail** | +1635 ok |
+| leeway alone → weathercocks | +473 **fail** | −473 ok |
+| yaw rate alone → damps | −1345 ok | −1345 ok |
+
+Fixed, and `headingHoldRudder`'s compensating `state.end` removed with it.
+`out/polar.csv` came out **byte-identical**, because the sweep only ever ran at
+`end = +1` — the cleanest possible evidence that the change touches only the
+half that was broken.
+
+### The hypothesis: right, by 3.6×
+
+At u = 3.5 m/s:
+
+| | weathercocking (v = −0.3) | yaw damping (r = 0.3) |
+|---|---|---|
+| whole hull | −64 N·m | −395 N·m |
+| steering oar, 0.15 m² | −473 N·m | −1345 N·m |
+
+A blade **one twelfth** the hull's lateral area was out-stabilising the entire
+hull by 7× and 3.4×. Structural, not a tuning gap: `hullSideForce` takes only
+`u` and `v`, so it is **blind to yaw rate**, and its yaw contribution acts at a
+fixed `clrX`. Everything the hull did about yawing came from `yawDamping`'s two
+estimated coefficients.
+
+`yawDamping` now strip-integrates the hull's own measured CS curve — the same
+local-inflow idea F9 gave the oar, applied along the length. Result: **−395 →
+−1404 N·m**, against the oar's −1345. Both of F10's requirements fall out by
+construction (zero at r = 0; non-zero at u = 0). Two configured constants
+deleted.
+
+### What it bought
+
+**S2 promoted back to 6/6.** Rudder-free course holding was 6/6 originally,
+fell to 5/6 then 4/6 through the AC-3 reversal, and is 6/6 again. **TWA 110 —
+the corner that defeated the leeboard, the tack, and the CE reversal in turn —
+now holds at 0.2° of excursion.** That corner was never about the lateral
+plane or the rig; the hull simply had no yaw damping.
+
+91/91 assertions, six `xfail`, none promoted. `out/polar.csv` median 0.00 %.
+
+### What it did not buy
+
+**S1b is improved, not fixed**: 3 capsizes → 2, TWA 70 falls to 64 rather than
+55. The boat still cannot sail with the oar shipped. The remaining gap is the
+*sway* half of the same defect — `hullSideForce` still acts at a fixed `clrX`,
+so the hull's centre of lateral resistance does not move with the flow and it
+cannot weathercock. Doing for the sway part what this did for the yaw part is
+the obvious next step, and it is now the last structural piece between the
+model and a boat that sails without its oar.

@@ -177,8 +177,18 @@ export function runAsserts(config, { slow = true } = {}) {
     // bare-pole drift in a 12 kn breeze, where 0.06 m/s (0.12 kn) is
     // essentially pinned. The check's intent (it drifts, it is not stuck, and
     // it does not sail off) is unchanged.
-    check('H3: parked hull, beam TWS6, sail furled -> downwind drift speed in [0.35,0.8] m/s within 60s',
-      speed >= 0.35 && speed <= 0.8, `speed=${speed.toFixed(4)} m/s (u=${state.u.toFixed(4)} v=${state.v.toFixed(4)})`);
+    // Re-anchored 2026-08-04 for the strip-derived hull yaw damping. The
+    // mechanism is the point of the check, not the number: with only the old
+    // estimated damping the parked hull weathervaned 54deg off beam-on and
+    // then slid at 0.57 m/s. With the hull's real yaw damping it HOLDS
+    // beam-on, and a hull held beam-on presents its whole lateral plane to
+    // the drift, so it slides much more slowly. That is the physically right
+    // answer -- a bare hull lying broadside is hard to push sideways -- and it
+    // is the same reason a drifting boat lies beam to the wind rather than
+    // wandering off downwind. The check's own stated intent is unchanged: it
+    // drifts, it is not stuck, and it does not sail off.
+    check('H3: parked hull, beam TWS6, sail furled -> downwind drift speed in [0.10,0.25] m/s within 60s',
+      speed >= 0.10 && speed <= 0.25, `speed=${speed.toFixed(4)} m/s (u=${state.u.toFixed(4)} v=${state.v.toFixed(4)}) -- was 0.57 under the old estimated damping, when the hull weathervaned instead of holding beam-on`);
   }
 
   // --- 2b. Sheeting tolerance (S5, work-order-2026-08-02) ---
@@ -639,21 +649,19 @@ export function runAsserts(config, { slow = true } = {}) {
       return { twa: row.twa, tws: row.tws, found };
     });
     const nHeld = holders.filter((h) => h.found.length > 0).length;
-    // Demoted to xfail by the AC-3 reversal (docs/adr/0014), which cost this
-    // exactly one operating point: it held 6/6 before, 5/6 after, losing
-    // TWA110/TWS6. Reported rather than softened to ">=5 of 6" -- the
-    // criterion is "a proa can be sailed on trim alone", and 5 of 6 is not
-    // that. The lost point is the same broad-course corner where S3's
-    // withdrawn leeboard also ran out of authority, which is now twice that
-    // TWA110 has been the limit; that is a lead, not a coincidence.
+    // PROMOTED back to a real pass (2026-08-04). It held 6/6 originally, fell
+    // to 5/6 and then 4/6 through the AC-3 reversal, and is 6/6 again now that
+    // the hull's yaw damping is derived by strip integration rather than
+    // estimated -- the boat has enough directional stability of its own for
+    // the tack to trim against. TWA110, which had been the stubborn corner
+    // through three separate attempts, holds at 0.2deg of excursion.
     check('S2: with the tack as a control, a rudder-free course hold exists at every operating point (round 10d H1 ceiling, 15deg/60s)',
       nHeld === holders.length,
       `${nHeld}/${holders.length} points -- ` +
       holders.map((h) => {
         const b = h.found.reduce((a, r) => (r.excursion < a.excursion ? r : a), h.found[0]);
         return h.found.length ? `TWS${h.tws}/TWA${h.twa}: tackX=${b.t} exc=${b.excursion.toFixed(1)}deg v=${(b.speedRatio * 100).toFixed(0)}%` : `TWS${h.tws}/TWA${h.twa}: NONE`;
-      }).join(' ') + ' -- was 6/6 before the AC-3 CE-swing reversal (docs/adr/0014); TWA110/TWS6 is the point it lost',
-      'STEERING');
+      }).join(' '));
   }
 
   // Smoothness: an isolated >20% drop between adjacent TWA rows in 60-170
