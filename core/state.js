@@ -68,7 +68,12 @@ export function createInitialState(config) {
 
 export function createDefaultControls() {
   return {
-    windDirFrom: Math.PI, // wind from the south by default (blowing towards north)
+    // World frame is X east / Y north with angles CCW from +X, so Math.PI is
+    // the direction the wind comes FROM = west, blowing toward the east. (The
+    // comment here used to say "from the south, blowing towards north", which
+    // was wrong on both counts -- the same convention mix-up the UI's wind
+    // readout carried until it started showing compass bearings.)
+    windDirFrom: Math.PI,
     windSpeed: 6,
     sheet: 0, // MAXIMUM yard angle delta_max [rad], >=0 (R5-1) — NOT the actual yard angle, see state.delta
     rudder: 0,
