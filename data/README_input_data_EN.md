@@ -154,8 +154,16 @@ Until then the file carried order-of-magnitude values from G. Dierking,
 Wa'apa designs — which is why the simulator was being judged against one
 boat's handbook while carrying another boat's dimensions.
 
-**Still not published, and still estimates:** hull beam and draft. They are
-precisely the numbers the helm balance turns on.
+**Hull beam and draft** are no longer free (`docs/adr/0022`). The owner gives
+the vaka at 50-55 cm, which the geometry shows can only be the GUNWALE beam --
+as a waterline beam it would displace 265-321 kg against the published 165 --
+and the displacement then fixes the draft at 0.282 m with no parameter left
+over. `hull_beam_m` is carried for the drawing only; no physics module reads
+it.
+
+**Still estimates:** `hull.lead` and `hull.clrXFraction`, i.e. where the rig
+sits relative to the lateral plane. They are now the only unmeasured part of
+the helm balance.
 
 ## Sources
 

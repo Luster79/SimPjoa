@@ -62,6 +62,7 @@ Append-only. Never edit an old ADR; supersede it with a new one.
 | 0019 | Vertical rig geometry: the halyard and the shroud, and a CE height that is derived rather than constant |
 | 0020 | The stays and the shroud are two riggings -- refines 0019; the mast can now be raked FORWARD, which is what took the crew off the stop |
 | 0021 | Re-parameterised onto the real PJOA FOLK -- the boat the manual is written for, instead of a Dierking estimate |
+| 0022 | The draft comes from the beam -- refines 0021; the owner's 50-55 cm can only be the gunwale, and displacement then fixes the draft |
 
 ## Work orders — what to do
 

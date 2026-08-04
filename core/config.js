@@ -298,10 +298,18 @@ function buildDefaultConfig() {
   // Yard inclination from horizontal at full hoist (docs/adr/0019). Needed
   // here first: sail.yardCERadius is derived from it below.
   const YARD_PEAK_ANGLE_DEG = 60;
-  // 1.5 m^2 = 5.0 m waterline x ~0.30 m draft. Scaled from the previous 1.8
-  // by the length ratio squared when the boat was re-parameterised onto the
-  // real PJOA FOLK (docs/adr/0021); the draft itself is still not published.
-  const HULL_LATERAL_AREA = 1.5;                        // m^2 — see hull.lateralArea below (same value, needed here first)
+  // 1.41 m^2 = 5.0 m waterline x 0.282 m draft, DERIVED (docs/adr/0022) rather
+  // than scaled. The owner gives the vaka's beam as 50-55 cm. That cannot be
+  // the WATERLINE beam: on this hull's own 70deg V section (Flay V2,
+  // docs/adr/0004) a 0.50-0.55 m waterline beam implies 265-321 kg of
+  // displacement against the published 165. So it is the GUNWALE beam, the
+  // hull flares above the water, and the displacement then fixes the draft:
+  //   Amid = V / (L*Cp) = 0.161 / (5.0*0.58) = 0.0555 m^2
+  //   V section: Amid = T^2 * tan(35deg)  ->  T = 0.282 m
+  //   waterline beam = 2*T*tan(35deg) = 0.394 m, i.e. ~8 cm of flare per side
+  // Cp 0.55-0.62 spans T = 0.272-0.289, so lateralArea 1.36-1.45; 1.41 is the
+  // middle. The previous 1.5 was a length-ratio scaling of an older estimate.
+  const HULL_LATERAL_AREA = 1.41;                        // m^2 — see hull.lateralArea below (same value, needed here first)
   const draft = HULL_LATERAL_AREA / p.boat_length_m;    // ~0.327 m
   // kg/m, 2D cylinder analogy. AUDITED 2026-08-04 (docs/adr/0018) and kept at
   // /4 deliberately, though the derivable plate value is /2: the free surface
@@ -460,7 +468,7 @@ function buildDefaultConfig() {
       // lateralArea (no direct measurement of this hull): lateralArea 1.8 m^2
       // over a 5.5 m waterline implies ~0.33 m mean draft, and the centroid
       // of that lateral plane sits near mid-draft — 0.35 m is that, rounded.
-      clrDepth: 0.32,                     // m — tunable estimate, same status as lateralArea (scaled, ADR 0021)
+      clrDepth: 0.30,                     // m — tracks the lateral plane it is the centroid depth of; follows the derived 0.282 m draft (ADR 0022)
       crewForeAftTrimCoeff: 0.15,          // tunable ("k_trim") — fraction of half-length the CLR shifts per unit crewPosX (FIX_REQUEST_round4_roll_dof.md 1.5)
       crewTrimSign: 1,                     // +-1 — flips the crewPosX->CLR-shift direction; verified empirically against the 1.6 coupling-sign test (forward crew -> luff), see ARCHITECTURE doc
       // yawHeelSign: scales AND signs the heel->yaw coupling (aero.js

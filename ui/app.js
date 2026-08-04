@@ -361,9 +361,12 @@ const recSize = document.getElementById('recSize');
 // its wind, makes more leeway, and needs MORE trim rather than less.
 //
 // The corner taken is the best one in which the crew is not sitting on the aft
-// stop: sheet 20deg, tack forward, mast raked fully forward on the stays, crew
-// half aft. 5.4deg of excursion at 6.9 kn. The tightest available (3.2deg)
-// puts the crew back at -1, which is not worth an unusable seating position.
+// stop: sheet 16deg, tack forward, stays half forward, crew half aft. 2.3deg
+// of excursion at 6.7 kn. Re-searched again after the hull's draft was derived
+// from the owner's beam figure (docs/adr/0022), which cut the Munk moment 266
+// -> 218 N*m and widened the set of settings that hold at all from 6 of 108 to
+// 8 -- the first change in this whole sequence that made the boat EASIER to
+// balance rather than harder.
 //
 // Sheet position still matters more than every trim control put together: the
 // original 50deg default, picked to look calm on load rather than to sail,
@@ -377,11 +380,11 @@ const recSize = document.getElementById('recSize');
 const controls = createDefaultControls();
 controls.windDirFrom = 180 * DEG;
 controls.windSpeed = 6;
-controls.sheet = 20 * DEG;
+controls.sheet = 16 * DEG;
 controls.crewPos = 0.3;
 controls.crewPosX = -0.5;
 controls.tackX = 1;
-controls.stays = 1;
+controls.stays = 0.5;
 
 let autoRudder = true; // keyboard rudder auto-centers when A/D released
 const keys = new Set();
