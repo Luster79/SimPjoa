@@ -381,6 +381,63 @@ export function runAsserts(config, { slow = true } = {}) {
       `model CLmax=${clMaxModel.toFixed(3)} vs digitized ${clMaxLit.toFixed(3)} over ${dpRows.length} Santa Cruz anchors read from the file`);
   }
 
+  // --- 2e. End symmetry: the boat must sail the same on both shunts ---
+  // A proa's whole premise is that its two ends are equivalent -- it shunts
+  // instead of tacking precisely because bow and stern swap roles. Nothing in
+  // the geometry distinguishes them: the ama is always to windward, the sail
+  // always to leeward, the hull is symmetric fore and aft.
+  //
+  // Found 2026-08-04 while checking an unrelated post-shunt measurement. It is
+  // NOT symmetric, and the defect is localised entirely to the steering oar.
+  // Free boat, rudder centred, 20 s from an identical start:
+  //   oar SHIPPED:  end +1 and end -1 are BIT-IDENTICAL (+81.0deg, v=0.45).
+  //                 So sail, hull, ama, roll and shunt bookkeeping are all
+  //                 correctly end-symmetric.
+  //   oar DOWN:     end +1 bears away 10.9deg and holds 3.93 m/s;
+  //                 end -1 rounds up 81.0deg and collapses to 0.15 m/s.
+  //
+  // Mechanism: rudderForce's yaw moment is Fy * leverArm with
+  // leverArm = -(L/2)*end, while alphaEff = deflection + inflowAngle carries
+  // no end term. So the same oar state produces OPPOSITE yaw moments on the
+  // two ends. headingHoldRudder compensates for the commanded part with its
+  // own state.end factor -- which is why it is there, and why the autopilot
+  // only half-works -- but the INFLOW-driven part (weathercocking and yaw
+  // damping, both introduced by F9) gets no such compensation and is
+  // therefore wrongly signed on end -1, where it anti-damps.
+  //
+  // That is the exact failure mode F9's own comment records an intermediate
+  // revision having ("produced ANTI-damping"). F9 resolved it by exhausting
+  // sign combinations against three required properties -- all evaluated at
+  // end=+1. The other end was never checked.
+  //
+  // xfail with the numbers rather than fixed here: this is the third attempt
+  // at these signs, the two previous ones each shipped a different wrong
+  // answer, and the fix is to redo F9's property exhaustion on BOTH ends
+  // rather than to flip something and see.
+  {
+    const freeRun = (end, rudderUp) => {
+      const wind = HEADING0 + 90 * DEG;
+      const heading = end === 1 ? HEADING0 : HEADING0 + Math.PI;
+      const controls = { windDirFrom: wind, windSpeed: 6, sheet: 16 * DEG, rudder: 0,
+        rudderUp, brailLee: 0, brailWind: 0, crewPos: 0.3, crewPosX: 0, tackX: 0, shuntRequest: false };
+      let state = { t: 0, x: 0, y: 0, heading, u: 3.5, v: 0, r: 0, phi: 0, p: 0, delta: 16 * DEG,
+        end, amaLoad: 0, abackTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
+      for (let i = 0; i < Math.round(20 / config.dt); i++) state = integrate(state, controls, config, config.dt);
+      const a = (((wind - state.heading) / DEG) % 360 + 360) % 360;
+      return { dTwa: 90 - (a > 180 ? 360 - a : a), speed: Math.hypot(state.u, state.v) };
+    };
+    const upA = freeRun(1, true), upB = freeRun(-1, true);
+    check('end symmetry: with the oar SHIPPED the two ends behave identically',
+      Math.abs(upA.dTwa - upB.dTwa) < 0.5 && Math.abs(upA.speed - upB.speed) < 0.02,
+      `end+1 dTWA=${upA.dTwa.toFixed(1)} v=${upA.speed.toFixed(2)}; end-1 dTWA=${upB.dTwa.toFixed(1)} v=${upB.speed.toFixed(2)}`);
+
+    const dnA = freeRun(1, false), dnB = freeRun(-1, false);
+    check('end symmetry: with the oar DOWN and centred the two ends behave identically',
+      Math.abs(dnA.dTwa - dnB.dTwa) < 5 && Math.abs(dnA.speed - dnB.speed) < 0.3,
+      `end+1 dTWA=${dnA.dTwa.toFixed(1)} v=${dnA.speed.toFixed(2)}; end-1 dTWA=${dnB.dTwa.toFixed(1)} v=${dnB.speed.toFixed(2)} -- the oar's INFLOW-driven moment (F9 weathercocking + damping) has no end term while its lever arm does, so it anti-damps on end -1. Everything else in the model is bit-identical across the swap`,
+      'STEERING');
+  }
+
   // --- 3. Polar shape + speed anchor (TWS=6) --- (slow: computePolar sweep)
   if (slow) {
   const polar = computePolar(config, { twsList: [6], twaFrom: 40, twaTo: 170, step: 10 });

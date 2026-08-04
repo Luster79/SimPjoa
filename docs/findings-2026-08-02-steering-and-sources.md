@@ -1091,3 +1091,84 @@ brail is steering the boat when the manual says it should not.
 
 **AC-3.1** (2/6) and **AC-2.3** (1/2) remain, along with the two criteria the
 model has no controls for (AC-4.4 mast rake, AC-5.1 halyard/shroud).
+
+---
+
+## The boat only works on one shunt (2026-08-04)
+
+Chasing the one measurement I had flagged as untrustworthy — AC-5.4b's
+post-shunt crew reference — turned up something much larger than the question
+asked.
+
+### The original question: my probe, as suspected
+
+The crew's fore/aft reference **does** flip with the bow: crew forward turns the
+bow toward the wind by +8.5° before the shunt and +71.6° after — same sign,
+so the reference is consistent. AC-5.4b's FAIL was my probe, whose autopilot
+targeted the *current* heading (error always zero, so it never held anything)
+and measured from a boat still in its post-shunt transient.
+
+### What the magnitudes gave away
+
++8.5° against +71.6° is not a transient — it is identical at 40, 90 and 180
+seconds of settling. So the two ends genuinely behave differently, and a boat
+that shunts instead of tacking is supposed to have no preferred end at all.
+
+Reproduced **without any shunt**, from a fresh start on each end:
+
+| | TWA held | heading error | rudder needed | speed |
+|---|---|---|---|---|
+| end +1 | 90.3° | 0.3° | **+0.015** | 3.87 |
+| end −1 | 82.4° | 7.6° | **−0.333** | 3.37 |
+
+The autopilot needs a third of full rudder to hold a beam reach on one end and
+1.5 % on the other.
+
+### Attributed: it is entirely the steering oar
+
+Free boat, rudder centred, 20 s from an identical start:
+
+| | end +1 | end −1 | |
+|---|---|---|---|
+| oar **shipped** | +81.0°, v 0.45 | +81.0°, v 0.45 | **bit-identical** |
+| oar **down** | −10.9°, v 3.93 | +81.0°, v 0.15 | opposite behaviour |
+
+With the oar out of the water the two ends are bit-identical, so the sail,
+hull, ama, roll and the shunt's own bookkeeping are all correctly symmetric.
+Everything that distinguishes the ends is in `core/rudder.js`.
+
+Disabling the sail's CE lever, the ama's drag, or the hull's side-force yaw in
+turn changes nothing — the asymmetry survives all three, which rules them out
+individually as well.
+
+### Mechanism
+
+`rudderForce` returns `yawMoment = Fy · leverArm` with
+`leverArm = −(L/2)·end`, while `alphaEff = deflection + inflowAngle` carries no
+`end` term. The same oar state therefore produces **opposite** yaw moments on
+the two ends.
+
+For the *commanded* part that is compensated downstream —
+`headingHoldRudder` carries its own `state.end` factor, which is exactly why it
+exists, and removing it makes end −1 diverge by 140°. But the **inflow-driven**
+part — the weathercocking and yaw damping F9 introduced — gets no such
+compensation, so on end −1 it *anti-damps*: the boat rounds up 81° and stops.
+
+That is the precise failure mode F9's own comment records an intermediate
+revision having produced. F9 resolved the signs by exhausting combinations
+against three required properties — all of them evaluated at `end = +1`. The
+other end was never checked, and the bug has been shipped since.
+
+### Left as xfail
+
+Two assertions added: the ends are identical with the oar shipped (passes, and
+pins the rest of the model as symmetric), and identical with it down (fails,
+with the numbers). Not fixed here: this is the third pass over these signs, the
+two previous ones each shipped a different wrong answer, and the fix is to redo
+F9's property exhaustion **on both ends** rather than to flip something and
+watch.
+
+It is now the most consequential open defect in the model. A proa that only
+sails on one of its two shunts is broken in half, and every measurement in this
+work order that involved a shunt — or that averaged over both ends — has been
+reading through it.
