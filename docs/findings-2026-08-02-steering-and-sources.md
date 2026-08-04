@@ -1348,3 +1348,65 @@ which is what "it drifts, it is not stuck, it does not sail off" always meant.
 `out/polar.csv` is unchanged to three decimals: mean +0.003 %, worst +0.08 %.
 The sweep holds course under an autopilot, so a change that only affects yaw
 behaviour has nothing to move there.
+
+---
+
+## The Munk audit (2026-08-04, ADR 0018)
+
+ADR 0017 ended on a suspicion: Flay's CS is a *measured total* side force while
+the Munk moment is added on top from ideal-flow added mass, so the two might
+double-count — which would have meant the model was inventing the very moment
+that keeps the boat from sailing without its oar. Audited, and the answer is
+no.
+
+### The decomposition is not degenerate
+
+Potential flow on a closed slender body gives the Munk moment with **zero net
+force**; viscous cross-flow gives force at the planform centroid. The model
+assigns one mechanism to each. Flay's CS is superlinear with no saturation —
+a vortex-lift signature, i.e. the viscous branch — and enters as force at the
+area centroid. Not the same quantity twice.
+
+### The combined value is 0.65 of an independent estimate
+
+Against the Clarke/Gedling/Hine linear `N_v` for a bare hull:
+
+| state | model (Munk + hull) | reference | ratio |
+|---|---|---|---|
+| u 3.87, v −0.217 | +336 N·m | +512 | 0.66 |
+| u 3.0, v −0.30 | +352 | +549 | 0.64 |
+| u 5.0, v −0.30 | +601 | +915 | 0.66 |
+| u 2.0, v −0.15 | +118 | +183 | 0.65 |
+
+A double-count reads *above* 1. This reads consistently below.
+
+Those coefficients are recalled, not sourced, and are a ship-hull fit
+(B/T 2–4) extrapolated to this hull's B/T = 1.4. Under ADR 0009 that bars them
+from being a calibration anchor, which is why **no assertion was added on
+them.** They are an order-of-magnitude cross-check.
+
+### The by-product, tried and rejected
+
+The shortfall is one line: `addedSwayPerLength = ρπT²/4`, half the derivable
+plate value `ρπT²/2`. Doubling it **reverses four of the manual's own steering
+rules** — sheet-trim steering flips to weather at 9 of 16 points, the windward
+brail flips, crew fore-aft loses both directions, and the parked hull pins
+itself at TWA 112–113 instead of hunting. The hull's destabilising moment grows
+until it swamps every trim control the manual describes.
+
+The manual outranks a ship-hull regression extrapolated far outside its range.
+The value stays; the audit is recorded at the parameter so nobody re-derives
+it.
+
+### What this leaves
+
+The three S1c failures are **not** an artefact of inflated Munk moment — the
+model carries less destabilising moment than the literature would give it, not
+more. The likeliest reading is that there is nothing to explain: a bare slender
+hull is directionally unstable, which is ordinary naval architecture and
+exactly why this boat carries a steering oar. The manual claims weight-shift
+steering works and the model agrees at three of six points; it never claims the
+boat holds a course indefinitely with the oar out of the water.
+
+The measurement that would settle it is unchanged: Flay's yaw moment, never
+digitised.

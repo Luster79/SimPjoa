@@ -297,7 +297,17 @@ function buildDefaultConfig() {
   // included in the translational masses, which it previously was not.
   const HULL_LATERAL_AREA = 1.8;                        // m^2 — see hull.lateralArea below (same value, needed here first)
   const draft = HULL_LATERAL_AREA / p.boat_length_m;    // ~0.327 m
-  const addedSwayPerLength = 1025 * Math.PI * draft * draft / 4;  // kg/m, 2D cylinder analogy
+  // kg/m, 2D cylinder analogy. AUDITED 2026-08-04 (docs/adr/0018) and kept at
+  // /4 deliberately, though the derivable plate value is /2: the free surface
+  // acts as the image plane for a section this plate-like (B/T = 1.4), and
+  // Clarke's Y_vdot regression implies ~1010 kg of added sway mass where this
+  // carries 455. Doubling it was tried. It REVERSES four of the owner's
+  // manual's steering rules -- the hull's own destabilising Munk moment grows
+  // until it swamps every trim control the manual describes (sheet-trim
+  // steering flips to weather at 9 of 16 points, the windward brail flips, and
+  // the parked hull pins itself at a fixed crab angle). The manual outranks a
+  // ship-hull regression extrapolated to this B/T, so the value stays.
+  const addedSwayPerLength = 1025 * Math.PI * draft * draft / 4;
   const dryMass = p.displacement_kg + p.ama_mass_kg;
 
   return {
