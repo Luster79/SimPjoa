@@ -32,6 +32,16 @@ import { computePolar, computePolarSteps, SWEEP_FULL } from '../harness/polar.js
 import { hashState } from '../harness/checksum.js';
 
 const DEG = Math.PI / 180;
+const CARDINALS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+// The world frame is X east / Y north with angles CCW from +X (see the header
+// comment and core/state.js); a compass bearing runs CLOCKWISE from north, so
+// the two are related by 450 - a. The map is its own inverse, which is why the
+// same function converts both ways.
+//   Every angle the UI SHOWS is a compass bearing. The wind slider used to be
+// the one exception -- it published controls.windDirFrom raw, so the start-up
+// wind read "180" while a boat running straight downwind from it read course
+// "090", two conventions a degree sign apart on the same screen.
+function toCompassDeg(mathDeg) { return (450 - mathDeg) % 360; }
 const MS_TO_KN = 1.9438;
 // Round 6 (ROUND6_flight_recorder.md, R6-2): "dev" here, at the dev-server
 // entry point — tools/bundle.js replaces this exact literal with the real
@@ -347,7 +357,7 @@ const keys = new Set();
 let shuntHeld = false;
 
 function syncSlidersFromControls() {
-  sliders.windDir.value = String(Math.round(controls.windDirFrom / DEG));
+  sliders.windDir.value = String(Math.round(toCompassDeg(controls.windDirFrom / DEG)) % 360);
   sliders.windSpeed.value = String(controls.windSpeed);
   sliders.sheet.value = String(Math.round(controls.sheet / DEG));
   sliders.brailLee.value = String(Math.round(controls.brailLee * 100));
@@ -391,7 +401,8 @@ function updateSheetRangeUI() {
 }
 
 function refreshOutputs() {
-  outs.windDir.textContent = `${Math.round(controls.windDirFrom / DEG)}°`;
+  const windFromDeg = Math.round(toCompassDeg(controls.windDirFrom / DEG)) % 360;
+  outs.windDir.textContent = `${String(windFromDeg).padStart(3, '0')}° ${t(`card.${CARDINALS[Math.round(windFromDeg / 45) % 8]}`)}`;
   outs.windSpeed.textContent = controls.windSpeed.toFixed(1);
   outs.sheet.textContent = `${Math.round(controls.sheet / DEG)}°`;
   outs.brailLee.textContent = `${Math.round(controls.brailLee * 100)}%`;
@@ -404,7 +415,7 @@ function refreshOutputs() {
   outs.crewPosX.textContent = controls.crewPosX.toFixed(2);
 }
 
-sliders.windDir.addEventListener('input', () => { controls.windDirFrom = Number(sliders.windDir.value) * DEG; refreshOutputs(); });
+sliders.windDir.addEventListener('input', () => { controls.windDirFrom = toCompassDeg(Number(sliders.windDir.value)) * DEG; refreshOutputs(); });
 sliders.windSpeed.addEventListener('input', () => { controls.windSpeed = Number(sliders.windSpeed.value); refreshOutputs(); });
 sliders.sheet.addEventListener('input', () => { controls.sheet = Number(sliders.sheet.value) * DEG; refreshOutputs(); });
 sliders.brailLee.addEventListener('input', () => { controls.brailLee = Number(sliders.brailLee.value) / 100; refreshOutputs(); });
@@ -1848,7 +1859,6 @@ function drawVectorLocal(x0, y0, dx, dy, color) {
 // ---------------------------------------------------------------------
 // Compass sectors, 45deg apart starting at north — indexed by
 // round(bearing/45) % 8 in the HUD update below.
-const CARDINALS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 
 const hud = {
   speed: document.getElementById('hudSpeed'),
@@ -1892,7 +1902,7 @@ function updateHud(state, forces) {
   // comment and core/state.js), so a compass bearing — clockwise from north —
   // is 90 - heading. state.heading points at the ACTIVE bow, so this flips by
   // 180deg at a shunt, which is correct: the boat then travels the other way.
-  const courseDeg = (450 - state.heading / DEG) % 360;
+  const courseDeg = toCompassDeg(state.heading / DEG);
   // Round BEFORE the final wrap: a bearing of 359.5 would otherwise display as
   // "360" rather than "000".
   const courseShown = Math.round(courseDeg) % 360;
