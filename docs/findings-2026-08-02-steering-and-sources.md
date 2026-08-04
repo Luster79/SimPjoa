@@ -1537,3 +1537,72 @@ the simulator is*. Recorded here, not acted on.
 
 Sources: [pjoa.eu FOLK](https://pjoa.eu/2020/10/03/folk-pjoa/),
 [Proa File — The Pjoa Folk](https://proafile.com/multihull-boats/article/the-pjoa-folk).
+
+---
+
+## Re-parameterised onto the real boat (2026-08-04, ADR 0021)
+
+`data/example_proa_parameters.csv` had always disclaimed itself: order-of-
+magnitude values from Dierking's T2/Wa'apa, "not a specific boat's measured
+plans". The simulator was being judged against the PJOA manual while carrying
+another boat's dimensions. pjoa.eu publishes the FOLK's principal dimensions,
+so it no longer has to be.
+
+### What moved
+
+| | was | now |
+|---|---|---|
+| hull length | 5.5 m | 5.0 m |
+| ama spacing | 2.5 m | 3.1 m |
+| sail area | 12 m² | 8 m² |
+| ama mass | 25 kg | 13 kg |
+| displacement | 190 kg | 165 kg |
+
+Unpublished quantities are scaled from the length ratio and now say so in the
+CSV, row by row. `CE_height_m` = 2.0 m survived as **corroborated**: the
+source's 5.4/5.9 m rig height puts a peaked crab claw's centroid right there.
+
+### The real boat is much stiffer, and three checks stopped provoking
+
+24 % more righting arm and a third less sail. Re-anchored by re-finding the
+same physical state, not by relaxing the claim:
+
+- **T6** gust 11.5 → 11.75 m/s. Old boat: maxPhi 25.1° at 11.5. New boat:
+  24.4° at 11.75. The knife edge moved with it and now sits between 11.75 and
+  12.0.
+- **T10** and the **aback scenario**: TWS 10 → 14, because both exist to
+  *observe* a capsize. Measured threshold moved to between 12 and 13.
+- **`steeringOk`** floor 2.0° → 1.5°, in proportion to the rig: T2's crew legs
+  landed at 1.9–2.0°, and the helper's eight other users clear 1.5° by
+  3.6–12°.
+- **R15**'s absolute band [5.3, 5.7] → [4.6, 5.0] N. A smaller float has less
+  drag; the R7-1 *ratio* anchor behind the check is untouched.
+
+### Two consequences worth naming
+
+**`sail.deltaMinDeg` falls to 0.** An 8 m² sail at a 50° apex gives a 4.57 m
+spar on a 5.0 m hull, so the spar no longer overhangs and ADR 0010's geometric
+sheeting floor has nothing to clamp. The mechanism is still correct; it just
+does not bind on this boat.
+
+**S2 is demoted to `xfail` at 5/6.** Close-hauled in fresh wind
+(TWS 10 / TWA 70) the boat can no longer be balanced by rig trim at all — not
+by the tack, and not by the stays either. It held 6/6 on the estimate boat,
+which carried 50 % more sail. The real one is slower for its wind there, so it
+makes more leeway, and the Munk moment to be trimmed out grows faster than the
+rig authority available. Left failing with its number rather than widened a
+third time to take in the crew; that dimension is what S1c measures.
+
+The boat is slower throughout, as it must be: TWA 90 / TWS 6 goes 3.87 → 3.37
+m/s. `out/polar.csv` is regenerated wholesale — the one change in this
+project's history where a large polar diff is the expected outcome rather than
+a warning.
+
+### What is still an estimate
+
+Hull beam and draft, which are exactly the numbers the weather-helm question
+turns on. The brochure's storage dimension (500 × 90 × 140 cm) hints at a
+0.90 m vaka beam — **twice** the 0.41 m now carried, and enough to turn the
+hull from a 12:1 slender foil into a 5.5:1 one that Flay's V2 data would no
+longer describe. That is an inference from a packing crate, not a measurement,
+and it is recorded rather than acted on.

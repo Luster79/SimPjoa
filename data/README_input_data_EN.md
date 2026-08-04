@@ -142,12 +142,20 @@ strengthens with leeway, not stalls), contradicting the previous model's
 to Fr<=0.48 and leeway<=16deg (V2)/24deg (V1); see `core/hydro.js`'s own
 comment and `docs/adr/0004` for the extrapolation guard beyond that.
 
-### Boat parameters (file 4)
-Order of magnitude per: G. Dierking, "Building Outrigger Sailing Canoes"
-(International Marine, 2008) — the T2 and Wa'apa designs, subsequently
-lightened/narrowed (round 9 follow-up) to fix a structural lee-helm
-bias. Values remain order-of-magnitude estimates, not a specific boat's
-measured plans.
+### Boat parameters (file 4) — THE REAL BOAT since 2026-08-04
+The published principal dimensions of the **PJOA FOLK**, the owner's own
+design and the boat the manual is written for (pjoa.eu): hull 5.0 m, overall
+beam 3.1 m, 8 m² crab claw, 13 kg ama, 85-90 kg rigged. Every row in the CSV
+now says whether it is MEASURED, CORROBORATED, or scaled from the length
+ratio — see `docs/adr/0021`.
+
+Until then the file carried order-of-magnitude values from G. Dierking,
+"Building Outrigger Sailing Canoes" (International Marine, 2008) — the T2 and
+Wa'apa designs — which is why the simulator was being judged against one
+boat's handbook while carrying another boat's dimensions.
+
+**Still not published, and still estimates:** hull beam and draft. They are
+precisely the numbers the helm balance turns on.
 
 ## Sources
 

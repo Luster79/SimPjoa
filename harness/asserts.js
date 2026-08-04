@@ -47,8 +47,13 @@ function freshState(deltaStart = 0) {
 // commanded. A drift that's technically the right sign but under 2deg is
 // noise-level, not a demonstrated steering response; over 20deg would be
 // back in round 5's "too fast for a real Pjoa" regime.
+// Floor re-anchored 2.0 -> 1.5deg for the PJOA FOLK re-parameterisation
+// (docs/adr/0021). The band was set against a boat carrying 12 m^2 of sail;
+// the real one carries 8, and every steering response scaled with the rig.
+// 1.5 keeps the same discrimination against noise in proportion, and the other
+// users of this helper still clear it by a wide margin (3.6-12deg).
 function steeringOk(drift, expectedSign) {
-  return Math.sign(drift) === expectedSign && Math.abs(drift) >= 2 && Math.abs(drift) <= 20;
+  return Math.sign(drift) === expectedSign && Math.abs(drift) >= 1.5 && Math.abs(drift) <= 20;
 }
 
 function steeringDrift(config, baseControls, applyChange, settleSeconds = 20, lockSeconds = 10) {
@@ -592,7 +597,7 @@ export function runAsserts(config, { slow = true } = {}) {
   // steering a real proa actually uses (Proafile: traditional proas steer on
   // all reaching and windward courses with no rudder or oar at all).
   {
-    const helmRelease = (row, oarUp, tackX = 0, crewPosX = 0) => {
+    const helmRelease = (row, oarUp, tackX = 0, crewPosX = 0, stays = 0) => {
       const windDirFrom = HEADING0 + row.twa * DEG;
       const twaOf = (heading) => {
         const a = (((windDirFrom - heading) / DEG) % 360 + 360) % 360;
@@ -614,6 +619,7 @@ export function runAsserts(config, { slow = true } = {}) {
       controls.rudderUp = oarUp;
       controls.tackX = tackX;
       controls.crewPosX = crewPosX;
+      controls.stays = stays;
       for (let i = 0; i < Math.round(60 / config.dt); i++) state = integrate(state, controls, config, config.dt);
       return {
         twa: row.twa, tws: row.tws,
@@ -709,12 +715,27 @@ export function runAsserts(config, { slow = true } = {}) {
     // [0.25, 0.75] window missed it at 5 of 6 points and reported a failure
     // that was about the window, not the boat.
     const tackTrials = [-1, -0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75, 1];
+    // Searched over the tack AND the stays. Both are rig trim, both are on the
+    // manual's own control list, and the stays only became a control in
+    // docs/adr/0020 -- before that this search could not have included them.
+    // The tack-alone tally is still reported beside the combined one, because
+    // it is what moved: on the real PJOA FOLK (docs/adr/0021) the tack alone
+    // stopped holding TWS10/TWA70, and hiding that behind a broader search
+    // would be exactly the "re-pick the probe until it agrees" move this
+    // project's own conventions forbid.
+    const stayTrials = [-1, -0.5, 0, 0.5, 1];
     const holders = grid.map((row) => {
-      const found = tackTrials
-        .map((t) => ({ t, ...helmRelease(row, false, t) }))
-        .filter((r) => r.excursion <= 15 && r.speedRatio >= 0.5 && !r.capsized);
-      return { twa: row.twa, tws: row.tws, found };
+      const found = [];
+      for (const t of tackTrials) {
+        for (const st of stayTrials) {
+          const r = { t, st, ...helmRelease(row, false, t, 0, st) };
+          if (r.excursion <= 15 && r.speedRatio >= 0.5 && !r.capsized) found.push(r);
+        }
+      }
+      const tackOnly = found.filter((r) => r.st === 0);
+      return { twa: row.twa, tws: row.tws, found, tackOnly };
     });
+    const nHeldTackOnly = holders.filter((h) => h.tackOnly.length > 0).length;
     const nHeld = holders.filter((h) => h.found.length > 0).length;
     // PROMOTED back to a real pass (2026-08-04). It held 6/6 originally, fell
     // to 5/6 and then 4/6 through the AC-3 reversal, and is 6/6 again now that
@@ -722,13 +743,15 @@ export function runAsserts(config, { slow = true } = {}) {
     // estimated -- the boat has enough directional stability of its own for
     // the tack to trim against. TWA110, which had been the stubborn corner
     // through three separate attempts, holds at 0.2deg of excursion.
-    check('S2: with the tack as a control, a rudder-free course hold exists at every operating point (round 10d H1 ceiling, 15deg/60s)',
+    check('S2: with rig trim alone (tack + stays), a rudder-free course hold exists at every operating point (round 10d H1 ceiling, 15deg/60s)',
       nHeld === holders.length,
       `${nHeld}/${holders.length} points -- ` +
       holders.map((h) => {
         const b = h.found.reduce((a, r) => (r.excursion < a.excursion ? r : a), h.found[0]);
-        return h.found.length ? `TWS${h.tws}/TWA${h.twa}: tackX=${b.t} exc=${b.excursion.toFixed(1)}deg v=${(b.speedRatio * 100).toFixed(0)}%` : `TWS${h.tws}/TWA${h.twa}: NONE`;
-      }).join(' '));
+        return h.found.length ? `TWS${h.tws}/TWA${h.twa}: tackX=${b.t} stays=${b.st} exc=${b.excursion.toFixed(1)}deg v=${(b.speedRatio * 100).toFixed(0)}%` : `TWS${h.tws}/TWA${h.twa}: NONE`;
+      }).join(' ') +
+      ` -- with the TACK ALONE it is ${nHeldTackOnly}/${holders.length}. DEMOTED TO xfail on the real PJOA FOLK (docs/adr/0021): close-hauled in fresh wind (TWS10/TWA70) the boat can no longer be balanced by rig trim at all, with or without the stays. It held 6/6 on the Dierking-estimate boat, which carried 50% more sail; the real one is slower for its wind there, so it makes more leeway and the Munk moment it has to trim out grows faster than the rig authority available to do it. Left failing with its number rather than widened a third time to include the crew -- that dimension is what S1c measures`,
+      'STEERING');
   }
 
   // Smoothness: an isolated >20% drop between adjacent TWA rows in 60-170
@@ -1672,7 +1695,14 @@ export function runAsserts(config, { slow = true } = {}) {
       let maxPhi = -Infinity;
       for (let i = 0; i < Math.round(seconds / dt); i++) {
         const t = i * dt;
-        const tws = t < 5 ? 6 + (11.5 - 6) * (t / 5) : 11.5; // gust ramp then held
+        // Gust peak re-anchored 11.5 -> 11.75 for the PJOA FOLK
+        // re-parameterisation (docs/adr/0021), by re-finding the SAME physical
+        // state rather than by relaxing the check: the old boat reached
+        // maxPhi 25.1deg at 11.5, and 11.75 puts the new one at 24.4deg. The
+        // knife edge this comment describes moved with the boat -- it now sits
+        // between 11.75 and 12.0 -- and the leg is still deliberately on the
+        // survivable side of it.
+        const tws = t < 5 ? 6 + (11.75 - 6) * (t / 5) : 11.75; // gust ramp then held
         if (releaseAtLoad !== null && !released && state.amaLoad > releaseAtLoad) { sheet = 90 * DEG; released = true; }
         const controls = { windDirFrom, windSpeed: tws, sheet, rudder: headingHoldRudder(state, HEADING0, config),
           brailLee: 0, brailWind: 0, crewPos: 0.3, crewPosX: 0, shuntRequest: false };
@@ -1817,7 +1847,12 @@ export function runAsserts(config, { slow = true } = {}) {
   {
     const windDirFrom = HEADING0 - 80 * DEG;
     let state = freshState();
-    const controls = { windDirFrom, windSpeed: 10, sheet: 30 * DEG, rudder: 0, brailLee: 0, brailWind: 0, crewPos: 0, crewPosX: 0, shuntRequest: false };
+    // TWS 10 -> 14 for the PJOA FOLK re-parameterisation (docs/adr/0021). This
+    // check exists to verify the capsize FREEZE branch and the accelerating-heel
+    // branch, so it needs a capsize to observe; the real boat is 24% wider in
+    // the stance and carries a third less sail, and no longer goes over at
+    // TWS 10. Measured: the threshold is between 12 and 13, so 14 keeps margin.
+    const controls = { windDirFrom, windSpeed: 14, sheet: 30 * DEG, rudder: 0, brailLee: 0, brailWind: 0, crewPos: 0, crewPosX: 0, shuntRequest: false };
     const dt = config.dt;
     let capsizeT = null;
     const series = [];
@@ -1947,8 +1982,13 @@ export function runAsserts(config, { slow = true } = {}) {
     // under-dragged against this project's own calibration target and remains
     // slightly so; the change moves toward the anchor, not past it. Parity is
     // not approached at any speed tried (1.6-6 m/s).
-    check('R15: ama drag force at max immersion (phi past phiSubmergeDeg, u=1.6 m/s) is within a narrow absolute band [5.3,5.7] N',
-      maxAmaFx >= 5.3 && maxAmaFx <= 5.7, `Fx=${maxAmaFx.toFixed(3)}N`);
+    // Band re-anchored [5.3,5.7] -> [4.6,5.0] for the PJOA FOLK
+    // re-parameterisation (docs/adr/0021): the real float is 13 kg against the
+    // 25 kg estimate and 3.2 m against 3.5, so its wetted area and drag both
+    // fall. The R7-1 RATIO anchor this check is justified by is unchanged and
+    // still satisfied -- see the two ratio checks above.
+    check('R15: ama drag force at max immersion (phi past phiSubmergeDeg, u=1.6 m/s) is within a narrow absolute band [4.6,5.0] N',
+      maxAmaFx >= 4.6 && maxAmaFx <= 5.0, `Fx=${maxAmaFx.toFixed(3)}N`);
 
     // F1 (work-order-2026-07-30): the sign fix's own acceptance — a flying
     // ama (phi past phiLiftoffDeg, clear of the water) must add LESS total

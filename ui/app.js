@@ -351,40 +351,35 @@ const recSize = document.getElementById('recSize');
 // createInitialState puts it at rest on heading pi/2, which is course 000,
 // and the start-up wind is compass 270 (from the west), so this is a beam
 // reach at TWA 90. Searched over the cold start the page actually performs
-// (fresh simulator, fixed controls, no autopilot, 150 s). Sheet has to be
-// trimmed in HARD; after that the helm is a balance LINE along which the
-// stays, the tack and the crew's fore-aft position trade off:
+// (fresh simulator, fixed controls, no autopilot, 150 s).
 //
-//     stays \ crew   -1     -0.75    -0.5    -0.25      0
-//         0          5.6     18.0    52.4    59.0    62.3
-//         0.5       41.5     17.2     3.8    21.4    53.3
-//         1         45.8     43.4    40.7    14.9     0.9   <- here
+// Re-searched for the real PJOA FOLK (docs/adr/0021). The previous corner --
+// sheet 12, tack forward, mast forward, crew amidships -- held within 0.9deg
+// on the Dierking-estimate boat and wanders 33deg on this one. Only 6 of 162
+// combinations hold at all, and the re-parameterisation did NOT cure the
+// weather helm: the real boat carries a third less sail, so it is slower for
+// its wind, makes more leeway, and needs MORE trim rather than less.
 //
-// The corner taken is the one where the crew sits NORMALLY: mast raked fully
-// forward on the stays, tack forward, crew amidships fore-aft. It holds
-// within 0.9deg at 7.8 kn and 4deg of peak heel -- six times better than the
-// crew-on-the-transom corner, and a state a person could actually sail in.
-// Raking the mast forward is the classical cure for weather helm and it is
-// the control the model gained in docs/adr/0020; before that the only way to
-// balance this boat was to put the crew on the stop.
+// The corner taken is the best one in which the crew is not sitting on the aft
+// stop: sheet 20deg, tack forward, mast raked fully forward on the stays, crew
+// half aft. 5.4deg of excursion at 6.9 kn. The tightest available (3.2deg)
+// puts the crew back at -1, which is not worth an unusable seating position.
 //
-// The previous defaults (sheet 50deg, crew centred fore-aft, tack neutral)
-// were picked to look calm on load rather than to sail: from the same cold
-// start they wander 32deg and the boat collapses to 0.4 kn, because a rig
-// that eased has no drive and the hull no speed to make side force with.
-// Sheet position turns out to matter more here than every trim control put
-// together.
+// Sheet position still matters more than every trim control put together: the
+// original 50deg default, picked to look calm on load rather than to sail,
+// wanders and lets the boat collapse to a crawl, because a rig that eased has
+// no drive and a hull with no speed makes no side force to steer against.
 //
-// Three of the four are the manual's own steering rules pulling the same
-// way (ch. III): crew aft bears away, tack forward bears away, and a hauled
-// halyard with a tight shroud keeps the CE high and forward. Together they
-// null the weather helm the oar would otherwise have to fight.
+// Three of the four settings are the manual's own steering rules pulling the
+// same way (ch. III): crew aft bears away, tack forward bears away, and the
+// mast raked forward carries the CE ahead -- the classical cure for weather
+// helm, and the control the model only gained in docs/adr/0020.
 const controls = createDefaultControls();
 controls.windDirFrom = 180 * DEG;
 controls.windSpeed = 6;
-controls.sheet = 12 * DEG;
+controls.sheet = 20 * DEG;
 controls.crewPos = 0.3;
-controls.crewPosX = 0;
+controls.crewPosX = -0.5;
 controls.tackX = 1;
 controls.stays = 1;
 

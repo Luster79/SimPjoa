@@ -61,6 +61,7 @@ Append-only. Never edit an old ADR; supersede it with a new one.
 | 0018 | The Munk moment is not double-counted -- closes 0017's open question; the model has *less* destabilising moment than the literature, not more |
 | 0019 | Vertical rig geometry: the halyard and the shroud, and a CE height that is derived rather than constant |
 | 0020 | The stays and the shroud are two riggings -- refines 0019; the mast can now be raked FORWARD, which is what took the crew off the stop |
+| 0021 | Re-parameterised onto the real PJOA FOLK -- the boat the manual is written for, instead of a Dierking estimate |
 
 ## Work orders — what to do
 

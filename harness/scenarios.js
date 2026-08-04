@@ -165,7 +165,11 @@ export function scenarioShunt(config) {
 // reliably completes it at ~19.4s — duration extended from 12s to 25s to
 // give the spiral room to develop.
 export function scenarioAback(config) {
-  const tws = 10;
+  // TWS 10 -> 14 for the PJOA FOLK re-parameterisation (docs/adr/0021). The
+  // scenario's whole point is that an unrelieved aback state ends in a
+  // capsize; the real boat is 24% wider in the stance with a third less sail
+  // and rides TWS 10 out. Measured threshold is between 12 and 13.
+  const tws = 14;
   const sheetDeg = 30;
   // Wind sourced from the -y (non-ama) side from the start: aback immediately.
   const windDirFrom = HEADING0 - 80 * DEG;

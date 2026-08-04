@@ -298,7 +298,10 @@ function buildDefaultConfig() {
   // Yard inclination from horizontal at full hoist (docs/adr/0019). Needed
   // here first: sail.yardCERadius is derived from it below.
   const YARD_PEAK_ANGLE_DEG = 60;
-  const HULL_LATERAL_AREA = 1.8;                        // m^2 — see hull.lateralArea below (same value, needed here first)
+  // 1.5 m^2 = 5.0 m waterline x ~0.30 m draft. Scaled from the previous 1.8
+  // by the length ratio squared when the boat was re-parameterised onto the
+  // real PJOA FOLK (docs/adr/0021); the draft itself is still not published.
+  const HULL_LATERAL_AREA = 1.5;                        // m^2 — see hull.lateralArea below (same value, needed here first)
   const draft = HULL_LATERAL_AREA / p.boat_length_m;    // ~0.327 m
   // kg/m, 2D cylinder analogy. AUDITED 2026-08-04 (docs/adr/0018) and kept at
   // /4 deliberately, though the derivable plate value is /2: the free surface
@@ -337,10 +340,10 @@ function buildDefaultConfig() {
       // (~0.4), platform edge (~0.2). Beam-on projected area, the orientation
       // that matters most (a shunt lies the boat across the wind). CD ~0.85 is
       // the usual bluff-body range for such a collection of shapes.
-      windageArea: 1.8,                    // m^2 — BEAM-ON projected area; tunable estimate, same status as lateralArea
-      windageAreaFrontal: 0.5,             // m^2 — END-ON area (bow, mast section, one crew); windageForce interpolates on sin^2 of the apparent-wind angle
+      windageArea: 1.5,                    // m^2 — BEAM-ON projected area; tunable estimate, same status as lateralArea (scaled by the length ratio squared, ADR 0021)
+      windageAreaFrontal: 0.41,            // m^2 — END-ON area (bow, mast section, one crew); windageForce interpolates on sin^2 of the apparent-wind angle (scaled, ADR 0021)
       windageCD: 0.85,
-      wettedSurface: 3.0,                  // m^2 — tunable estimate (slender canoe hull)
+      wettedSurface: 2.5,                  // m^2 — tunable estimate (slender canoe hull; scaled by the length ratio squared, ADR 0021)
       // Cf is no longer a stored constant (round 7, R7-1) — hydro.js
       // computes it per-call from the ITTC-57 model-ship line at the
       // instantaneous Reynolds number (u*length/nu), which is the
@@ -457,7 +460,7 @@ function buildDefaultConfig() {
       // lateralArea (no direct measurement of this hull): lateralArea 1.8 m^2
       // over a 5.5 m waterline implies ~0.33 m mean draft, and the centroid
       // of that lateral plane sits near mid-draft — 0.35 m is that, rounded.
-      clrDepth: 0.35,                     // m — tunable estimate, same status as lateralArea
+      clrDepth: 0.32,                     // m — tunable estimate, same status as lateralArea (scaled, ADR 0021)
       crewForeAftTrimCoeff: 0.15,          // tunable ("k_trim") — fraction of half-length the CLR shifts per unit crewPosX (FIX_REQUEST_round4_roll_dof.md 1.5)
       crewTrimSign: 1,                     // +-1 — flips the crewPosX->CLR-shift direction; verified empirically against the 1.6 coupling-sign test (forward crew -> luff), see ARCHITECTURE doc
       // yawHeelSign: scales AND signs the heel->yaw coupling (aero.js
@@ -571,7 +574,7 @@ function buildDefaultConfig() {
       maxBuoyancy: p.ama_buoyancy_kg,      // 80 kg
       mass: p.ama_mass_kg,                 // 25 kg — resists lifting when windward (normal case)
       spacing: p.beam_overall_m,           // 2.5 m (hull-ama spacing, "B")
-      wettedSurface: 0.6,                  // m^2 — tunable estimate, fully immersed
+      wettedSurface: 0.5,                  // m^2 — tunable estimate, fully immersed (scaled by the length ratio squared, ADR 0021)
       // residuaryPeakCr (AC-1, 2026-08-03): the ama's wave-making resistance,
       // which it simply did not have — see core/hydro.js's amaDrag for why
       // that was the real gap behind two rounds of putting steering authority

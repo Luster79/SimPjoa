@@ -1,11 +1,14 @@
 parameter,value,note
-boat_length_m,5.5,T2 ~18ft; Wa'apa 4.9 lub 7.3 m
-hull_beam_m,0.45,waski kadlub kanu
-displacement_kg,190.0,"kadlub+zaloga (masa wlasna ~100kg + zaloga 90kg)"
-ama_length_m,3.5,plywak nawietrzny
-ama_buoyancy_kg,80.0,szacunek
-ama_mass_kg,25.0,szacunek (drewno/kompozyt, znacznie lzejszy od jego wypornosci)
-beam_overall_m,2.5,rozstaw kadlub-ama
-sail_area_m2,12.0,typowe 8-15 m2 dla 5-6 m proa
-sail_apex_angle_deg,50.0,kleszcz kraba 45-60
-CE_height_m,2.0,"srodek ozaglowania nad WL, niski przy rei pochylonej"
+# PJOA FOLK, the owner's own boat (pjoa.eu/2020/10/03/folk-pjoa/), 2026-08-04.
+# Values marked MEASURED are published by the designer; the rest carry the note
+# that says how they were derived. See docs/adr/0021.
+boat_length_m,5.0,"MEASURED: pjoa.eu ""Lenght: 500cm"" (was 5.5, a Dierking T2/Wa'apa estimate)"
+hull_beam_m,0.41,"NOT PUBLISHED - scaled from the old 0.45 by the length ratio 5.0/5.5. See ADR 0021's open point"
+displacement_kg,165.0,"MEASURED-derived: rigged 85-90 kg less the 13 kg ama = ~74 kg of boat, plus one 90 kg crew"
+ama_length_m,3.2,NOT PUBLISHED - scaled by the length ratio
+ama_buoyancy_kg,60.0,NOT PUBLISHED - scaled by the CUBE of the length ratio (a volume)
+ama_mass_kg,13.0,"MEASURED: pjoa.eu ""Ama (outrigger): 13 kg"""
+beam_overall_m,3.1,"MEASURED: pjoa.eu ""Beam: 310cm"" (was 2.5)"
+sail_area_m2,8.0,"MEASURED: pjoa.eu ""Crab law sail: 8 sqm"" (10 m2 is an option; was 12)"
+sail_apex_angle_deg,50.0,NOT PUBLISHED - kleszcz kraba 45-60, unchanged
+CE_height_m,2.0,"CORROBORATED: rig height 590/540cm; a crab claw peaked near the masthead has its centroid near 2 m. Unchanged"
