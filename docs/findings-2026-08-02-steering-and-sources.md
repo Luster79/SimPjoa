@@ -1606,3 +1606,48 @@ turns on. The brochure's storage dimension (500 × 90 × 140 cm) hints at a
 hull from a 12:1 slender foil into a 5.5:1 one that Flay's V2 data would no
 longer describe. That is an inference from a packing crate, not a measurement,
 and it is recorded rather than acted on.
+
+---
+
+## The tack reversed at every shunt (2026-08-04, ADR 0023)
+
+Asked what `hull.lead` means on a boat whose bow and stern swap, the answer is
+that it cannot mean "where the mast is stepped" — the mast does not move, the
+**tack** does. `lead` is how far toward the *active bow* the sail's centre of
+effort ends up, and in the active-bow frame it needs no `end` factor at all:
+the frame flips, so the CE relocates on its own.
+
+Checking that claim against the code found one term that did carry the factor.
+
+### What it cost
+
+`controls.tackX`, introduced by ADR 0011 as *the proa's primary steering
+control* and measured at −136 N·m of bear-away (against the stays' −111 and the
+crew's −82), **meant the opposite thing on the other shunt**:
+
+| | end +1 | end −1 |
+|---|---|---|
+| tackX = +1 | dTWA 36.7 | dTWA 75.0 |
+| tackX = −1 | dTWA 75.0 | dTWA 36.7 |
+
+Every other control is symmetric, including `stays`, which had been added the
+same day without the factor.
+
+### Why four rounds of checks missed it
+
+ADR 0016's end-symmetry checks run every trim control at **neutral**. At
+`tackX = 0` the spurious factor multiplies zero. The checks were written to
+catch the oar, and they caught the oar.
+
+The third symmetry check now exercises seven controls one at a time off their
+neutral values.
+
+### What did not move
+
+The start-up defaults, the polar, and every calibration band — all of them are
+`end = +1` measurements, which is precisely where the factor equals +1. The
+defect lived entirely on the shunt that no default, no sweep and no band has
+ever visited.
+
+8 of 108 settings still hold the start-up course rudder-free, best unchanged at
+2.3°, and a new 3.5° option appears with the crew fully amidships.

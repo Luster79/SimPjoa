@@ -566,12 +566,21 @@ export function sailForces(state, controls, config) {
   // the entire trim-driven excursion (halfChordEff, 0.25 m), so the
   // expression was positive by construction.
   //
-  // Sign: referenced to the ACTIVE bow, so it flips with `end`. At a shunt
-  // the tack walks to the new bow and the rake reverses with it; without the
-  // `end` factor the boat would come out of every shunt with its helm
-  // balance mirrored.
+  // Sign: NO `end` factor (docs/adr/0023). The boat frame's +x already points
+  // at the ACTIVE bow, so "the tack hauled toward the bow" is +x on BOTH ends
+  // and the offset is just tackX*tackTravel. This line carried a spurious
+  // `state.end` for exactly the reason the steering oar's lever arm did
+  // (docs/adr/0016), and the comment that used to sit here argued for it in
+  // the same words -- "the tack walks to the new bow, so it flips with end" --
+  // which confuses the tack moving to the other end of the HULL with the
+  // coordinate needing a sign change in a frame that has already flipped.
+  //   The consequence was that the sailor's PRIMARY steering control reversed
+  // its meaning at every shunt. On the free run the end-symmetry checks use,
+  // tackX=+1 gave dTWA 36.7deg on end +1 and 75.0deg on end -1 -- an exact
+  // mirror of what tackX=-1 gave. Those checks never saw it because they run
+  // every trim control at neutral, where the factor multiplies zero.
   const tackTravel = config.sail.tackTravel ?? 0;
-  const tackOffset = state.end * (controls.tackX ?? 0) * tackTravel;
+  const tackOffset = (controls.tackX ?? 0) * tackTravel;
   // Which way the CE travels as the sail is EASED (AC-3, work-order-2026-08-02
   // acceptance run; docs/adr/0014).
   //

@@ -63,6 +63,7 @@ Append-only. Never edit an old ADR; supersede it with a new one.
 | 0020 | The stays and the shroud are two riggings -- refines 0019; the mast can now be raked FORWARD, which is what took the crew off the stop |
 | 0021 | Re-parameterised onto the real PJOA FOLK -- the boat the manual is written for, instead of a Dierking estimate |
 | 0022 | The draft comes from the beam -- refines 0021; the owner's 50-55 cm can only be the gunwale, and displacement then fixes the draft |
+| 0023 | The tack control reversed at every shunt -- third instance of the ADR 0016 defect, and the one 0016's own symmetry checks could not see |
 
 ## Work orders — what to do
 
@@ -116,9 +117,13 @@ the findings document, not here — see its last four sections.
   reading the source and were wrong (the crew's post-shunt reference, the
   leeboard's justification, AC-5.4b). Every one dissolved on measurement. Code
   that *looks* like it cannot flip a sign may sit in a frame that flips for it.
-- **Check both ends.** A shunting proa has two of everything. F9 verified the
-  oar's signs against three properties at `end = +1` only and shipped a boat
-  that anti-damped on the other shunt for four rounds (ADR 0016).
+- **Check both ends -- with the controls OFF neutral.** A shunting proa has two
+  of everything. F9 verified the oar's signs at `end = +1` only and shipped a
+  boat that anti-damped on the other shunt for four rounds (ADR 0016). The
+  symmetry checks that caught it then ran every trim control at zero, so the
+  same defect in the tack survived them untouched for another four (ADR 0023).
+  A regression check written against one defect tests that defect; a symmetry
+  invariant is worth only what its inputs exercise.
 - **A derived document is not the source.** `Kryteria_Akceptacji` transcribed
   one rule backwards, and a long, correct-looking argument was built on it
   before the original PDF settled it in one sentence.

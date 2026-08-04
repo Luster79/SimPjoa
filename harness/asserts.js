@@ -447,11 +447,12 @@ export function runAsserts(config, { slow = true } = {}) {
   // passes at its signs and two of them shipped a wrong answer, and an
   // end=+1-only check cannot see any of them.
   {
-    const freeRun = (end, rudderUp) => {
+    const freeRun = (end, rudderUp, patch = {}) => {
       const wind = HEADING0 + 90 * DEG;
       const heading = end === 1 ? HEADING0 : HEADING0 + Math.PI;
       const controls = { windDirFrom: wind, windSpeed: 6, sheet: 16 * DEG, rudder: 0,
-        rudderUp, brailLee: 0, brailWind: 0, crewPos: 0.3, crewPosX: 0, tackX: 0, shuntRequest: false };
+        rudderUp, brailLee: 0, brailWind: 0, crewPos: 0.3, crewPosX: 0, tackX: 0,
+        halyard: 1, shroud: 1, stays: 0, shuntRequest: false, ...patch };
       let state = { t: 0, x: 0, y: 0, heading, u: 3.5, v: 0, r: 0, phi: 0, p: 0, delta: 16 * DEG,
         end, amaLoad: 0, abackTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
       for (let i = 0; i < Math.round(20 / config.dt); i++) state = integrate(state, controls, config, config.dt);
@@ -467,6 +468,29 @@ export function runAsserts(config, { slow = true } = {}) {
     check('end symmetry: with the oar DOWN and centred the two ends behave identically',
       Math.abs(dnA.dTwa - dnB.dTwa) < 0.5 && Math.abs(dnA.speed - dnB.speed) < 0.02,
       `end+1 dTWA=${dnA.dTwa.toFixed(1)} v=${dnA.speed.toFixed(2)}; end-1 dTWA=${dnB.dTwa.toFixed(1)} v=${dnB.speed.toFixed(2)} -- was +81.0/0.15 on end -1 before the lever-arm fix`);
+
+    // The two checks above run every trim control at NEUTRAL, which is how the
+    // tack's own end-flip survived them (docs/adr/0023): with tackX=0 the
+    // spurious factor multiplies zero. Every control the sailor has is
+    // exercised here, one at a time, off its neutral value.
+    const symCases = [
+      ['tack forward', { tackX: 1 }],
+      ['tack aft', { tackX: -1 }],
+      ['stays forward', { stays: 1 }],
+      ['crew aft', { crewPosX: -1 }],
+      ['halyard eased', { halyard: 0 }],
+      ['shroud slack', { shroud: 0 }],
+      ['windward brail', { brailWind: 0.6 }],
+    ];
+    const asym = symCases.filter(([, patch]) => {
+      const a = freeRun(1, true, patch), b = freeRun(-1, true, patch);
+      return Math.abs(a.dTwa - b.dTwa) >= 0.5 || Math.abs(a.speed - b.speed) >= 0.02;
+    });
+    check('end symmetry: every trim control means the same thing on both ends',
+      asym.length === 0,
+      asym.length === 0
+        ? `${symCases.length}/${symCases.length} controls symmetric -- tack included, which it was NOT before docs/adr/0023 (tackX=+1 gave dTWA 36.7 on end +1 and 75.0 on end -1, an exact mirror of tackX=-1)`
+        : `ASYMMETRIC: ${asym.map(([n]) => n).join(', ')}`);
   }
 
   // --- 3. Polar shape + speed anchor (TWS=6) --- (slow: computePolar sweep)
