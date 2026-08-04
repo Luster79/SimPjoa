@@ -552,7 +552,16 @@ export function sailForces(state, controls, config) {
   const ceBrailShift = config.sail.ceBrailShift ?? 0.3;
   const yceBrailShift = config.sail.yceBrailShift ?? 0.6;
   const halfChordEff = halfChord * ceSwingFraction * (1 - ceBrailShift * brailWind);
-  const halfChordEffY = halfChord * ceSwingFraction * (1 - yceBrailShift * brailWind);
+  // The LATERAL offset gets its own, geometric base length (docs/adr/0024).
+  // It shared `halfChord` with the fore-aft swing until now, which conflated
+  // two different physical things: the fore-aft excursion is a centre-of-
+  // pressure MIGRATION with trim (small, and calibrated against the owner's
+  // own field datum that Pjoa sail-trim steering is slow -- D-6), while the
+  // lateral offset is the geometric fact that an eased crab claw hangs right
+  // out over the water. Sharing one length made the second 11x too small:
+  // 0.25 m against the sail's real tack-to-centroid distance of 2.76 m.
+  const ceRadiusEff = (config.sail.ceRadius ?? halfChord) * (config.sail.yceFraction ?? 1);
+  const halfChordEffY = ceRadiusEff * (1 - yceBrailShift * brailWind);
   // tackX (S2, work-order-2026-08-02): the rig's own fore-aft position, the
   // steering control this model did not have. On an Oceanic lateen the tack
   // travels along the hull and the mast's rake is adjustable, so the CE moves

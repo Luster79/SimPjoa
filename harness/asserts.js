@@ -1719,14 +1719,16 @@ export function runAsserts(config, { slow = true } = {}) {
       let maxPhi = -Infinity;
       for (let i = 0; i < Math.round(seconds / dt); i++) {
         const t = i * dt;
-        // Gust peak re-anchored 11.5 -> 11.75 for the PJOA FOLK
-        // re-parameterisation (docs/adr/0021), by re-finding the SAME physical
-        // state rather than by relaxing the check: the old boat reached
-        // maxPhi 25.1deg at 11.5, and 11.75 puts the new one at 24.4deg. The
-        // knife edge this comment describes moved with the boat -- it now sits
-        // between 11.75 and 12.0 -- and the leg is still deliberately on the
-        // survivable side of it.
-        const tws = t < 5 ? 6 + (11.75 - 6) * (t / 5) : 11.75; // gust ramp then held
+        // Gust peak re-anchored twice now, both times by re-finding the SAME
+        // physical state rather than by relaxing the check. The calibration
+        // target is the one the original comment records: maxPhi ~25deg, on the
+        // survivable side of the knife edge.
+        //   11.5  -> 25.1deg on the Dierking-estimate boat
+        //   11.75 -> 24.4deg after the PJOA FOLK re-parameterisation (adr/0021)
+        //   11.85 -> 25.0deg after the sail's lateral CE got its real geometry
+        //            (adr/0024), which sharpened the edge: it now sits between
+        //            11.90 (37.4deg, survives) and 11.95 (capsizes).
+        const tws = t < 5 ? 6 + (11.85 - 6) * (t / 5) : 11.85; // gust ramp then held
         if (releaseAtLoad !== null && !released && state.amaLoad > releaseAtLoad) { sheet = 90 * DEG; released = true; }
         const controls = { windDirFrom, windSpeed: tws, sheet, rudder: headingHoldRudder(state, HEADING0, config),
           brailLee: 0, brailWind: 0, crewPos: 0.3, crewPosX: 0, shuntRequest: false };

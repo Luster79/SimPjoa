@@ -794,6 +794,23 @@ function buildDefaultConfig() {
       // fraction of hull half-length); aero.js's yaw-moment CE geometry no
       // longer reads it — see hull.lead above and ceSwingFraction below.
       tackXFraction: 0.06,                    // fraction of hull half-length — mast/tack position, active-bow side of CG (UI drawing only, round 7)
+      // ceRadius (docs/adr/0024) -- DERIVED distance from the tack to the
+      // sail's own area centroid, along the bisector of the two spars:
+      //   spar   = sqrt(2*A/sin(apex))
+      //   rC     = 2*spar*cos(apex/2)/3        (centroid of a triangle with
+      //                                         two equal sides from the tack)
+      // This is the base length for the LATERAL CE offset only. It is a
+      // geometric fact about where the sail hangs, not a centre-of-pressure
+      // migration, and it is 11x the half-chord the model used to share
+      // between both axes (2.76 m against 0.25 m).
+      ceRadius: 2 * Math.sqrt(2 * p.sail_area_m2 / Math.sin(p.sail_apex_angle_deg * Math.PI / 180))
+        * Math.cos(p.sail_apex_angle_deg * Math.PI / 360) / 3,
+      // yceFraction: how far along that tack->centroid line the lateral centre
+      // of pressure actually sits. 1.0 is the area centroid; a vortex-lift
+      // sail's CP sits closer to the leading edge, and this is where that
+      // belongs -- NOT in the base length, which is geometry. See ADR 0024 for
+      // the measurement that set it.
+      yceFraction: 0.35,
       ceBrailShift: 0.3,                      // tunable (P2-3), fraction of the half-chord the CE shifts toward the tack at brailWind=1 (spilling the sail's rear/upper area), request's own suggested ~0.25-0.35 band
       // yceBrailShift (round 10c, C1, ROUND10c_carrot_two_regime.md):
       // SEPARATE from ceBrailShift above — round 10b (D2) unified xCE/yCE

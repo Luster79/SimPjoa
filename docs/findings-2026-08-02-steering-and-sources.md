@@ -1651,3 +1651,67 @@ ever visited.
 
 8 of 108 settings still hold the start-up course rudder-free, best unchanged at
 2.3°, and a new 3.5° option appears with the crew fully amidships.
+
+---
+
+## Why the boat bore away weakly (2026-08-04, ADR 0024)
+
+Measured authority of every control at a settled beam reach, negative = bears
+away:
+
+| control | moment |
+|---|---|
+| tack forward | −136 N·m |
+| stays forward | −111 N·m |
+| crew aft | −82 N·m |
+| **windward brail (to 0.5)** | **−22 N·m** |
+| **windward brail (to 1.0)** | **+5 N·m — reverses** |
+| steering oar hard over | −1347 N·m |
+
+The manual's *primary* bear-away control was the weakest of the four and
+non-monotonic. Damping was not the limit: the yaw time constant is 0.17 s and
+the oar reaches 19°/s. The boat responds fast; the trim had nothing to push
+with.
+
+### One length doing two jobs
+
+`aero.js` shared `halfChord = CEheight/4 = 0.25 m` between the fore-aft CE
+excursion and the lateral offset. The first is a CP migration with trim, small,
+and calibrated against the owner's D-6 field datum. The second is geometry: an
+eased crab claw hangs out over the water. The sail's real tack-to-centroid
+distance is **2.76 m** — the shared length was 11× too small, and the brail's
+whole mechanism is shrinking that lever.
+
+`sail.ceRadius` is now derived from the sail's own triangle, and only the
+lateral term uses it.
+
+### The number that is a bound, not a measurement
+
+`yceFraction = 0.35`. Physics argues upward (area and vortex lift both
+concentrated outboard → CP at or beyond the centroid, fraction ~1). The owner's
+own field datum argues downward:
+
+| yceFraction | brail drift | suite |
+|---|---|---|
+| 1.0 | −26.4° | 82/88 |
+| 0.5 | −16.0° | 86/88 |
+| **0.35** | **−13.5°** | **88/88** |
+| 0.25 | −12.0° | 87/88 |
+
+0.35 is the largest fraction that keeps the strongest sail control inside
+`steeringOk`'s 1.5–20°/10 s band, which is where D-6 lives. The two arguments
+do not meet; that gap is recorded in ADR 0024 as an open question rather than
+smoothed over.
+
+### Result
+
+The brail more than doubled, −6.5° → −13.5°, and is now the strongest sail-trim
+control — as the manual says it should be. T6's gust was re-anchored a second
+time (11.75 → 11.85) by re-finding maxPhi ≈ 25° on the survivable side; the
+bigger lever sharpened that knife edge to a 0.05 m/s step.
+
+**And the price: S1c fell 3/6 → 1/6.** Sailing with the oar shipped got harder,
+because the sail's own weather helm grew and the crew's share of the balance
+shrank with it. Exactly the trade-off flagged before the change. S1c's control
+set also predates the stays (written in ADR 0017, before 0020), so it is now a
+lower bound — deliberately not widened in the same change that damaged it.
