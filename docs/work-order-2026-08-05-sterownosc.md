@@ -315,7 +315,72 @@ właściwej przyczyny.
 
 ---
 
+## Część IV. Stan po T1–T6: co zostaje w TWA160+, i czego to NIE jest
+
+*Dopisane po wykonaniu wszystkich sześciu pozycji (main@e75a44e). T1–T6:
+WYKONANE — zob. status przy każdej pozycji wyżej.*
+
+### Diagnoza skorygowana: to nie niestabilność, to statyczny deficyt
+
+Pierwsze wrażenie z pomiarów C-A/C-C (moment przy release bliski zera, a mimo
+to dryf narasta w ciągu 120 s do 25–35°/min) sugerowało dodatnie sprzężenie
+zwrotne — rosnącą niestabilność, nie przesuniętą równowagę. Zmierzone wprost i
+**odrzucone**:
+
+| TWA | N_r kadłub | N_r ama | N_r razem | współczynnik Munka `(mₓ−m_y)·u` |
+|---|---|---|---|---|
+| 90 | 1808 | 14 | 1822 N·m/(rad/s) | −528 kg·m/s |
+| 140 | 1402 | 11 | 1413 | −616 |
+| 160 | 1236 | 9 | 1245 | −576 |
+| 175 | 1164 | 9 | 1173 | −552 |
+
+`N_r` (tłumienie odchylenia, kadłub+ama) jest **duże** na każdym z tych
+kursów — rząd 1200–1800 N·m/(rad/s), nie ma tu deficytu tłumienia. Dryf
+narasta, bo istnieje mały, ale **niezerowy moment statyczny** przy `r=0`
+(~14 N·m przy TWA160, zmierzone w T1/T2 — Część I.2), a przy tak dużym `N_r`
+łódka po prostu osiada na `r_równowagi ≈ M₀/N_r`, stałej, niezerowej prędkości
+kątowej — 14/1245 rad/s ≈ 39°/min, rząd wielkości zgodny z pomiarem. To jest
+**przesunięta równowaga, nie rozbiegająca się niestabilność**. Koryguje to
+sformułowanie z ADR 0027/0028 („deficyt stateczności kierunkowej") — precyzyjniej:
+deficyt **statycznego momentu bear-away**, nie deficyt tłumienia.
+
+### Dlaczego T4 pomogło S1c, a nie ruszyło C-C przy TWA160+
+
+Plan boczny amy (T4) jest członem **rzędu `r`/`v`** (tłumienie + siła od
+dryfu) — dokładnie jak przewidziano w Części I.3. Na kursach TWA70–110 (gdzie
+S1c mierzy) autopilot osiada z realnym dryfem (−17° do −2,5°), więc `Fy` amy
+ma z czego czerpać. Na TWA140–175 dryf przy puszczeniu steru jest **bliski
+zera** (−1,0° do +0,1°, zmierzone) — every leeway-driven term, ama's Fy
+included, ma tam prawie nic do roboty na starcie. `T4` daje więc tłumienie,
+które pomaga tam, gdzie już jest bliska równowaga (S1c), ale nie dostarcza
+statycznego momentu, którego brakuje na głębokim fordewindzie.
+
+### Co NIE zostało jeszcze wypróbowane
+
+Jedyny pozostały, jawnie odłożony kierunek to **T5's derywacja
+`phiLiftoffDeg`/`phiSubmergeDeg`** (Część II, T5) — zmieniłaby `state.phi` przy
+release, a przez to cały budżet momentu (heelMoment żagla, zanurzenie amy,
+wszystko pochodne od `phi`). To NIE jest T5-rozmiaru poprawka: wymaga danych o
+zanurzeniu amy, których projekt nie ma, i pełnej kampanii re-walidacji
+marginesów wywrotki (na wzór `docs/capsize-margins-2026-07-30.md`) — commit
+mógłby przesunąć **każdy** próg wywrotkowy w modelu (T6 gust, T10, scenariusz
+aback), nie tylko sterowność.
+
+### Rekomendacja
+
+TWA160+ zostaje udokumentowanym, uzasadnionym ograniczeniem (`C-A`/`C-C`,
+`xfail:STEERING`, z pełnym śladem przyczyny) — nie kolejnym T-itemem do
+zaadresowania tanim sposobem. Nie widzę uzasadnionego, małego kroku, który by
+to zamknął: `T1`–`T4` wyczerpują mechanizmy, które model może dostarczyć bez
+albo (a) zgadywania niezmierzonej geometrii amy, albo (b) nowego elementu
+planu bocznego (miecz/płetwa — świadomie wycofane, ADR 0013), albo (c)
+otwarcia dużej kampanii T5.
+
+---
+
 *Reprodukcja: pomiary z Części I odtwarzalne skryptami w treści pozycji.
 Tabela momentów z I.1 — ustalić kurs autopilotem 45 s, następnie odczytać
 `computeForces` przy `rudderUp: true` i dodać `(massSurge − massSway)·u·v`,
-którego `forces.M` nie zawiera.*
+którego `forces.M` nie zawiera. Tabela `N_r`/Munka z Części IV — jak wyżej,
+`hullSideForce`/`amaDrag` wywołane bezpośrednio przy `r` i `r+0,02`, różnica
+momentu podzielona przez `0,02`.*
