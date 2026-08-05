@@ -43,6 +43,7 @@ const DATA_FILES = {
   'crab_claw_CL_CD_polhamus.csv': 'data/crab_claw_CL_CD_polhamus.csv',
   'crab_claw_CL_CD_v2.csv': 'data/crab_claw_CL_CD_v2.csv', // round 10, R10-1 — see docs/adr/0003
   'example_proa_parameters.csv': 'data/example_proa_parameters.csv',
+  'proa_parameters_old.csv': 'data/proa_parameters_old.csv', // the 'old' boat variant — docs/adr/0029, 0030
 };
 
 // ---------------------------------------------------------------------

@@ -250,8 +250,22 @@ function crossCheckAeroTableV2(byApex) {
   }
 }
 
-function loadBoatParamsCSV() {
-  const text = readFileSync(path.join(DATA_DIR, 'example_proa_parameters.csv'), 'utf8');
+// Two named boats (docs/adr/0029, docs/adr/0030): 'default' is the PJOA FOLK
+// with the campaign's revised ama, 'old' is the same boat before that revision.
+// Unlike the aero tables — which are leaf objects createConfig can swap AFTER
+// the merge — these parameters are the SOURCE the whole config is derived
+// from (hull, ama, sail, crew, every inertia), so the variant has to be known
+// BEFORE buildDefaultConfig runs. That is why it is a createConfig argument
+// read ahead of the merge rather than a field patched into it.
+export const BOAT_VARIANTS = {
+  default: 'example_proa_parameters.csv',
+  old: 'proa_parameters_old.csv',
+};
+
+function loadBoatParamsCSV(variant = 'default') {
+  const file = BOAT_VARIANTS[variant];
+  if (!file) throw new Error(`unknown boat variant '${variant}' (expected one of: ${Object.keys(BOAT_VARIANTS).join(', ')})`);
+  const text = readFileSync(path.join(DATA_DIR, file), 'utf8');
   const rows = parseCSV(text);
   const params = {};
   for (const r of rows) params[r.parameter] = num(r.value);
@@ -261,7 +275,7 @@ function loadBoatParamsCSV() {
 // ---------------------------------------------------------------------
 // Default CONFIG assembly
 // ---------------------------------------------------------------------
-function buildDefaultConfig() {
+function buildDefaultConfig(boat = 'default') {
   // Two switchable aero tables — v1 (Marchaj/Polhamus theoretical) and v2
   // (Di Piazza 2014 measured-anchored, the default) — see docs/adr/0003.
   // Both are loaded unconditionally (tiny CSVs); the active one is picked by
@@ -271,7 +285,7 @@ function buildDefaultConfig() {
   crossCheckAeroTable(aeroTableV1);
   const aeroTableV2 = loadAeroTable('crab_claw_CL_CD_v2.csv');
   crossCheckAeroTableV2(aeroTableV2);
-  const p = loadBoatParamsCSV();
+  const p = loadBoatParamsCSV(boat);
   // Inertia is three separate quantities, each derived. A hull accelerating
   // SIDEWAYS drags a large body of water with it (added mass); pushing it
   // forward barely does. Yaw inertia must exceed a uniform rod's m*L^2/12,
@@ -571,7 +585,12 @@ function buildDefaultConfig() {
       // knob (that door stays shut, see formFactor's own comment below), it
       // is revising a DIFFERENT, separately-estimated coefficient in light of
       // the length estimate it was never actually tied to.
-      residuaryPeakCr: 0.006 * 0.4,
+      //
+      // Variant-dependent, and the ONLY ama value that is: the others fall out
+      // of the CSV on their own (wettedSurface's own ratio is 3.2/3.2 = 1 for
+      // the old boat). This one was never in the CSV -- it is a hydrodynamic
+      // coefficient, not a dimension -- so the old boat has to name it here.
+      residuaryPeakCr: boat === 'old' ? 0.006 : 0.006 * 0.4,
       // formFactor: the ama is a slender float trailing fore-aft through the
       // water like a second, smaller hull — NOT a bluff cross-flow body — so
       // its drag is ITTC-57 skin friction at its own length/Reynolds number
@@ -1109,6 +1128,7 @@ export function validateConfig(config) {
 
   if (config.configVersion !== CONFIG_VERSION) errs.push(`configVersion mismatch: ${config.configVersion} !== ${CONFIG_VERSION}`);
   if (!['v1', 'v2'].includes(config.sail.aeroTableVersion)) errs.push(`sail.aeroTableVersion must be 'v1' or 'v2', got ${config.sail.aeroTableVersion}`);
+  if (config.boat !== undefined && !(config.boat in BOAT_VARIANTS)) errs.push(`boat must be one of ${Object.keys(BOAT_VARIANTS).join('/')}, got ${config.boat}`);
   inRange(config.sail.apexAngleDeg, 45, 60, 'sail.apexAngleDeg');
   inRange(config.sail.camber, 0, 0.20, 'sail.camber');
   // The TOTAL camber the CL curve is ever evaluated at — the table's own
@@ -1202,8 +1222,14 @@ export function deepMerge(base, patch) {
 }
 
 export function createConfig(userConfig) {
-  const base = buildDefaultConfig();
+  // `boat` is read BEFORE the merge, not patched into it: the whole config is
+  // derived from the chosen parameter file, so there is nothing to overlay
+  // afterwards (see BOAT_VARIANTS). It is then stored on the result so a
+  // config round-trips — createConfig(cfg) reproduces the same boat.
+  const boat = userConfig?.boat ?? 'default';
+  const base = buildDefaultConfig(boat);
   const merged = deepMerge(base, userConfig);
+  merged.boat = boat;
   // Re-derive the active aero table from sail.aeroTableVersion on every call.
   // A patch touching only sail.aeroTableVersion (e.g. from the boat-design
   // tab) must not have to carry the whole table object as well, and deepMerge

@@ -125,6 +125,14 @@ the findings document, not here — see its last four sections.
 - **Re-anchoring an assertion band is normal after an intended physics change;
   re-picking a probe until it agrees is not.** If a claim only holds at a
   hand-chosen operating point, measure it across a grid and report the tally.
+- **There are two named boats.** `createConfig()` builds the `default` one (the
+  PJOA FOLK with the ADR 0029 ama); `createConfig({ boat: 'old' })` builds the
+  same boat before that revision, from `data/proa_parameters_old.csv`. The
+  variant is read *before* the config is assembled — every derived quantity
+  comes from the chosen file — so it is a `createConfig` argument, not a patch
+  field like `sail.aeroTableVersion`. Adding a third variant means adding a CSV,
+  an entry in `BOAT_VARIANTS`, and the file to **both** `tools/bundle.js` and
+  `ui/shims/node-fs.js` (the shim cannot fetch on demand).
 
 ### Lessons this project paid for
 

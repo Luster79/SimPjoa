@@ -1,0 +1,17 @@
+parameter,value,note
+# PJOA FOLK, the owner's own boat (pjoa.eu/2020/10/03/folk-pjoa/), as it stood
+# BEFORE the steering campaign revised the ama (docs/adr/0029, 2026-08-05).
+# Kept as the named 'old' variant so the pre-revision boat stays runnable and
+# the revision stays comparable -- select it with createConfig({ boat: 'old' }).
+# Identical to example_proa_parameters.csv except ama_length_m and
+# ama_buoyancy_kg; see docs/adr/0021 for how the unmeasured values were derived.
+boat_length_m,5.0,"MEASURED: pjoa.eu ""Lenght: 500cm"" (was 5.5, a Dierking T2/Wa'apa estimate)"
+hull_beam_m,0.52,"OWNER (from memory): 50-55 cm at the GUNWALE - it cannot be the waterline beam, see docs/adr/0022. Drawing only; no physics module reads hull.beam"
+displacement_kg,165.0,"MEASURED-derived: rigged 85-90 kg less the 13 kg ama = ~74 kg of boat, plus one 90 kg crew"
+ama_length_m,3.2,"NOT PUBLISHED - scaled from the whole-boat length ratio 5.0/5.5 (docs/adr/0021). Superseded in the default boat by docs/adr/0029, which revised it x1.40 to 4.48 m; this file preserves the pre-revision value."
+ama_buoyancy_kg,60.0,"NOT PUBLISHED - scaled by the CUBE of the length ratio, it being a volume (docs/adr/0021). Superseded in the default boat by docs/adr/0029, which revised it x1.40 LINEARLY to 84 kg; this file preserves the pre-revision value."
+ama_mass_kg,13.0,"MEASURED: pjoa.eu ""Ama (outrigger): 13 kg"""
+beam_overall_m,3.1,"MEASURED: pjoa.eu ""Beam: 310cm"" (was 2.5)"
+sail_area_m2,8.0,"MEASURED: pjoa.eu ""Crab law sail: 8 sqm"" (10 m2 is an option; was 12)"
+sail_apex_angle_deg,50.0,NOT PUBLISHED - kleszcz kraba 45-60, unchanged
+CE_height_m,2.0,"CORROBORATED: rig height 590/540cm; a crab claw peaked near the masthead has its centroid near 2 m. Unchanged"
