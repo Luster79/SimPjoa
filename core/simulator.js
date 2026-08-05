@@ -48,6 +48,19 @@ export function createSimulator(userConfig) {
   }
 
   function setConfig(patch) {
+    // Switching the named boat cannot be a merge. Every value the physics
+    // reads — hull, ama, sail, crew, all three inertias — is DERIVED from the
+    // variant's parameter file, so overlaying `{ boat: 'old' }` on a built
+    // config would relabel it while leaving the previous boat's numbers in
+    // place: a config that reports one boat and sails another. Rebuild from
+    // the new variant's own base instead, with this patch applied on top.
+    // Consequence, deliberate: customisations from EARLIER setConfig calls do
+    // not survive a variant switch — they were expressed against a different
+    // boat, and carrying them over is what would silently corrupt the new one.
+    if (patch?.boat !== undefined && patch.boat !== config.boat) {
+      config = createConfig(patch);
+      return;
+    }
     config = validateConfig(deepMerge(config, patch));
   }
 
