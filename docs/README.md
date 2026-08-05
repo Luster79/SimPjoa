@@ -74,6 +74,7 @@ Append-only. Never edit an old ADR; supersede it with a new one.
 | 0025 | Comments describe the current model; history lives in the ADRs and `Archive/` |
 | 0026 | Fore-aft trim arms have no downwind authority -- they act on the sail's side force, which collapses on deep courses |
 | 0027 | The ama drags the bow up, and the dead run is unstable -- refines 0026's attribution; the broad reach holds with the manual's own recipe |
+| 0028 | The manual does not prescribe the paddle downwind -- corrects 0027 and C-A's standing excuse; the near-dead-run failure disagrees with the source |
 
 ## Work orders — what to do
 
@@ -136,7 +137,13 @@ the findings document, not here — see its last four sections.
   invariant is worth only what its inputs exercise.
 - **A derived document is not the source.** `Kryteria_Akceptacji` transcribed
   one rule backwards, and a long, correct-looking argument was built on it
-  before the original PDF settled it in one sentence.
+  before the original PDF settled it in one sentence. It happened a second time
+  (ADR 0028): AC-5.2's sentence about the *simulator* offering a paddle was
+  read as the *manual* prescribing the paddle for downwind steering, and that
+  reading excused a failing assertion for two days. The same criterion also
+  transcribes the carrot's boom as "nisko" where the source says "wysoko".
+  Treat this file as an index into the manual, never as authority, and quote
+  the original before using a criterion to excuse a failure.
 - **Do not compensate in the wrong parameter.** Round 7 raised the ama's *form
   factor* to 3.3 to buy steering authority; round 9 rightly cut it and lost the
   behaviour. Neither was the problem: the ama had no wave drag at all

@@ -2326,19 +2326,29 @@ export function runAsserts(config, { slow = true } = {}) {
     }
     const twaEnd = Math.abs(normalizeAngle(windDirFrom - state.heading)) / DEG;
     const driftRateDegPerMin = (twaStart - twaEnd) / (releaseSeconds / 60);
-    // AC-1/AC-5 (2026-08-03): demoted to xfail. The ama's residuary drag makes
-    // a rudder-free dead run round up faster (25.4 -> 35.5 deg/min), and the
-    // owner's manual says that is what the boat does: it prescribes the paddle
-    // for exactly this case -- "for downwind steering courses, when the sail
-    // creates too much weather helm for weight-shift steering to be effective"
-    // (docs/sources/, ch. III). A released rudder on a dead run is not a
-    // configuration the manual claims is holdable, so the 20deg/min ceiling is
-    // asserting something the source does not. Left failing with the number
-    // rather than relaxed to fit, because whether this check should exist at
-    // all is a decision, not a band width.
+    // xfail. The ama's residuary drag makes a rudder-free dead run round up
+    // faster (25.4 -> 35.5 deg/min).
+    //
+    // CORRECTED (docs/adr/0028). This check used to be excused on the grounds
+    // that "the manual prescribes the paddle for exactly this case", so the
+    // 20deg/min ceiling was asserting something the source did not. That is
+    // not what the source says. The manual gives an explicit, paddle-free
+    // procedure for running nearly dead downwind -- set the carrot (boom
+    // hauled HIGH with the gejtawa so the sail bellies, sheet eased enough to
+    // let it rise), and/or stand the mast toward vertical (ease the backstay,
+    // shorten the shroud). The paddle sentence that excuse rested on comes
+    // from Kryteria_Akceptacji AC-5.2, and it says the SIMULATOR should offer
+    // the paddle as an always-available control -- a statement about the
+    // control set, not about downwind technique.
+    //
+    // So this failure is a genuine disagreement with the source, not an
+    // accepted limitation. Left failing with its number either way, but for
+    // the opposite reason: the ceiling is asserting something the source DOES
+    // claim, and the model does not deliver it. See C-C for the measurement
+    // with the manual's full recipe applied.
     check('C-A: dead-run release — TWA178+carrot, releasing the rudder drifts toward the wind < 20deg/min sustained over 120s',
       !state.capsized && driftRateDegPerMin < 20,
-      `twaStart=${twaStart.toFixed(1)} twaEnd=${twaEnd.toFixed(1)} rate=${driftRateDegPerMin.toFixed(2)}deg/min capsized=${state.capsized} -- was 18.6deg/min before the ama gained the residuary resistance the hull always had; the manual prescribes the paddle for downwind steering rather than claiming a released rudder holds`,
+      `twaStart=${twaStart.toFixed(1)} twaEnd=${twaEnd.toFixed(1)} rate=${driftRateDegPerMin.toFixed(2)}deg/min capsized=${state.capsized} -- was 18.6deg/min before the ama gained the residuary resistance the hull always had; the manual claims this course IS holdable without the paddle, so this is a disagreement with the source (docs/adr/0028), not an accepted limitation`,
       'STEERING');
   }
 
@@ -2409,15 +2419,25 @@ export function runAsserts(config, { slow = true } = {}) {
   // 31.0 to 21.6 deg/min at TWA140. Pulling the carrot the rest of the way
   // takes it to 13.8. That is the manual's own prescription and it works.
   //
+  // The recipe below is the manual's own, and it includes the RIG controls:
+  // the carrot, and standing the mast toward vertical by easing the backstay
+  // and shortening the shroud. `stays: 1.0` is that mast-forward setting.
+  // Omitting it understates what the boat can do -- with it, TWA140 goes from
+  // 13.8 to 6.8 deg/min.
+  //
   // TWA160 does not hold at any setting, and the reason is worth recording
   // because it is not "not enough authority". At brailWind=1 with the crew
   // inboard, EVERY trim moment is essentially nulled at release -- sail +3,
-  // hull -2, ama +4 -- and the boat still rounds up at 31 deg/min. Nulling
-  // the static moments does not stop it, so near the dead run this is a
-  // directional STABILITY problem (no restoring yaw moment from the hull, a
+  // hull -2, ama +4 -- and the boat still rounds up at ~29-31 deg/min.
+  // Nulling the static moments does not stop it, so near the dead run this is
+  // a directional STABILITY problem (no restoring yaw moment from the hull, a
   // destabilising Munk moment), not a trim problem. It is the same deficit
-  // S1b/S1c carry, and it is why the manual prescribes the paddle for
-  // downwind steering rather than claiming a released rudder holds (C-A).
+  // S1b/S1c carry.
+  //
+  // That is a disagreement with the source, not an accepted limitation: the
+  // manual states this course is holdable with these controls and no paddle.
+  // See docs/adr/0028, and C-A's own comment for the mis-citation that used
+  // to excuse it.
   {
     const dt = config.dt, tws = 6;
     const rows = [];
@@ -2425,7 +2445,7 @@ export function runAsserts(config, { slow = true } = {}) {
     for (const [twaDeg, sheetDeg] of [[140, 50], [160, 70]]) {
       const windDirFrom = HEADING0 + twaDeg * DEG;
       const trim = { brailLee: 0, brailWind: 1.0, crewPos: 0, crewPosX: -1.0,
-        tackX: 1.0, shuntRequest: false };
+        tackX: 1.0, stays: 1.0, shuntRequest: false };
       let state = freshState(sheetDeg * DEG);
       for (let i = 0; i < Math.round(45 / dt); i++) {
         state = integrate(state, { windDirFrom, windSpeed: tws, sheet: sheetDeg * DEG,
@@ -2443,9 +2463,9 @@ export function runAsserts(config, { slow = true } = {}) {
       if (rate < 15 && !state.capsized) nHeld++;
       rows.push(`TWA${twaDeg}: ${twaStart.toFixed(0)}->${twaEnd.toFixed(0)}deg ${rate.toFixed(1)}deg/min (v ${speedStart.toFixed(2)}->${Math.hypot(state.u, state.v).toFixed(2)})`);
     }
-    check("C-C: the manual's own recipe (carrot at full travel + crew OFF the ama) holds a deep course rudder-free within 15deg/min",
+    check("C-C: the manual's own recipe (carrot + crew off the ama + mast toward vertical) holds a deep course rudder-free within 15deg/min",
       nHeld === 2,
-      `${nHeld}/2 points hold -- ${rows.join(' | ')} -- what fails here does not fail for want of authority: at this setting every trim moment at release is within a few N*m of zero and the near-dead-run still rounds up. See this block's own comment`,
+      `${nHeld}/2 points hold -- ${rows.join(' | ')} -- what fails here does not fail for want of authority: at this setting every trim moment at release is within a few N*m of zero and the near-dead-run still rounds up. The manual claims this course IS holdable with these controls, so this is a disagreement with the source (docs/adr/0028). See this block's own comment`,
       'STEERING');
   }
 
