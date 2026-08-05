@@ -177,6 +177,8 @@
       <div class="hint" data-i18n="hint.brailLee">Q sheets in, Z eases</div>
       <div class="row"><label for="brailWind" data-i18n="lbl.brailWind">Brail (wind)</label><div class="sliderWrap"><input id="brailWind" type="range" min="0" max="100" step="1" value="0"><div id="brailWindTick" class="brailTick"></div></div><output id="brailWindOut">0%</output></div>
       <div class="hint" data-i18n="hint.brailWind">W sheets in, X eases</div>
+      <div class="row"><label for="boomLift" data-i18n="lbl.boomLift">Boom lift (gejtawa)</label><input id="boomLift" type="range" min="0" max="100" step="1" value="0"><output id="boomLiftOut">0%</output></div>
+      <div class="hint" data-i18n="hint.boomLift">Hauls the boom UP so the sail bellies — the "carrot" for deep courses. Needs the sheet eased to work at all.</div>
 
       <h2 data-i18n="h.steering">Steering &amp; trim</h2>
       <div class="row"><label for="tackX" data-i18n="lbl.tackX">Tack (fore/aft)</label><input id="tackX" type="range" min="-1" max="1" step="0.02" value="0"><output id="tackXOut">0.00</output></div>
@@ -250,6 +252,14 @@
     </div>
     <div id="boatPanel">
       <h2 data-i18n="h.boatDesign">Boat design</h2>
+      <div class="row">
+        <label for="boatVariant" data-i18n="lbl.boatVariant">Boat</label>
+        <select id="boatVariant">
+          <option value="default" data-i18n="opt.boatDefault">PJOA FOLK (default)</option>
+          <option value="old" data-i18n="opt.boatOld">PJOA FOLK — before the ama revision</option>
+        </select>
+      </div>
+      <div class="hint" data-i18n="hint.boatVariant">Switching rebuilds the boat from its own parameter file and discards edits below.</div>
       <div class="hint" data-i18n="hint.boatDesign">Physical design parameters — hull, ama, sail, rudder, stability. Changes apply on "Apply" and reset the boat's motion state.</div>
       <div class="boatLegend">
         <span class="tag tagPhysics" data-i18n="tag.physics">affects physics</span>
