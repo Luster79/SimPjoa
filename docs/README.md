@@ -75,7 +75,8 @@ Append-only. Never edit an old ADR; supersede it with a new one.
 | 0026 | Fore-aft trim arms have no downwind authority -- they act on the sail's side force, which collapses on deep courses |
 | 0027 | The ama drags the bow up, and the dead run is unstable -- refines 0026's attribution; the broad reach holds with the manual's own recipe |
 | 0028 | The manual does not prescribe the paddle downwind -- corrects 0027 and C-A's standing excuse; the near-dead-run failure disagrees with the source |
-| 0029 | Ama geometry revised (length/buoyancy x1.40); closes TWA150 and TWA170-180 rudder-free, TWA155-165 stays open as a structural (not search) limit |
+| 0029 | Ama geometry revised (length/buoyancy x1.40); closes TWA150 and TWA170-180 rudder-free -- its TWA155-165 "structural limit" is **withdrawn by 0030** |
+| 0030 | The TWA155-165 gap was a search artifact (the sheet was pinned) -- corrects 0029; every course 50-180 holds rudder-free, and the speed cost of doing so is quantified |
 
 ## Work orders — what to do
 
