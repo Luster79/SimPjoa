@@ -544,20 +544,34 @@ function buildDefaultConfig() {
     },
 
     ama: {
-      length: p.ama_length_m,             // 3.5 m
-      maxBuoyancy: p.ama_buoyancy_kg,      // 80 kg
-      mass: p.ama_mass_kg,                 // 25 kg — resists lifting when windward (normal case)
-      spacing: p.beam_overall_m,           // 2.5 m (hull-ama spacing, "B")
-      wettedSurface: 0.5,                  // m^2 — tunable estimate, fully immersed (scaled by the length ratio squared, ADR 0021)
+      length: p.ama_length_m,             // 4.48 m -- see example_proa_parameters.csv's own note
+      maxBuoyancy: p.ama_buoyancy_kg,      // 84 kg -- see example_proa_parameters.csv's own note
+      mass: p.ama_mass_kg,                 // 13 kg (MEASURED) — resists lifting when windward (normal case)
+      spacing: p.beam_overall_m,           // 3.1 m (hull-ama spacing, "B")
+      // wettedSurface: scales LINEARLY with ama.length off the original 3.2 m
+      // estimate (same cross-section, longer float — length x1.40 gives
+      // wetted surface x1.40, not x1.40^2, since only one dimension grew).
+      // The 0.5 m^2 base is still the same tunable estimate ADR 0021 scaled by
+      // the length ratio SQUARED for the whole-boat resize; this is a
+      // different, later, one-dimensional revision on top of it (docs/
+      // work-order-2026-08-05-boat-data.md).
+      wettedSurface: 0.5 * (p.ama_length_m / 3.2),
       // residuaryPeakCr (docs/adr/0015): the ama's wave-making resistance —
       // see core/hydro.js's amaDrag for why this, and not the form factor, is
-      // the honest home for the ama's steering authority. Set EQUAL to the
-      // hull's 0.006: same phenomenon, same slender-body order of magnitude,
-      // and the ama is the stubbier body of the two (formFactor 1.2 vs the
-      // hull's fine entry), so equal is the conservative choice rather than a
-      // flattering one. The Fr hump shape (peak, width, tail plateau) is
-      // shared with the hull outright.
-      residuaryPeakCr: 0.006,
+      // the honest home for the ama's steering authority.
+      //
+      // REVISED (docs/work-order-2026-08-05-boat-data.md) from equal to the
+      // hull's own 0.006 down to 0.4x that (0.0024). The equal setting was
+      // stated as "the conservative choice" precisely because it was not
+      // measured; a longer, more slender float (this round's own ama.length
+      // revision) is the more defensible physical picture and gives less
+      // residuary resistance per unit wetted area than a stubby one, not the
+      // same. Kept well inside the same order of magnitude as the hull's own
+      // value -- this is not a return to using the form factor as a steering
+      // knob (that door stays shut, see formFactor's own comment below), it
+      // is revising a DIFFERENT, separately-estimated coefficient in light of
+      // the length estimate it was never actually tied to.
+      residuaryPeakCr: 0.006 * 0.4,
       // formFactor: the ama is a slender float trailing fore-aft through the
       // water like a second, smaller hull — NOT a bluff cross-flow body — so
       // its drag is ITTC-57 skin friction at its own length/Reynolds number

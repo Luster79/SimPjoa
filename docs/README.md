@@ -75,6 +75,7 @@ Append-only. Never edit an old ADR; supersede it with a new one.
 | 0026 | Fore-aft trim arms have no downwind authority -- they act on the sail's side force, which collapses on deep courses |
 | 0027 | The ama drags the bow up, and the dead run is unstable -- refines 0026's attribution; the broad reach holds with the manual's own recipe |
 | 0028 | The manual does not prescribe the paddle downwind -- corrects 0027 and C-A's standing excuse; the near-dead-run failure disagrees with the source |
+| 0029 | Ama geometry revised (length/buoyancy x1.40); closes TWA150 and TWA170-180 rudder-free, TWA155-165 stays open as a structural (not search) limit |
 
 ## Work orders — what to do
 
@@ -82,7 +83,8 @@ Append-only. Never edit an old ADR; supersede it with a new one.
 |---|---|
 | `work-order-2026-07-22.md` | Nearly complete. Open: **R13** (monoliths), **R10** (lint/types). |
 | `work-order-2026-07-30-physics-audit.md` | **Complete** — F1-F16 all executed. |
-| `work-order-2026-08-05-sterownosc.md` | **Open, current.** T1-T6: the carrot as the manual describes it (boom lift + belly), then the heel-dependent hull/ama terms. Blocks C-A/C-B/C-C. |
+| `work-order-2026-08-05-sterownosc.md` | **Complete.** T1-T6: the carrot as the manual describes it (boom lift + belly), then the heel-dependent hull/ama terms. TWA160+ left as a documented structural limit (its own Part IV), superseded as a search target by the boat-data campaign below. |
+| `work-order-2026-08-05-boat-data.md` | **Complete.** Ama length/buoyancy revised x1.40 (ADR 0029); closes TWA150 and TWA170-180 rudder-free. TWA155-165 searched exhaustively (216-combination full trim grid) and found structural, not a search gap. `hull.massSway` left untouched by owner decision (collides with ADR 0018). |
 | `work-order-2026-08-02-steering-and-sources.md` | Open: **S7** (R15 done; the rest outstanding), **S8** (vertical balance). S3 was implemented and withdrawn (ADR 0013); everything else is done. Sailing without the oar reached 3/6 (ADR 0017); the Munk double-count hypothesis was audited and rejected (ADR 0018), so it is blocked on Flay's yaw-moment data, not on a parameter. |
 
 Work that came from the primary source rather than a work order is tracked in

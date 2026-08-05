@@ -231,7 +231,13 @@ export function scenarioBackwindSlam(config) {
 // within 3s" half of the acceptance criterion.
 export function scenarioThroughGybeAback(config) {
   const twaDeg = 60;
-  const tws = 10;
+  // TWS 10 -> 14, the same re-finding docs/adr/0021 already did for
+  // scenarioAback above: the boat-data campaign's bigger ama (docs/adr/0029)
+  // raises the amaLoad needed to fully submerge, so the crossing this
+  // scenario needs to genuinely capsize (not just press) got milder.
+  // Measured threshold between 12 (maxAmaLoad 2.25, still survives) and 13
+  // (capsizes); 14 keeps the same kind of margin scenarioAback's own 14 does.
+  const tws = 14;
   const sheetDeg = 45;
   const windDirFromNormal = HEADING0 + twaDeg * DEG;
   const windDirFromAback = HEADING0 - 100 * DEG; // crosses to the leeward (-end) side

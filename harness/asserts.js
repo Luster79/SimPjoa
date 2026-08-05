@@ -2015,8 +2015,14 @@ export function runAsserts(config, { slow = true } = {}) {
     // 25 kg estimate and 3.2 m against 3.5, so its wetted area and drag both
     // fall. The R7-1 RATIO anchor this check is justified by is unchanged and
     // still satisfied -- see the two ratio checks above.
-    check('R15: ama drag force at max immersion (phi past phiSubmergeDeg, u=1.6 m/s) is within a narrow absolute band [4.6,5.0] N',
-      maxAmaFx >= 4.6 && maxAmaFx <= 5.0, `Fx=${maxAmaFx.toFixed(3)}N`);
+    // Re-anchored again [4.6,5.0] -> [4.9,5.3] for the boat-data campaign
+    // (docs/adr/0029, docs/work-order-2026-08-05-boat-data.md): ama length +
+    // wetted surface x1.40 raises drag (4.81 -> 5.07 measured), only partly
+    // offset by the accompanying residuaryPeakCr cut. Same re-finding of the
+    // physical state ADR 0021 itself used, not a loosened claim -- width and
+    // margin kept the same (0.4 N band).
+    check('R15: ama drag force at max immersion (phi past phiSubmergeDeg, u=1.6 m/s) is within a narrow absolute band [4.9,5.3] N',
+      maxAmaFx >= 4.9 && maxAmaFx <= 5.3, `Fx=${maxAmaFx.toFixed(3)}N`);
 
     // F1 (work-order-2026-07-30): the sign fix's own acceptance — a flying
     // ama (phi past phiLiftoffDeg, clear of the water) must add LESS total

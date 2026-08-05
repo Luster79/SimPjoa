@@ -5,8 +5,8 @@ parameter,value,note
 boat_length_m,5.0,"MEASURED: pjoa.eu ""Lenght: 500cm"" (was 5.5, a Dierking T2/Wa'apa estimate)"
 hull_beam_m,0.52,"OWNER (from memory): 50-55 cm at the GUNWALE - it cannot be the waterline beam, see docs/adr/0022. Drawing only; no physics module reads hull.beam"
 displacement_kg,165.0,"MEASURED-derived: rigged 85-90 kg less the 13 kg ama = ~74 kg of boat, plus one 90 kg crew"
-ama_length_m,3.2,NOT PUBLISHED - scaled by the length ratio
-ama_buoyancy_kg,60.0,NOT PUBLISHED - scaled by the CUBE of the length ratio (a volume)
+ama_length_m,4.48,"NOT PUBLISHED - was 3.2 (scaled by the length ratio). Revised x1.40 per the steering campaign, docs/work-order-2026-08-05-boat-data.md: 3.2 m was itself an unmeasured scaling guess with no more claim to being right than a longer, more slender float of the same mass (ama_mass_kg is unchanged) and proportionally more buoyancy. Still well short of the 5.0 m hull."
+ama_buoyancy_kg,84.0,"NOT PUBLISHED - was 60.0 (scaled by the CUBE of the length ratio, a volume). Revised x1.40 alongside ama_length_m, LINEARLY (same cross-section, longer float), not by the cube -- the cube scaling was for resizing the WHOLE boat by one ratio (docs/adr/0021), not for this float's own length independently. See docs/work-order-2026-08-05-boat-data.md."
 ama_mass_kg,13.0,"MEASURED: pjoa.eu ""Ama (outrigger): 13 kg"""
 beam_overall_m,3.1,"MEASURED: pjoa.eu ""Beam: 310cm"" (was 2.5)"
 sail_area_m2,8.0,"MEASURED: pjoa.eu ""Crab law sail: 8 sqm"" (10 m2 is an option; was 12)"

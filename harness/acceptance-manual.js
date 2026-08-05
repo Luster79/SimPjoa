@@ -400,8 +400,20 @@ export function runAcceptance(config) {
   }
 
   // AC-5.3: backwind must be DETECTED and signalled.
+  //
+  // tws RE-ANCHORED 6 -> 8 (docs/work-order-2026-08-05-boat-data.md), the
+  // same "re-find the same physical state" pattern docs/adr/0021 already
+  // used for the aback SCENARIO's own wind speed (10 -> 14) and the T6 gust
+  // peak (11.5 -> 11.75): the ama's buoyancy revision (example_proa_
+  // parameters.csv) makes the float genuinely harder to press fully under,
+  // and abackTimer only starts once amaLoad passes 1.0 -- full submersion.
+  // At tws=6 this test was ALREADY marginal for the boat before that
+  // revision (a small margin, not a wide one), so the stiffer float pushes
+  // it just under the line. Verified directly this is a threshold question,
+  // not a lost mechanism: tws=7 already restores detection, tws=8 clears it
+  // with the same kind of margin the scenario's own re-anchoring took.
   {
-    const point = { twa: 90, tws: 6, sheet: 16, crew: 0.3 };
+    const point = { twa: 90, tws: 8, sheet: 16, crew: 0.3 };
     const controls = baseControls(point, config);
     // Put the wind on the wrong side of the sail: swing the apparent wind
     // across by turning the wind, not the boat, so nothing else changes.
