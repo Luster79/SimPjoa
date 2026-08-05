@@ -242,7 +242,7 @@ The single statement of where the centre of lateral resistance sits. Shared by
 `hullSideForce` and by aero.js's CE geometry — the CE−CLR "lead" only means
 anything if both sides reference the same point. Fore-aft crew trim shifts it.
 
-    hullSideForce(u, v, r, crewPosX, config) -> { Fx, Fy, yawMoment }
+    hullSideForce(u, v, r, crewPosX, phi, config) -> { Fx, Fy, yawMoment }
 
 **The hull's whole lateral force, by strip integration** (ADR 0017). Station x
 sees its own transverse velocity `v + r·x`, hence its own leeway, hence its own
@@ -251,9 +251,11 @@ foil force, low-speed linear damping, cross-flow, induced drag — and the yaw
 moment is the integral of `x·f(x)`, not `clrX·Fy`.
 
 The lateral area is **not** uniform along the length: it carries a linear taper
-with mean 1 (so the strips still sum to `hull.lateralArea`) and centroid exactly
-`clrXPosition()`. A uniform distribution would put the centroid at the CG and
-delete the hull's weathercocking.
+with mean 1 (so the strips still sum to `hull.lateralArea`) and centroid at
+`clrXPosition()` plus a heel-driven shift (`hull.heelClrShiftCoeff/heelClrSign`
+— present but defaulted to 0; see config.js's own comment for why). A uniform
+distribution would put the centroid at the CG and delete the hull's
+weathercocking.
 
 At `r = 0` this reduces exactly to a single-leeway model with moment `clrX·Fy`.
 What it adds is everything `r` does: the hull's own yaw damping, and the v–r
@@ -268,7 +270,7 @@ small drift angle reads as a small drift angle. **Known limitation, stated
 rather than hidden:** the folded angle is looked up in the same curve either
 way, and the measurements are for a hull going forward.
 
-    amaDrag(u, phi, crewPos, end, config) -> { Fx, yawMoment }
+    amaDrag(u, v, r, phi, crewPos, end, config) -> { Fx, Fy, yawMoment }
 
 Friction (ITTC-57 at the ama's own length, times a form factor) **plus**
 residuary, on the same Fr hump the hull has — the ama is shorter, so at any
@@ -277,9 +279,21 @@ from heel **with sign**: full when pressed (`phi<0`), fading to zero when
 flying (`phi>0`), resting on its own buoyancy at `phi≈0`. Crew weight the float
 actually carries is derived from the buoyancy balance, not scaled by a tunable.
 
-`yawMoment = −(ama.spacing·end)·Fx` — standard r × F at the ama's own lateral
-position. The sign comes out so that MORE ama drag turns the bow TOWARD the ama
-side, with no flip knob.
+The drag's own `yawMoment = −(ama.spacing·end)·Fx` — standard r × F at the
+ama's own lateral position. The sign comes out so that MORE ama drag turns the
+bow TOWARD the ama side, with no flip knob.
+
+**The ama's own lateral plane** (`Fy`, and a second yaw-moment term summed
+into the same total): the float is a slender body, not a point, so it gets the
+SAME strip integration `hullSideForce` does, over its own (much shorter)
+length, at its own fixed lateral offset. Lateral area is derived from the
+immersion-scaled wetted surface by a cylinder's own area ratio (profile/wetted
+= 1/π), not a separately-measured dimension. Reuses the hull's own measured
+CS(leeway) curve (same precedent as the residuary term above); deliberately
+narrower than `hullSideForce`'s own decomposition — foil lift only, no
+low-speed linear damping (that constant is calibrated to the whole hull, not
+per-area) and no induced-drag `Fx` contribution (the friction+residuary `Fx`
+above is already a complete resistance figure).
 
 ### rudder.js
 

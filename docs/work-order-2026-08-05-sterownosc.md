@@ -85,106 +85,185 @@ modelu fał opuszcza reję, a nie podnosi bom.
 
 ### Blok A — domknąć marchewkę tak, jak opisuje ją źródło (blokujące)
 
-#### T1. Bom jako drzewce z własną wysokością
+#### T1. Bom jako drzewce z własną wysokością — WYKONANE, odbiór nie osiągnięty
 
-*Naprawa:* wprowadzić `controls.boomLift` (0..1, 0 = stan obecny), o dwóch
-skutkach, oba nazwane w instrukcji:
-1. **Wybrzuszenie** — podniesiony bom pogłębia worek żagla. Wpiąć w istniejącą
-   maszynerię `camberCLDelta`, nie nową krzywą.
-2. **Podniesienie CE** i skrócenie ramienia poprzecznego `yCE`, bo płótno
-   zbiera się ku rei.
+`controls.boomLift` (0..1) wprowadzony z obydwoma skutkami i ze sprzężeniem
+przez szot (`core/sheet.js`'s `effectiveBoomLiftMax`, ten sam jednostronny
+wzorzec co `effectiveDeltaMax`). Mechanizm #1 (wybrzuszenie) wpięty w
+`camberCLDelta`, ale **z wzmocnieniem 0** — `brailCamberGain` (0,10) razem z
+wbudowaną kambrą tabeli v2 (0,10) już stoją dokładnie na suficie 0,20, którego
+pilnuje `validateConfig`, więc nie ma miejsca na trzeci nieujemny człon bez
+ruszania już strojonej stałej. Maszyneria istnieje, liczbę zostawiłem na
+później (ten sam status co `sail.verticalLiftFraction`).
 
-Sprzężenie z szotem jest w instrukcji jawne („musimy luzować szot, żeby bom
-mógł się unieść"), więc `boomLift` powinien być **ograniczony od góry przez
-`controls.sheet`**: bom nie uniesie się przy wybranym szocie. To jest to samo
-jednostronne więzy, które `sheet.js` już realizuje dla rei — użyć tego wzorca,
-nie budować drugiego.
+Mechanizm #2 (podniesienie CE + skrócenie `yCE`) daje realny, poprawnie
+skierowany, ale **niewystarczający** efekt. Zmierzone czułości:
+`boomLiftCEHeightFrac` ma znikomy wpływ na moment odchylający (0,15→0,5:
+TWA160 26,4→25,7 °/min) — cała dźwignia siedzi w `boomLiftYceShrink`. Tam
+zamiatanie 0,3→0,9→0,99 daje TWA160 26,4→18,3→16,1 i TWA175 33,4→15,2→0,8 —
+ale nawet 0,99 (praktycznie zerowanie `yCE`, wartość niebroniona fizycznie) nie
+mieści TWA160 w paśmie 15 °/min. Ustawiono `boomLiftYceShrink = 0,5` z
+uzasadnienia geometrycznego (kolaps trójkąta bomu ku rei), **nie** dobrane pod
+próg testu.
 
-**Odbiór:** C-C osiąga 2/2. Kryterium jest kierunkowe i wielkościowe: przy
-TWA 175 moment przy puszczonym wiośle schodzi poniżej zera przy `boomLift`
-w zakresie roboczym, a nie dopiero na zderzaku. Osobno: `boomLift` przy
-wybranym szocie nie robi nic (więzy działają).
+**Odbiór NIE osiągnięty.** C-C wynosi 1/2 (TWA140 trzyma, teraz z przestrzeleniem
+w drugą stronę — kryterium C-C zmienione na `Math.abs(rate)`, bo jednostronne
+pomijało ten przypadek; TWA160 nadal poza pasmem). Powód zgadza się z
+diagnozą z Części I.2 tego dokumentu: przy TWA160 wszystkie momenty trymu są
+już blisko zera przy puszczeniu steru, więc to deficyt stateczności
+kierunkowej (kadłub, Munk), nie autorytetu trymu — dokładnie to, co T3/T4 mają
+naprawić.
 
-*Nakład: średni. Zależności: przed T2. **[rusza polarę]** — polara musi dostać
-`boomLift` do przestrzeni przeszukiwania albo jawnie go zamrozić na 0 z
-uzasadnieniem.*
+**Polara nietknięta, celowo.** `boomLift` domyślnie 0 w `harness/polar.js`
+(nigdzie nieużywany w przeszukiwaniu), więc `out/polar.csv` bajtowo
+identyczna. To nie jest tylko zawężenie zakresu: przy `boomLiftCamberGain=0`
+`boomLift` nie zmienia w ogóle CL/CD, więc nie ma żadnego wpływu na prędkość,
+którą polara przeszukuje — dołożenie go do siatki nie zmieniłoby zwycięskiego
+trymu. Wart rewizji dopiero razem z realną wartością `boomLiftCamberGain`.
 
-#### T2. `yceBrailShift` przemierzyć zamiast szacować
+*Nakład: średni, zgodnie z planem. Zależności: przed T2 — spełnione.*
 
-Cały mechanizm marchewki wisi na tym jednym współczynniku (kurczy `yCE`, czyli
-człon `−yCE·Fx`, dominantę ostrzenia na kursach pełnych — I.1). Jego obecna
-wartość 0,6 jest **oszacowaniem** — komentarz mówi tylko „mocniej niż
-`ceBrailShift`, poniżej 1". Sąsiedni `yceFraction` = 0,35 jest zmierzony
-(ADR 0024); ten nie.
+#### T2. `yceBrailShift` przemierzyć zamiast szacować — WYKONANE
 
-*Naprawa:* wyprowadzić z geometrii, tak jak ADR 0024 wyprowadził `ceRadius`:
-przy pełnym zebraniu leech ku rei, gdzie ląduje centroid pozostałej
-powierzchni. Jeśli geometria nie rozstrzyga, zmierzyć na siatce i zaraportować
-tally, nie dobierać pod C-C.
+Geometria **rozstrzygnęła**. F4 już traktuje brail jako działanie przez
+**powierzchnię** (`areaAtFullBrail = 0,20` przy pełnym pociągnięciu). Przy
+założeniu samopodobnego skurczu obszaru roboczego, wymiary liniowe — w tym
+odległość hals–centroid, z której zbudowany jest `ceRadiusEff` — skalują się
+jak √(ułamek powierzchni). Usunięty ułamek to `1 − √0,20 = 0,553`.
 
-**Odbiór:** wartość ma wyprowadzenie albo pomiar w komentarzu. Zakres
-wrażliwości (0,0 → 0,9 przesuwa dryf przy TWA140 tylko 32,9 → 29,7 °/min przy
-`crewPos 0,35`) zapisany, żeby było widać, że to nie jest pokrętło o dużym
-zysku.
+Zmierzone zamiast szacowane: `yceBrailShift` zmieniony z ręcznie dobranego 0,6
+na wyprowadzone `1 - Math.sqrt(0.20)`. **Wartość wyprowadzona pogarsza wynik
+C-C** (TWA140: 6,8 → 8,5 °/min przy `boomLift=0`) — dowód, że nie została
+dobrana pod test. Pełna czułość zmierzona i zapisana w komentarzu przy stałej:
+0,0 → 0,3 → 0,553 → 0,9 daje TWA140 21,6 → 15,3 → 8,5 → −8,6 °/min i TWA160
+34,3 → 32,7 → 29,9 → 21,2.
+
+**Odbiór osiągnięty:** wartość ma wyprowadzenie geometryczne w komentarzu
+(nie hipotezę „mocniej niż X"), plus zmierzoną czułość pokazującą, że to nie
+jest pokrętło o dużym zysku — nawet 0,9 (blisko fizycznej granicy) nie mieści
+TWA160 w paśmie 15 °/min.
 
 *Nakład: mały. Zależności: po T1 (T1 zmienia, ile `yCE` w ogóle zostaje).*
 
 ### Blok B — człony, których model nie ma (nieblokujące, ale należne)
 
-#### T3. Sprzężenie przechył → kadłub, żeby domknąć parę
+#### T3. Sprzężenie przechył → kadłub, żeby domknąć parę — WYKONANE, wynik negatywny
 
-`hull.yawHeelSign = 0` nie dlatego, że fizyka jest zerowa, tylko dlatego, że
-model ma połowę pary znoszącej się: przechylony **takielunek** tak, przechylony
-**kadłub** nie. `hullSideForce()` nie przyjmuje `phi` w ogóle.
+`hullSideForce()` przyjmuje teraz `phi`: `stationWeights()` dokłada przesunięcie
+centroidu planu bocznego proporcjonalne do `sin(phi)` (`hull.heelClrShiftCoeff`
+× `hull.heelClrSign`), ten sam mechanizm co przesunięcie od `crewPosX`, tylko
+sterowany przechyłem zamiast pozycją załogi — standardowe uproszczone ujęcie
+„przechył przesuwa CLR wzdłuż kadłuba" dla kadłuba w ostrym V.
 
-*Naprawa:* uzależnić plan boczny i jego rozkład od `phi` (przechylony kadłub w
-ostrym V jest asymetryczny), a potem przywrócić `yawHeelSign` razem z tym
-członem — nigdy osobno.
+**Macierz z komentarza przy `yawHeelSign` przemierzona ponownie, wszystkie
+cztery kombinacje znaków**, na obecnej (rozszerzonej o T1/T2) siatce
+akceptacyjnej:
 
-**Odbiór:** macierz z komentarza przy `yawHeelSign` przemierzona ponownie z
-oboma połówkami. Kryterium jest to, czy AC-1.1/1.2 i AC-4.2a/b mogą teraz
-spełnić się **jednocześnie** — przy modelu połówkowym żaden znak tego nie
-robił.
+| (heelClrSign, yawHeelSign) | AC-1.1 | AC-1.2 | AC-4.2a | AC-4.2b |
+|---|---|---|---|---|
+| (0,0) — punkt odniesienia | 6/6 | 6/6 | 4/6 (kierunek 6/6) | 4/6 |
+| (+1,+1) | 3/6 | 2/6 | 4/6 (kierunek 6/6) | 4/6 |
+| (+1,−1) | 6/6 | 6/6 | 4/6 (kierunek 5/6) | 4/6 |
+| (−1,+1) | 3/6 | 4/6 | 4/6 (kierunek 6/6) | 4/6 |
+| (−1,−1) | 6/6 | 6/6 | 4/6 (kierunek 5/6) | 4/6 |
 
-*Nakład: duży. Zależności: brak. **[rusza polarę]***
+**Żadna kombinacja nie spełnia kryterium jednoczesności.** AC-4.2a/b stoją w
+miejscu na każdej kombinacji (4/6) — ten człon w ogóle do nich nie dociera,
+bo działa wyłącznie przez już istniejącą siłę boczną od dryfu (`v`), podczas
+gdy człon takielunku (`yawMomentHeel`) jest samodzielnym r×F aktywnym przy
+każdym `Fx` — to inny rodzaj mechanizmu, nie brakująca połówka tej samej
+pary. Dwie kombinacje, które nie psują AC-1.1/1.2 ((+1,−1) i (−1,−1)), są
+**neutralne w najlepszym razie** i lekko pogarszają spójność kierunku
+AC-4.2a (5/6 zamiast 6/6). Pozostałe dwie czynnie psują AC-1.1/1.2.
 
-#### T4. Plan boczny amy
+**Decyzja:** `heelClrSign = 0`, `yawHeelSign = 0` — obie pozostają nieaktywne,
+ta sama dyscyplina co przy pierwotnym `yawHeelSign=0`. Maszyneria zostaje w
+kodzie (testowalna, gotowa na inną wielkość albo lepiej ugruntowany kształt),
+ale nie startuje aktywna na wyniku negatywnym. Pełny pakiet: bez zmian liczbowych
+względem stanu sprzed T3 (mechanizm jest matematycznym no-op przy `heelClrSign=0`).
 
-`amaDrag()` zwraca dziś tylko `Fx` i jego moment. Zanurzony pływak 3,2 m to
-płat: własna siła boczna, własne tłumienie odchylenia (~73–339 N·m/(rad/s),
-I.3) i — co ważniejsze — **asymetria zależna od `phi`**, czyli naturalny nośnik
-tego, czego T3 szuka po stronie kadłuba.
+*Nakład: duży, zgodnie z planem. Zależności: brak. Polara nietknięta — wynik
+zerowy nie wymaga przeliczenia.*
 
-*Naprawa:* to samo całkowanie paskowe, które `hullSideForce` już wykonuje, na
-własnej powierzchni bocznej amy skalowanej jej zanurzeniem.
+#### T4. Plan boczny amy — WYKONANE
 
-**Odbiór:** tłumienie odchylenia rośnie o wielkość zgodną z dodaną
-powierzchnią (kontrola bilansu, nie darmowa stateczność). Dryf boczny maleje o
-wielkość zgodną z dodanym planem bocznym. **Nie oczekiwać poprawy równowagi
-statycznej** — I.3 mówi wprost, że to człon rzędu r.
+`amaDrag()` przyjmuje teraz `v, r` i zwraca `Fy` obok `Fx`/`yawMoment`, przez to
+samo całkowanie paskowe co `hullSideForce`, na powierzchni bocznej amy
+wyprowadzonej z `Seff` (już liczonego zanurzenia) przez stosunek pola walca
+(profil/omoczona = 1/π) — nie z osobno zgadywanego wymiaru, ucząc się z
+niepowodzenia T5. Ponownie wykorzystuje zmierzoną krzywą `hullSideForceCoeff`
+(ten sam precedens co opór resztkowy amy, ADR 0015). Świadomie węższe niż pełny
+rozkład `hullSideForce`: sama siła nośna płata, bez liniowego tłumienia
+niskoprędkościowego (`hull.lowSpeedSideDamping` to stała bezwzględna dla całego
+kadłuba, nie współczynnik na jednostkę powierzchni) i bez wkładu do `Fx`
+(opór tarcia+resztkowy w `amaDrag` jest już kompletny — dodatkowy opór
+indukowany podwajałby liczenie).
 
-*Nakład: średni. Zależności: naturalnie razem z T3. **[rusza polarę]***
+**Zmierzone (Odbiór spełniony):** własne tłumienie odchylenia amy przy
+zanurzeniu spoczynkowym = **68 N·m/(rad/s)** — zgadza się z szacunkiem rzędu
+wielkości z Części I.3 (73) w granicach 7%. W pełni dociśnięte (phi=−15°):
+120 N·m/(rad/s). Stosunek do kadłuba: 2,1% spoczynkowo, 3,7% dociśnięte —
+mały, jak przewidziano, nie darmowa stateczność. Znak `Fy` poprawny (przeciwny
+do dryfu bocznego).
+
+**Zgodnie z przewidywaniem z Części I.3, nie poprawia równowagi statycznej dla
+C-C**: TWA160 bez zmian co do rzędu wielkości (25,0→24,8 °/min), bo to człon
+rzędu `r`, nie stały moment przy puszczonym sterze.
+
+**Nieoczekiwany, realny zysk gdzie indziej: S1c awansowane z `xfail`.**
+Pełny pakiet zgłosił `[PROMOTION CANDIDATE]` — S1c („wiosło wyjęte, kurs
+trzymany samym trymem: hals + pozycja załogi wzdłuż") przeszło z 3/6 (stan po
+ADR 0017) na **6/6**, zmierzone na całej siatce, nie w jednym rogu. To
+dokładnie ten deficyt stateczności kierunkowej, który ADR 0027/0028
+zdiagnozowały jako brakujący — moment Munka przy TWS6/TWA90 wynosił +382 N·m
+wobec −46 kadłuba i −58 żagla, więc gdy wiosło (−315) wychodziło z wody, prawie
+nic mu się nie przeciwstawiało. Plan boczny amy dostarcza tego „prawie nic".
+Zgodnie z regułą projektu (`xfail`, który zaczyna przechodzić, wymaga decyzji
+człowieka) — **awansowane**: tag `'STEERING'` usunięty, komentarz w
+`harness/asserts.js` zaktualizowany. Pełny pakiet po awansie: zielony, exit 0.
+
+Pełny pakiet: 88/88 (`--fast`), bez regresji.
+
+*Nakład: średni, zgodnie z planem. Zależności: naturalnie razem z T3 —
+spełnione.*
 
 ### Blok C — higiena, tania i zaległa
 
-#### T5. Stałe przechyłu unieważnione przez ADR 0021
+#### T5. Stałe przechyłu unieważnione przez ADR 0021 — WYKONANE, częściowo inaczej niż planowano
 
-`I_roll`, `rollDampingCoeff`, `phiLiftoffDeg`, `phiSubmergeDeg` — wszystkie
-cztery ostatni raz zmienione **przed** commitem re-parametryzacji (potwierdzone
-`git log -G`). Zmierzone dziś: ζ = 0,131, poniżej punktu wyjścia, od którego
-R9-5 świadomie ją podnosił. Pasma nadal przechodzą, więc żaden test tego nie
-łapie.
+**Para `I_roll`/`rollDampingCoeff`: zmierzona, nie zmieniona.** Krok 8° przy
+obecnej sztywności (post-ADR-0021) daje okres 3,00 s (pasmo 1,5–4 ✓) i osiadanie
+w 2,29 okresu (pasmo 2–4 ✓) — **oba pasma nadal przechodzą**. ζ=0,131 jest
+rzeczywiście poniżej narracyjnego celu 0,19 z R9-5, ale ten cel nigdy nie był
+kryterium akceptacji — jest tylko w komentarzu. Podniesienie `rollDampingCoeff`
+do wartości dającej ζ=0,19 liniowo (~1595) **zmierzone**: wypycha osiadanie do
+1,41 okresu, **poza** pasmo 2–4. Przyczyna: nieliniowy ease-out krzywej
+przywracającej blisko phi=0 jest lokalnie miększy niż liniowa sprężyna, którą
+zakłada rachunek ζ. Wniosek: para jest dobra, cel-ζ był fałszywym alarmem.
+**Nie zmieniono.**
 
-`phiLiftoffDeg`/`phiSubmergeDeg` to wielkości **geometryczne** — przy rozstawie
-3,1 m implikują pionowy skok amy 0,64 / 0,54 m, a nie drgnęły, gdy rozstaw
-urósł o 24%.
+**`phiLiftoffDeg`/`phiSubmergeDeg`: derywacja geometryczna odłożona, nie
+wykonana.** Naturalne podejście — promień przekroju amy z
+`Vmax = ama.maxBuoyancy/rho_w` przy założeniu półkola, potem
+`phi = asin(ułamek·R/spacing)` — wymaga zanurzenia R, którego projekt nie ma:
+`ama_buoyancy_kg` jest samo oznaczone „NOT PUBLISHED — scaled by the CUBE of
+the length ratio" w `example_proa_parameters.csv`, nie pomiarem. Policzone mimo
+to, wynikowe kąty wychodzą **rzędu 0,4–2°** — około dziesięciokrotnie mniej niż
+obecne 12°/10°, co skompresowałoby całą obwiednię przechyłu i wymagało
+ponownego przebiegu **każdego** scenariusza wywrotkowego (gust T6, T10, aback)
+— tej samej kampanii co `docs/capsize-margins-2026-07-30.md`. To osobna,
+większa pozycja z własnymi kryteriami odbioru, nie mieści się w T5 i nie została
+zrobiona na wejściu tak niepewnym.
 
-*Naprawa:* wyprowadzić oba kąty z geometrii amy i rozstawu; przeliczyć parę
-`I_roll`/`rollDampingCoeff` na obecnej sztywności. Dołożyć asercję wiążącą kąty
-z geometrią, żeby następna re-parametryzacja nie mogła ich znowu po cichu
-unieważnić.
+**Co faktycznie dostarczono:** strażnik w `validateConfig` wiążący oba kąty z
+`ama.length` (wielkością skalowaną, choć nie zmierzoną) — pionowy skok amy musi
+mieścić się w [1%, 50%] długości amy. Pasmo celowo szerokie: łapie grubą
+pomyłkę (literówkę w `spacing`, `ama.length` zmienioną o rząd wielkości bez
+przejrzenia tych kątów — dokładnie wzorzec ADR 0021), nie udaje precyzji, na
+którą dane nie pozwalają.
 
-*Nakład: mały. Zależności: brak.*
+*Nakład: mały (zgodnie z planem) na to, co wykonano; derywacja kątów przesunięta
+do osobnej pozycji z własnym budżetem. Zależności: brak.*
 
 #### T6. `crew.posMax` dopuszcza stan, który topi pływak
 

@@ -26,13 +26,13 @@ export function computeForces(state, controls, config) {
   const amaLoadDisplay = Math.min(amaLoad, config.stability.amaLoadDisplayCap);
 
   const resist = hullResistance(state.u, config);
-  const side = hullSideForce(state.u, state.v, state.r, controls.crewPosX ?? 0, config);
-  const drag = amaDrag(state.u, state.phi, controls.crewPos, state.end, config);
+  const side = hullSideForce(state.u, state.v, state.r, controls.crewPosX ?? 0, state.phi, config);
+  const drag = amaDrag(state.u, state.v, state.r, state.phi, controls.crewPos, state.end, config);
   const rudder = rudderForce(state, controls, config);
   const windage = windageForce(state, controls, config);
 
   const Fx = aero.Fx + resist + side.Fx + drag.Fx + rudder.Fx + windage.Fx;
-  const Fy = aero.Fy + side.Fy + rudder.Fy + windage.Fy;
+  const Fy = aero.Fy + side.Fy + drag.Fy + rudder.Fy + windage.Fy;
   const M = aero.yawMoment + side.yawMoment + rudder.yawMoment + drag.yawMoment;
 
   // Roll: sail heel (the boat-frame, end-aware heelMoment converted to the
@@ -56,7 +56,7 @@ export function computeForces(state, controls, config) {
       sail: { Fx: aero.Fx, Fy: aero.Fy, Fz: aero.Fz, yawMoment: aero.yawMoment, heelMoment: aero.heelMoment },
       hullResist: { Fx: resist },
       hullSide: { Fx: side.Fx, Fy: side.Fy, yawMoment: side.yawMoment },
-      amaDrag: { Fx: drag.Fx, yawMoment: drag.yawMoment },
+      amaDrag: { Fx: drag.Fx, Fy: drag.Fy, yawMoment: drag.yawMoment },
       rudder: { Fx: rudder.Fx, Fy: rudder.Fy, yawMoment: rudder.yawMoment },
       windage: { Fx: windage.Fx, Fy: windage.Fy },
       roll: { Msail, Mrestore, Mcrew, Mdamp, Mroll },

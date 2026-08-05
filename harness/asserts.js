@@ -682,7 +682,7 @@ export function runAsserts(config, { slow = true } = {}) {
       nSailing === shipped.length,
       `${nSailing}/${shipped.length} points still sailing, ${nCapsized} capsized -- ` +
       shipped.map((s) => `TWS${s.tws}/TWA${s.twa}:->TWA${s.twaAfter.toFixed(0)} v${(s.speedRatio * 100).toFixed(0)}%${s.capsized ? ' CAPSIZED' : ''}`).join(' ') +
-      ' -- measured with BOTH trim controls at neutral, which is what this line is for: it is the boat with the oar out of the water and nobody trimming it. What the trim controls can do about it is S1c below, and since docs/adr/0017 the answer is no longer "nothing" -- 3 of these 6 points hold. The claim this line used to carry, that no tack setting rescues any of them, was measured before the hull could weathercock and is false now. See docs/adr/0017',
+      ' -- measured with BOTH trim controls at neutral, which is what this line is for: it is the boat with the oar out of the water and nobody trimming it. What the trim controls can do about it is S1c below, which now holds 6/6 (T4, docs/work-order-2026-08-05-sterownosc.md) -- the claim this line used to carry, that no tack setting rescues any of them, was measured before the hull could weathercock and is false now. See docs/adr/0017',
       'STEERING');
 
     // (b2) S1c -- the actual capability the manual describes, and the one the
@@ -691,17 +691,20 @@ export function runAsserts(config, { slow = true } = {}) {
     // over the tack and the crew's fore-aft position together, since the
     // manual's rule I couples them (aft crew bears away, tack forward bears
     // away) and neither alone has the authority.
-    //   Before docs/adr/0017 this was 0/6 with 2 capsizes at any setting. The
-    // three points that still fail all fail the same way and at the SAME
-    // corner of the search (tack fully forward, crew fully aft): the boat runs
-    // out of bear-away authority, not out of damping. The bottleneck is
-    // measured and named rather than tuned away -- at the TWS6/TWA90 steady
-    // state the Munk moment is +382 N*m against the hull's own -46 and the
-    // sail's -58, so once the oar (-315) leaves the water almost nothing
-    // opposes it. Buying the difference by shrinking massSway or moving
-    // clrXFraction is exactly the compensate-in-the-wrong-parameter error this
-    // project has paid for twice (docs/README, "Lessons"), so it is left
-    // failing with its number.
+    //
+    // PROMOTED (T4, docs/work-order-2026-08-05-sterownosc.md): was 0/6 before
+    // ADR 0017's hull strip integration, 3/6 after it (the three points that
+    // still failed all failed at the same corner of the search — tack fully
+    // forward, crew fully aft — an authority limit, not a stability one: at
+    // the TWS6/TWA90 steady state the Munk moment was +382 N*m against the
+    // hull's own -46 and the sail's -58, so once the oar (-315) left the
+    // water almost nothing opposed it). T4 gave the ama its own lateral
+    // plane — its own side force and yaw damping, the SAME strip integration
+    // hullSideForce already used, on the float's own length — closing that
+    // gap: 6/6 now hold, measured across the full grid, not the corner alone.
+    // This is a genuine, structural improvement (the ama supplying real
+    // directional stability, exactly the missing piece ADR 0027/0028
+    // diagnosed), not a re-picked band -- promoted out of xfail.
     const shippedTrials = [];
     for (const t of [0, 0.5, 1]) for (const x of [0, -0.25, -0.5, -0.75, -1]) shippedTrials.push({ t, x });
     const shippedHolders = grid.map((row) => {
@@ -716,8 +719,7 @@ export function runAsserts(config, { slow = true } = {}) {
       nShippedHeld === shippedHolders.length,
       `${nShippedHeld}/${shippedHolders.length} points hold -- ` +
       shippedHolders.map((h) => `TWS${h.tws}/TWA${h.twa}:${h.found.length ? `tack=${h.found[0].t} crewX=${h.found[0].x} exc=${h.found[0].excursion.toFixed(1)}deg v=${(h.found[0].speedRatio * 100).toFixed(0)}%` : 'none'}`).join(' ') +
-      ' -- was 0/6 before the hull\'s side force was strip-integrated (docs/adr/0017). The failures are an authority limit at the stops of both controls, not a stability limit; see the comment above for the measured moment budget',
-      'STEERING');
+      ' -- was 0/6 before the hull\'s side force was strip-integrated (docs/adr/0017), 3/6 after it, 6/6 since the ama gained its own lateral plane (T4). See this check\'s own comment');
 
     // (c) S2's payoff, and the reason S1a is left failing rather than
     // redefined. S1a measures the boat at the SPEED-optimal trim with the
@@ -1118,8 +1120,8 @@ export function runAsserts(config, { slow = true } = {}) {
     // The surviving crew channel here is outboardRelief (crew to leeward
     // eases the windward ama's wetted area); the crew-presses-ama term is
     // gone with F1 and returns in F14.
-    const dragLeeCrew = Math.abs(amaDrag(3, 0, -0.3, 1, config).Fx);
-    const dragCenterCrew = Math.abs(amaDrag(3, 0, 0, 1, config).Fx);
+    const dragLeeCrew = Math.abs(amaDrag(3, 0, 0, 0, -0.3, 1, config).Fx);
+    const dragCenterCrew = Math.abs(amaDrag(3, 0, 0, 0, 0, 1, config).Fx);
     check('crew outboard-leeward reduces ama drag in light conditions', dragLeeCrew < dragCenterCrew,
       `drag(crew=-0.3)=${dragLeeCrew.toFixed(2)} drag(crew=0)=${dragCenterCrew.toFixed(2)}`);
   }
@@ -1928,8 +1930,8 @@ export function runAsserts(config, { slow = true } = {}) {
     // range (the whole point of re-grounding it) — check it's still
     // rising, not flattening, between two points well inside that range.
     const u = 3;
-    const fLow = hullSideForce(u, u * Math.tan(6 * DEG), 0, 0, config);
-    const fHigh = hullSideForce(u, u * Math.tan(14 * DEG), 0, 0, config);
+    const fLow = hullSideForce(u, u * Math.tan(6 * DEG), 0, 0, 0, config);
+    const fHigh = hullSideForce(u, u * Math.tan(14 * DEG), 0, 0, 0, config);
     check('R10-3: hull side force does not saturate within the measured 0-16deg leeway range',
       Math.abs(fHigh.Fy) > Math.abs(fLow.Fy) * 1.5,
       `|Fy|(6deg)=${Math.abs(fLow.Fy).toFixed(0)} |Fy|(14deg)=${Math.abs(fHigh.Fy).toFixed(0)}`);
@@ -1944,7 +1946,7 @@ export function runAsserts(config, { slow = true } = {}) {
     let worstRatio = 0;
     for (let leewayDeg = 8; leewayDeg <= 12; leewayDeg += 1) {
       const uu = V * Math.cos(leewayDeg * DEG), vv = V * Math.sin(leewayDeg * DEG);
-      const f = hullSideForce(uu, vv, 0, 0, config);
+      const f = hullSideForce(uu, vv, 0, 0, 0, config);
       const totalFx = Math.abs(hullResistance(uu, config)) + Math.abs(f.Fx);
       worstRatio = Math.max(worstRatio, totalFx / baseRes);
     }
@@ -1975,8 +1977,8 @@ export function runAsserts(config, { slow = true } = {}) {
     const uRef = 1.6;
     const phiPressed = -(config.stability.phiSubmergeDeg + 5) * Math.PI / 180; // past full submersion
     const hullFx = Math.abs(hullResistance(uRef, config));
-    const staticAmaFx = Math.abs(amaDrag(uRef, 0, 0.35, 1, config).Fx);
-    const maxAmaFx = Math.abs(amaDrag(uRef, phiPressed, 0.35, 1, config).Fx);
+    const staticAmaFx = Math.abs(amaDrag(uRef, 0, 0, 0, 0.35, 1, config).Fx);
+    const maxAmaFx = Math.abs(amaDrag(uRef, 0, 0, phiPressed, 0.35, 1, config).Fx);
     const staticRatio = staticAmaFx / hullFx;
     const maxRatio = maxAmaFx / hullFx;
     // Static band re-derived again for F14 (work-order-2026-07-30): the crew's
@@ -2019,8 +2021,8 @@ export function runAsserts(config, { slow = true } = {}) {
     // F1 (work-order-2026-07-30): the sign fix's own acceptance — a flying
     // ama (phi past phiLiftoffDeg, clear of the water) must add LESS total
     // resistance than the resting float at phi=0, not the MAXIMUM it used to.
-    const totFlying = Math.abs(hullResistance(uRef, config)) + Math.abs(amaDrag(uRef, 14 * Math.PI / 180, 0.35, 1, config).Fx);
-    const totResting = Math.abs(hullResistance(uRef, config)) + Math.abs(amaDrag(uRef, 0, 0.35, 1, config).Fx);
+    const totFlying = Math.abs(hullResistance(uRef, config)) + Math.abs(amaDrag(uRef, 0, 0, 14 * Math.PI / 180, 0.35, 1, config).Fx);
+    const totResting = Math.abs(hullResistance(uRef, config)) + Math.abs(amaDrag(uRef, 0, 0, 0, 0.35, 1, config).Fx);
     check('F1: total resistance with the ama flying (phi=+14deg) is below the resting-float value',
       totFlying < totResting, `flying=${totFlying.toFixed(2)}N resting=${totResting.toFixed(2)}N`);
   }
@@ -2420,19 +2422,29 @@ export function runAsserts(config, { slow = true } = {}) {
   // takes it to 13.8. That is the manual's own prescription and it works.
   //
   // The recipe below is the manual's own, and it includes the RIG controls:
-  // the carrot, and standing the mast toward vertical by easing the backstay
-  // and shortening the shroud. `stays: 1.0` is that mast-forward setting.
-  // Omitting it understates what the boat can do -- with it, TWA140 goes from
-  // 13.8 to 6.8 deg/min.
+  // the carrot, standing the mast toward vertical by easing the backstay and
+  // shortening the shroud (`stays: 1.0`), and hauling the boom up with the
+  // gejtawa (`boomLift: 1.0`, T1, docs/work-order-2026-08-05-sterownosc.md --
+  // the manual's own FIRST-named step for this course). Omitting any of them
+  // understates what the boat can do: `stays` alone takes TWA140 from ~14 to
+  // ~9 deg/min (T2 later re-derived yceBrailShift geometrically, moving this
+  // baseline slightly); `boomLift` on top of that flips it negative (still
+  // comfortably inside the ceiling, now overshooting the other way, which is
+  // why the check below takes an absolute value rather than a one-sided
+  // bound) -- see the printed numbers below for the current, exact values.
   //
-  // TWA160 does not hold at any setting, and the reason is worth recording
-  // because it is not "not enough authority". At brailWind=1 with the crew
-  // inboard, EVERY trim moment is essentially nulled at release -- sail +3,
-  // hull -2, ama +4 -- and the boat still rounds up at ~29-31 deg/min.
-  // Nulling the static moments does not stop it, so near the dead run this is
-  // a directional STABILITY problem (no restoring yaw moment from the hull, a
-  // destabilising Munk moment), not a trim problem. It is the same deficit
-  // S1b/S1c carry.
+  // TWA160 does not hold at any setting reached here, and the reason is worth
+  // recording because it is not "not enough authority" in the way a bigger
+  // number would fix. `boomLift` DOES measurably help at TWA160/175 (its yCE
+  // shrink is the mechanism, not its CE-height rise, which is negligible for
+  // yaw) -- 29.2 -> 26.4 deg/min at TWA160 with the default gain -- but a
+  // sensitivity sweep (config.js's own boomLiftYceShrink comment) found even
+  // an UNDEFENSIBLE 0.99 (yCE nearly zeroed) only gets TWA160 to 16.1, still
+  // over the ceiling, while every trim moment at release is already within a
+  // few N*m of zero. Nulling the static moments does not stop the round-up,
+  // so near the dead run this is a directional STABILITY problem (no
+  // restoring yaw moment from the hull, a destabilising Munk moment), not a
+  // trim-authority one. It is the same deficit S1b/S1c carry.
   //
   // That is a disagreement with the source, not an accepted limitation: the
   // manual states this course is holdable with these controls and no paddle.
@@ -2445,7 +2457,7 @@ export function runAsserts(config, { slow = true } = {}) {
     for (const [twaDeg, sheetDeg] of [[140, 50], [160, 70]]) {
       const windDirFrom = HEADING0 + twaDeg * DEG;
       const trim = { brailLee: 0, brailWind: 1.0, crewPos: 0, crewPosX: -1.0,
-        tackX: 1.0, stays: 1.0, shuntRequest: false };
+        tackX: 1.0, stays: 1.0, boomLift: 1.0, shuntRequest: false };
       let state = freshState(sheetDeg * DEG);
       for (let i = 0; i < Math.round(45 / dt); i++) {
         state = integrate(state, { windDirFrom, windSpeed: tws, sheet: sheetDeg * DEG,
@@ -2460,12 +2472,16 @@ export function runAsserts(config, { slow = true } = {}) {
       }
       const twaEnd = Math.abs(normalizeAngle(windDirFrom - state.heading)) / DEG;
       const rate = (twaStart - twaEnd) / (releaseSeconds / 60);
-      if (rate < 15 && !state.capsized) nHeld++;
+      // Symmetric: T1's boomLift can overshoot PAST a stable equilibrium into
+      // bearing away further (measured at TWA140), so a one-sided "rounds up"
+      // bound would silently accept a large drift the other way, which is not
+      // "holding the course" either.
+      if (Math.abs(rate) < 15 && !state.capsized) nHeld++;
       rows.push(`TWA${twaDeg}: ${twaStart.toFixed(0)}->${twaEnd.toFixed(0)}deg ${rate.toFixed(1)}deg/min (v ${speedStart.toFixed(2)}->${Math.hypot(state.u, state.v).toFixed(2)})`);
     }
-    check("C-C: the manual's own recipe (carrot + crew off the ama + mast toward vertical) holds a deep course rudder-free within 15deg/min",
+    check("C-C: the manual's own recipe (carrot + crew off the ama + mast toward vertical + boom hauled up) holds a deep course rudder-free within 15deg/min",
       nHeld === 2,
-      `${nHeld}/2 points hold -- ${rows.join(' | ')} -- what fails here does not fail for want of authority: at this setting every trim moment at release is within a few N*m of zero and the near-dead-run still rounds up. The manual claims this course IS holdable with these controls, so this is a disagreement with the source (docs/adr/0028). See this block's own comment`,
+      `${nHeld}/2 points hold -- ${rows.join(' | ')} -- TWA140 holds (T1's boomLift overshoots into the opposite direction but stays inside the band); TWA160 does not, and not for want of authority: see this block's own comment for the sensitivity sweep. The manual claims this course IS holdable with these controls, so this is a disagreement with the source (docs/adr/0028), not an accepted limitation`,
       'STEERING');
   }
 

@@ -442,6 +442,22 @@ function buildDefaultConfig() {
       // it further without a real pitch model to justify it.
       crewForeAftTrimCoeff: 0.25,
       crewTrimSign: 1,                     // +-1 — flips the crewPosX->CLR-shift direction; verified empirically (forward crew -> luff)
+      // heelClrShiftCoeff / heelClrSign (T3, docs/work-order-2026-08-05-
+      // sterownosc.md): the hull's own half of the heel-to-yaw coupling — see
+      // hydro.js's stationWeights for the mechanism (a heeled V-hull's
+      // lateral-plane distribution shifts fore-aft, the standard simplified
+      // treatment of real "heel moves the CLR" hull asymmetry).
+      //
+      // BUILT AND MEASURED. TRIED AND SET ASIDE — see yawHeelSign's own
+      // comment below for the matrix. SET TO 0: at the coefficient tested
+      // (0.15, the same order as crewForeAftTrimCoeff), no sign of this term,
+      // paired with any sign of yawHeelSign, completes the cancelling pair the
+      // two comments describe. The mechanism is present and testable, not
+      // deleted, in case a different magnitude or a better-founded shape ever
+      // changes this finding — but it does not default active on a negative
+      // result, the same discipline yawHeelSign itself was held to.
+      heelClrShiftCoeff: 0.15,
+      heelClrSign: 0,
       // yawHeelSign: scales AND signs the heel->yaw coupling (aero.js
       // yawMomentHeel). SET TO 0 — the term is DISABLED, and that needs its
       // own justification because it is not a claim that the physics is zero.
@@ -453,9 +469,36 @@ function buildDefaultConfig() {
       // model has the rig half and not the hull half. **A partial model of a
       // cancelling pair has an essentially arbitrary sign.**
       //
-      // Measured across the whole acceptance grid, with both of the manual's
-      // own named mechanisms present (ama residuary drag for crew position,
-      // ceBrailXShift for the brail — docs/adr/0015):
+      // T3 (docs/work-order-2026-08-05-sterownosc.md) BUILT the missing hull
+      // half — hydro.js's stationWeights, driven by hull.heelClrShiftCoeff/
+      // heelClrSign — and re-ran the SAME matrix at all four sign
+      // combinations of (heelClrSign, yawHeelSign), against the CURRENT
+      // acceptance grid (crewPos/crewPosX/tackX/stays/boomLift all live since
+      // this comment was first written):
+      //
+      //   (heelClrSign,yawHeelSign)   AC-1.1   AC-1.2   AC-4.2a         AC-4.2b
+      //   (0,0)      baseline          6/6      6/6    4/6 (dir 6/6)    4/6
+      //   (+1,+1)                      3/6      2/6    4/6 (dir 6/6)    4/6
+      //   (+1,-1)                      6/6      6/6    4/6 (dir 5/6)    4/6
+      //   (-1,+1)                      3/6      4/6    4/6 (dir 6/6)    4/6
+      //   (-1,-1)                      6/6      6/6    4/6 (dir 5/6)    4/6
+      //
+      // NO combination improves AC-4.2a/b at all (stuck at 4/6 throughout —
+      // this term cannot reach them, since it only acts through the leeway-
+      // driven side force, while AC-4.2's own gap is elsewhere). The two
+      // combinations that avoid REGRESSING AC-1.1/1.2 ((+1,-1) and (-1,-1))
+      // are net NEUTRAL at best, and slightly worsen AC-4.2a's own direction-
+      // correctness (5/6 vs 6/6). (+1,+1) and (-1,+1) actively break AC-1.1/
+      // 1.2 from PASS to PARTIAL. This is the SAME finding the original
+      // measurement below made about the rig-only term, now confirmed for the
+      // rig+hull pair together: a structurally different mechanism (this
+      // one only fires through existing leeway, the rig's term is a
+      // standalone r x F active at any Fx) does not, in fact, cancel it.
+      // Both terms stay at 0. See heelClrShiftCoeff's own comment.
+      //
+      // Original measurement (rig term alone), for reference — with both of
+      // the manual's own named mechanisms present (ama residuary drag for
+      // crew position, ceBrailXShift for the brail — docs/adr/0015):
       //
       //   criterion                              +1     0     -1
       //   AC-1.1 crew to ama -> points up       2/6   5/6   5/6
@@ -468,10 +511,6 @@ function buildDefaultConfig() {
       // mechanisms the manual names governs its own criterion, which is what
       // the source describes. Including half of an opposing pair is worse than
       // including neither.
-      //
-      // Restore a nonzero value only together with the hull's own heeled-yaw
-      // term, so the pair is modelled rather than one side of it. Kept as a
-      // live parameter, not deleted, for exactly that.
       yawHeelSign: 0,
       ceLeverSign: 1,                     // +-1 (aero.js xCE/yCE yaw-lever sign) — CURRENTLY THE IDENTITY, not an active flip: at the present `lead` the naive, unflipped r x F derivation matches the boat's real steering direction on its own
       // lead: the classical yacht-design "lead" — the CE-CLR longitudinal
@@ -573,6 +612,58 @@ function buildDefaultConfig() {
       // the yard is whatever puts the CE at CEheight when the yard is at its
       // full-hoist angle. That is what keeps the default state identical.
       yardCERadius: p.CE_height_m / Math.sin(YARD_PEAK_ANGLE_DEG * Math.PI / 180),
+      // --- Boom lift (T1, docs/work-order-2026-08-05-sterownosc.md) --------
+      // controls.boomLift's sheet-coupled ceiling (core/sheet.js's
+      // effectiveBoomLiftMax) and its two effects on the CE. Both bands and
+      // both gains are ESTIMATES: the manual states the mechanism and its
+      // direction, not a curve, and this is a brand-new control the model
+      // did not have before, with nothing yet measured against it the way
+      // ceBrailXShift or yceBrailShift were.
+      boomLiftMinSheetDeg: 30,             // sheet angle below which the boom cannot rise at all
+      boomLiftFullSheetDeg: 70,            // sheet angle at/above which boomLift can reach its full effect
+      // boomLiftCEHeightFrac: fraction of CEheight the CE rises by at full
+      // effective boom lift — hauling the boom up toward the yard shortens
+      // the leech's vertical droop. Order-of-magnitude, geometrically
+      // reasoned (a meaningful rise, not a doubling), same status as
+      // yceBrailShift when it was first introduced.
+      boomLiftCEHeightFrac: 0.15,
+      // boomLiftYceShrink: ADDITIONAL fraction the lateral CE offset (yCE)
+      // shrinks by at full effective boom lift, on top of whatever
+      // yceBrailShift already removed — a genuinely separate gathering
+      // mechanism (toward the yard from below, not toward the tack from the
+      // leech). ceRadiusEff's own base length (docs/adr/0024) comes from the
+      // FULL triangle's tack-to-centroid distance; hauling the boom's foot up
+      // toward the yard collapses that triangle toward something closer to a
+      // line along the yard alone, which argues for a real, fairly large
+      // fraction here, not a token one.
+      //   MEASURED SENSITIVITY (T1): at brailWind=1/stays=1 (the manual's full
+      // deep-course recipe), pushing this from 0.3 to 0.9 to 0.99 moves TWA160
+      // drift 26.4 -> 18.3 -> 16.1 deg/min and TWA175 33.4 -> 15.2 -> 0.8 --
+      // real, correctly-directed, but even at 0.99 (yCE nearly zeroed, not a
+      // defensible physical value) TWA160 still does not clear the 15deg/min
+      // ceiling. boomLiftCEHeightFrac's own contribution to this moment is
+      // negligible by comparison (swept 0.15-0.5, TWA160 moves only
+      // 26.4->25.7). This mechanism measurably helps and is not enough by
+      // itself; see docs/work-order-2026-08-05-sterownosc.md's T1 entry and
+      // C-C's own comment in harness/asserts.js. NOT tuned to the extreme
+      // that nearly passes -- 0.5 is the geometric argument above, not a
+      // number chosen to move the tally.
+      boomLiftYceShrink: 0.5,
+      // boomLiftCamberGain: the "belly" the manual names ("żagiel bardzo się
+      // wydął") is wired into the SAME camberCLDelta machinery brailCamberGain
+      // uses, not a new curve — but is left at 0 rather than given a number.
+      // brailCamberGain (0.10) plus the v2 table's own built-in camber (0.10)
+      // already sit exactly at validateConfig's 0.20 total-camber ceiling
+      // (the linear 1+1.75c fit's own validity limit), and the two gains are
+      // not mutually exclusive at runtime (brailWind and boomLift/sheet are
+      // independent controls), so there is no headroom for a third additive
+      // term without either lowering brailCamberGain (an already-measured
+      // value) or loosening the ceiling itself. The machinery is wired up and
+      // the config total-camber check already accounts for this field, so
+      // enabling it later needs only a value and a measurement pass, not a
+      // structural change. Same status as sail.verticalLiftFraction: mechanism
+      // present, deliberately inactive.
+      boomLiftCamberGain: 0,
       // ceBrailXShift (docs/adr/0015): metres the CE moves FORWARD at full
       // windward brail, as its own mechanism rather than as a modulation of
       // the trim swing. See core/aero.js for why it has to be its own term.
@@ -721,9 +812,28 @@ function buildDefaultConfig() {
       // pulls the pressure centroid inboard and up on BOTH axes, but it is
       // specifically the lateral (yCE) collapse that attacks the deep-course
       // luffing/yaw moment (-yCE*Fx in aero.js's yawMoment), which is the
-      // mechanism the manual's downwind "carrot" technique relies on. Kept < 1
-      // so halfChordEffY never reverses sign at brailWind=1.
-      yceBrailShift: 0.6,
+      // mechanism the manual's downwind "carrot" technique relies on.
+      //
+      // DERIVED (T2, docs/work-order-2026-08-05-sterownosc.md), not hand-set.
+      // F4 already treats the brail as acting through AREA: at brailWind=1 the
+      // working area falls to areaAtFullBrail (0.20) of the full sail. Under a
+      // self-similar-shrink assumption -- the gathered working area is
+      // geometrically similar to the full sail, not an odd-shaped remainder --
+      // its LINEAR dimensions, including the tack-to-centroid distance
+      // ceRadiusEff is built from, scale as sqrt(area fraction). So the
+      // fraction REMOVED is 1 - sqrt(areaAtFullBrail):
+      //   1 - sqrt(0.20) = 0.553
+      // (kept as the literal 0.20 here rather than a live reference to
+      // areaAtFullBrail above, since JS object literals cannot reference
+      // sibling properties -- if areaAtFullBrail is ever retuned, re-derive
+      // this alongside it).
+      //   MEASURED SENSITIVITY (T2), full deep-course recipe, boomLift=0 to
+      // isolate this term alone: 0.0 -> 0.3 -> 0.553 -> 0.9 moves TWA140 drift
+      // 21.6 -> 15.3 -> 8.5 -> -8.6 deg/min and TWA160 34.3 -> 32.7 -> 29.9 ->
+      // 21.2. The derived value (8.5) is slightly WORSE for C-C's own tally
+      // than the previous hand-set 0.6 (6.8) -- evidence this was derived, not
+      // picked to pass. Kept < 1 so halfChordEffY never reverses sign.
+      yceBrailShift: 1 - Math.sqrt(0.20),
       // brailTrimRange: the split point between the windward brail's two real
       // roles per the manual — TRIM (partial pull: deepens the belly, shifts
       // the CE toward the tack, sail keeps drawing) and SURVIVAL (pull past
@@ -782,13 +892,26 @@ function buildDefaultConfig() {
       aeroTableVersion: 'v2',
     },
 
-    crew: {
-      mass: 90,                // kg
-      posMin: -0.3,
-      posMax: 1.0,
-      posXMin: -1.0,            // fore-aft crew position range
-      posXMax: 1.0,
-    },
+    crew: (() => {
+      const CREW_MASS_KG = 90;
+      return {
+        mass: CREW_MASS_KG,
+        posMin: -0.3,
+        // posMax (T6, docs/work-order-2026-08-05-sterownosc.md): hydro.js's
+        // amaDrag derives crewOnAma = crewPos*crew.mass/ama.maxBuoyancy, and
+        // says outright that crewPos above ama.maxBuoyancy/crew.mass asks for
+        // more than the float can carry, so it goes under. That ratio is
+        // 60/90 = 0.667 here (it was 0.889 before docs/adr/0021's
+        // re-parameterisation), so 1.0 lets the UI select a crew position
+        // that sinks the ama outright rather than merely loading it hard.
+        // Capped at the physical ratio; validateConfig re-checks this
+        // against whatever ama.maxBuoyancy/crew.mass a config patch ends up
+        // with, so a future boat swap cannot silently reopen the gap.
+        posMax: Math.min(1.0, p.ama_buoyancy_kg / CREW_MASS_KG),
+        posXMin: -1.0,            // fore-aft crew position range
+        posXMax: 1.0,
+      };
+    })(),
 
     stability: {
       abackCapsizeTime: 6,       // s — sustained full submersion before capsize
@@ -797,22 +920,51 @@ function buildDefaultConfig() {
       // I_roll and rollDampingCoeff are TUNED AS A PAIR against a target roll
       // response, not derived from a mass distribution: an 8deg step should
       // give a period inside 1.5-4 s and settle (|phi|<0.4deg) within 2-4
-      // oscillation periods. A first-principles estimate of the form
-      // displacement*(0.4*ama.spacing)^2 gives a period near 1.0 s, well under
-      // that band, which is why the value here is larger.
+      // oscillation periods.
       //
-      // CAVEAT, worth knowing before trusting either number: these two, and
-      // phiLiftoffDeg/phiSubmergeDeg below, all predate the re-parameterisation
-      // onto the real PJOA FOLK (docs/adr/0021), which changed ama mass,
-      // buoyancy and spacing and therefore the roll stiffness they were paired
-      // against. They still land inside the acceptance bands, so no test flags
-      // them, but they are the model's weakest calibration.
+      // RE-MEASURED (T5, docs/work-order-2026-08-05-sterownosc.md) at the
+      // current (docs/adr/0021) stiffness, since these two predate that
+      // re-parameterisation: an 8deg step-response probe gives a 3.00 s
+      // period (target 1.5-4 s) settling in 2.29 oscillation periods (target
+      // 2-4). Both bands are still satisfied and this pair is NOT changed.
+      //   A separate, softer target existed alongside the band -- a damping
+      // ratio zeta~0.19, an "opportunistic" bump from an earlier round, not
+      // itself an acceptance criterion. Chasing it directly (raising
+      // rollDampingCoeff to ~1595, the value a LINEARISED zeta=0.19 implies
+      // at this stiffness) was tried and MEASURED to push settling to 1.41
+      // periods -- outside the 2-4 band. The mismatch is the nonlinear
+      // restoring curve (rollRestoreMoment's ease-out near phi=0, softer
+      // locally than the linear spring a zeta calculation assumes): a linear
+      // damping-ratio target does not transfer cleanly onto this curve. The
+      // actually-stated band, not the zeta narrative, is the one that binds.
       I_roll: 1500,
       // phiLiftoffDeg / phiSubmergeDeg are the roll angles at which the ama's
       // weight- and buoyancy-restoring moments saturate — "just clear of the
       // water" and "fully submerged" — and amaLoad reads exactly 1.0 at each.
       // They are free constants, NOT derived from the ama's own geometry and
       // spacing, which is what they physically are.
+      //
+      // DERIVING THEM WAS ATTEMPTED (T5) AND SET ASIDE. The natural approach
+      // -- an ama cross-section shape (radius R from Vmax=ama.maxBuoyancy/
+      // rho_w treated as a semicircular hull), then
+      // phi=asin(fraction*R/ama.spacing) -- needs a draft R this project has
+      // no measurement for: ama_buoyancy_kg is itself "NOT PUBLISHED - scaled
+      // by the CUBE of the length ratio" (example_proa_parameters.csv), not a
+      // real dimension. Computed anyway, the resulting angles land around
+      // 0.4-2deg -- roughly an order of magnitude below the values here --
+      // which would compress the whole roll envelope and require re-running
+      // every capsize-margin scenario (T6's gust, T10, the aback scenario)
+      // against a new operating point, the same "margin sweep run as a
+      // precondition" campaign docs/capsize-margins-2026-07-30.md was for.
+      // That is real work with its own acceptance criteria, not a T5-sized
+      // item, and is not done here on an input this uncertain. What T5 DOES
+      // fix is the config-level guard that would have caught the next silent
+      // drift: see validateConfig's own check below, which is now geometry-
+      // aware even though these two angles themselves are not.
+      //   Implied ama vertical travel at the current values, for reference:
+      // ama.spacing*sin(12deg) = 0.64 m at liftoff, ama.spacing*sin(10deg) =
+      // 0.54 m at submergence -- neither re-examined across docs/adr/0021's
+      // 24% growth in ama.spacing (2.5 -> 3.1 m).
       phiLiftoffDeg: 12,          // deg — ama's weight-restoring moment saturates ("ama just clear of the water")
       phiSubmergeDeg: 10,         // deg — ama's buoyancy-restoring moment saturates ("ama fully submerged")
       rollDampingCoeff: 1100,     // N*m per (rad/s), linear — see the I_roll note above; the pair sets the damping ratio
@@ -910,14 +1062,31 @@ function buildDefaultConfig() {
 // now be rejected outright by the total-camber ceiling in validateConfig,
 // making archived recordings unloadable. Normalise instead: on v2, a pre-v2
 // snapshot's absolute camber is already represented by the table itself.
+//
+// crew.posMax has the same problem for the same reason (T6,
+// docs/work-order-2026-08-05-sterownosc.md): it used to be a free 0-2 value,
+// and is now derived from ama.maxBuoyancy/crew.mass and checked against it.
+// A recording made before that derivation existed can carry a posMax that
+// exceeds the ratio implied by the CURRENT boat (this fixture's own
+// ama.maxBuoyancy=80 predates docs/adr/0021's 60 kg), and would now be
+// rejected outright. Cap it forward to whatever the snapshot's own
+// ama/crew figures imply, rather than reject the recording.
 export function configFromRecordingSnapshot(snapshot) {
   const snap = snapshot ?? {};
   const sail = snap.sail ?? {};
   const usesV2 = (sail.aeroTableVersion ?? 'v2') === 'v2';
+  const patch = { ...snap };
   if (usesV2 && (sail.camber ?? 0) > 0) {
-    return createConfig({ ...snap, sail: { ...sail, camber: 0 } });
+    patch.sail = { ...sail, camber: 0 };
   }
-  return createConfig(snap);
+  const base = buildDefaultConfig();
+  const ama = deepMerge(base.ama, snap.ama);
+  const crew = deepMerge(base.crew, snap.crew);
+  const physicalPosMax = ama.maxBuoyancy / crew.mass;
+  if (crew.posMax > physicalPosMax) {
+    patch.crew = { ...patch.crew, ...snap.crew, posMax: physicalPosMax };
+  }
+  return createConfig(patch);
 }
 
 export function validateConfig(config) {
@@ -930,15 +1099,17 @@ export function validateConfig(config) {
   inRange(config.sail.camber, 0, 0.20, 'sail.camber');
   // The TOTAL camber the CL curve is ever evaluated at — the table's own
   // built-in camber plus sail.camber plus the brail's TRIM-regime bagging
-  // gain — must stay inside the band the linear 1+1.75c fit is valid over.
-  // Bounding sail.camber alone leaves brailCamberGain unchecked, which admits
-  // c = 0.55: a 55%-of-chord draft, i.e. a half-circle, roughly 4x outside
-  // the fit's validity.
+  // gain plus boomLift's own gain (T1) — must stay inside the band the
+  // linear 1+1.75c fit is valid over. Bounding sail.camber alone leaves
+  // brailCamberGain unchecked, which admits c = 0.55: a 55%-of-chord draft,
+  // i.e. a half-circle, roughly 4x outside the fit's validity. brailWind and
+  // boomLift are independent controls, so their gains' maxima are summed as
+  // worst case rather than assumed mutually exclusive.
   {
     const builtin = config.sail.aeroTableVersion === 'v2' ? (config.sail.aeroV2BuiltinCamber ?? 0.10) : 0;
-    const totalCamber = config.sail.camber + (config.sail.brailCamberGain ?? 0) + builtin;
+    const totalCamber = config.sail.camber + (config.sail.brailCamberGain ?? 0) + (config.sail.boomLiftCamberGain ?? 0) + builtin;
     if (!(totalCamber <= 0.20)) {
-      errs.push(`sail.camber + sail.brailCamberGain + built-in table camber = ${totalCamber.toFixed(3)} exceeds the 0.20 physical ceiling`);
+      errs.push(`sail.camber + sail.brailCamberGain + sail.boomLiftCamberGain + built-in table camber = ${totalCamber.toFixed(3)} exceeds the 0.20 physical ceiling`);
     }
   }
   // ceSwingFraction is a fraction of the half-chord, so values outside (0,1]
@@ -950,6 +1121,18 @@ export function validateConfig(config) {
   inRange(config.sail.brailTrimRange, 0.01, 0.99, 'sail.brailTrimRange');
   inRange(config.crew.posMin, -1, 0, 'crew.posMin');
   inRange(config.crew.posMax, 0, 2, 'crew.posMax');
+  // T6 (docs/work-order-2026-08-05-sterownosc.md): crew.posMax must not let
+  // the crew ask the ama for more buoyancy than it has — see hydro.js's
+  // amaDrag and crew.posMax's own comment above. Re-checked here, not just
+  // set correctly by default, so a config patch that changes ama.maxBuoyancy
+  // or crew.mass without also lowering posMax fails loudly instead of
+  // silently reopening the gap.
+  {
+    const physicalPosMax = config.ama.maxBuoyancy / config.crew.mass;
+    if (!(config.crew.posMax <= physicalPosMax + 1e-9)) {
+      errs.push(`crew.posMax=${config.crew.posMax} exceeds ama.maxBuoyancy/crew.mass=${physicalPosMax.toFixed(3)} — this crew position would sink the ama`);
+    }
+  }
   inRange(config.rudder.maxDeflectionDeg, 1, 60, 'rudder.maxDeflectionDeg');
   if (!(config.stability.abackCapsizeTime > 0)) errs.push('stability.abackCapsizeTime must be > 0');
   if (!(config.stability.capsizeTriggerMarginDeg > 0)) errs.push('stability.capsizeTriggerMarginDeg must be > 0');
@@ -964,6 +1147,29 @@ export function validateConfig(config) {
   inRange(config.crew.posXMax, 0, 1, 'crew.posXMax');
   if (!(config.stability.phiCapsizeDeg > config.stability.phiLiftoffDeg)) errs.push('stability.phiCapsizeDeg must be > phiLiftoffDeg');
   if (!(config.stability.phiCapsizeDeg > config.stability.phiSubmergeDeg)) errs.push('stability.phiCapsizeDeg must be > phiSubmergeDeg');
+  // T5 (docs/work-order-2026-08-05-sterownosc.md): a SANITY band, not a
+  // precise derivation — see stability.phiLiftoffDeg's own comment for why a
+  // tight geometric bound is not available. Ties phiLiftoffDeg/phiSubmergeDeg
+  // to ama.length (a scaled, known quantity) rather than leaving them free of
+  // ANY geometric check: the vertical ama travel these angles imply
+  // (ama.spacing*sin(angle)) must be more than 1% and less than half of the
+  // ama's own length — no real float clears or submerges over a distance
+  // outside that range. Wide on purpose, so it catches a gross drift (a
+  // spacing typo, or ama.length changing by a large factor with these left
+  // untouched, the docs/adr/0021 failure mode) without claiming precision
+  // this project's ama dimensions do not support.
+  {
+    const DEG = Math.PI / 180;
+    const travelLiftoff = config.ama.spacing * Math.sin(config.stability.phiLiftoffDeg * DEG);
+    const travelSubmerge = config.ama.spacing * Math.sin(config.stability.phiSubmergeDeg * DEG);
+    const lo = config.ama.length / 100, hi = config.ama.length / 2;
+    if (!(travelLiftoff > lo && travelLiftoff < hi)) {
+      errs.push(`stability.phiLiftoffDeg implies ${travelLiftoff.toFixed(2)}m of ama travel, outside the [${lo.toFixed(2)},${hi.toFixed(2)}]m sanity band relative to ama.length`);
+    }
+    if (!(travelSubmerge > lo && travelSubmerge < hi)) {
+      errs.push(`stability.phiSubmergeDeg implies ${travelSubmerge.toFixed(2)}m of ama travel, outside the [${lo.toFixed(2)},${hi.toFixed(2)}]m sanity band relative to ama.length`);
+    }
+  }
   if (!(config.sail.yardSwingRateDegPerSec > 0)) errs.push('sail.yardSwingRateDegPerSec must be > 0');
   if (!(config.sail.deltaMaxReleaseDeg > 0)) errs.push('sail.deltaMaxReleaseDeg must be > 0');
 
