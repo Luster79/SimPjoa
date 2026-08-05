@@ -3412,6 +3412,19 @@ function createSimulator(userConfig) {
   }
 
   function setConfig(patch) {
+    // Switching the named boat cannot be a merge. Every value the physics
+    // reads — hull, ama, sail, crew, all three inertias — is DERIVED from the
+    // variant's parameter file, so overlaying `{ boat: 'old' }` on a built
+    // config would relabel it while leaving the previous boat's numbers in
+    // place: a config that reports one boat and sails another. Rebuild from
+    // the new variant's own base instead, with this patch applied on top.
+    // Consequence, deliberate: customisations from EARLIER setConfig calls do
+    // not survive a variant switch — they were expressed against a different
+    // boat, and carrying them over is what would silently corrupt the new one.
+    if (patch?.boat !== undefined && patch.boat !== config.boat) {
+      config = createConfig(patch);
+      return;
+    }
     config = validateConfig(deepMerge(config, patch));
   }
 
@@ -3771,14 +3784,14 @@ const MS_TO_KN = 1.9438;
 // recording's codeVersion is meaningful (harness/replay.js warns on
 // mismatch) for a downloaded bundle without requiring a build step for
 // plain `python3 -m http.server` development.
-const CODE_VERSION = "986cf57";
+const CODE_VERSION = "04868ef";
 // BUILD_TIME: same pattern as CODE_VERSION above — tools/bundle.js
 // replaces this with the COMMIT's timestamp (not wall-clock build time),
 // so it stays stable across re-bundling the same commit and always
 // matches CODE_VERSION's hash. Shown in the bottom-right version footer
 // so a bug report/recording can be tied to an exact, dated build without
 // having to separately ask "which commit was this."
-const BUILD_TIME = "2026-08-05T22:44:08+02:00";
+const BUILD_TIME = "2026-08-05T22:50:01+02:00";
 
 // ---------------------------------------------------------------------
 // i18n — EN/PL. Static labels are marked with data-i18n="key" in
