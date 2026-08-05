@@ -1,0 +1,28 @@
+# Digitized from Di Piazza, Pearthree, Paille 2014 (JPS 123(1), Figs 3-4), 200 DPI raster.
+# Uncertainty: coefficients +-0.05, headings +-5 deg. alpha measured from ZERO-LIFT incidence.
+# section A: CL/CD polar anchors (Fig 3, Oceanic lateens panel)
+sail,point,CL,CD,note
+SantaCruz,LDmax_region,0.70,0.13,L/D ~5.4
+SantaCruz,pre_stall,1.10,0.35,
+SantaCruz,CLmax,1.38,0.75,gentle stall
+SantaCruz,post_stall,1.20,1.00,drag-dominated
+Micronesia,LDmax_region,0.55,0.12,L/D ~4.6
+Micronesia,CLmax,1.08,0.65,
+Micronesia,post_stall,0.95,0.90,
+Tonga,CLmax,0.88,0.60,
+Tahiti,LDmax_region,0.60,0.08,L/D ~7.5 abrupt 2D stall
+Tahiti,CLmax,0.98,0.35,sharp CL collapse after
+# section B: driving force coefficient CR vs heading theta (Fig 4, optimal trim beta)
+sail,theta_deg,CR
+SantaCruz,30,0.50
+SantaCruz,50,1.00
+SantaCruz,70,1.30
+SantaCruz,90,1.45
+SantaCruz,105,1.52
+SantaCruz,120,1.40
+SantaCruz,140,1.20
+SantaCruz,160,1.05
+Micronesia,50,0.70
+Micronesia,90,1.05
+Micronesia,110,1.15
+Micronesia,140,1.00
