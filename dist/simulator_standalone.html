@@ -168,6 +168,8 @@
       <div class="hint" data-i18n="hint.brailLee">Q sheets in, Z eases</div>
       <div class="row"><label for="brailWind" data-i18n="lbl.brailWind">Brail (wind)</label><div class="sliderWrap"><input id="brailWind" type="range" min="0" max="100" step="1" value="0"><div id="brailWindTick" class="brailTick"></div></div><output id="brailWindOut">0%</output></div>
       <div class="hint" data-i18n="hint.brailWind">W sheets in, X eases</div>
+      <div class="row"><label for="boomLift" data-i18n="lbl.boomLift">Boom lift (gejtawa)</label><input id="boomLift" type="range" min="0" max="100" step="1" value="0"><output id="boomLiftOut">0%</output></div>
+      <div class="hint" data-i18n="hint.boomLift">Hauls the boom UP so the sail bellies — the "carrot" for deep courses. Needs the sheet eased to work at all.</div>
 
       <h2 data-i18n="h.steering">Steering &amp; trim</h2>
       <div class="row"><label for="tackX" data-i18n="lbl.tackX">Tack (fore/aft)</label><input id="tackX" type="range" min="-1" max="1" step="0.02" value="0"><output id="tackXOut">0.00</output></div>
@@ -241,6 +243,14 @@
     </div>
     <div id="boatPanel">
       <h2 data-i18n="h.boatDesign">Boat design</h2>
+      <div class="row">
+        <label for="boatVariant" data-i18n="lbl.boatVariant">Boat</label>
+        <select id="boatVariant">
+          <option value="default" data-i18n="opt.boatDefault">PJOA FOLK (default)</option>
+          <option value="old" data-i18n="opt.boatOld">PJOA FOLK — before the ama revision</option>
+        </select>
+      </div>
+      <div class="hint" data-i18n="hint.boatVariant">Switching rebuilds the boat from its own parameter file and discards edits below.</div>
       <div class="hint" data-i18n="hint.boatDesign">Physical design parameters — hull, ama, sail, rudder, stability. Changes apply on "Apply" and reset the boat's motion state.</div>
       <div class="boatLegend">
         <span class="tag tagPhysics" data-i18n="tag.physics">affects physics</span>
@@ -3784,7 +3794,7 @@ const MS_TO_KN = 1.9438;
 // recording's codeVersion is meaningful (harness/replay.js warns on
 // mismatch) for a downloaded bundle without requiring a build step for
 // plain `python3 -m http.server` development.
-const CODE_VERSION = "04868ef";
+const CODE_VERSION = "933b0ea+dirty";
 // BUILD_TIME: same pattern as CODE_VERSION above — tools/bundle.js
 // replaces this with the COMMIT's timestamp (not wall-clock build time),
 // so it stays stable across re-bundling the same commit and always
@@ -3811,6 +3821,9 @@ const TRANSLATIONS = {
     'h.sail': 'Sail', 'lbl.sheet': 'Sheet (szot)', 'hint.yard': '←/→ arrow keys ease/sheet',
     'lbl.brailLee': 'Brail (lee)', 'hint.brailLee': 'Q sheets in, Z eases',
     'lbl.brailWind': 'Brail (wind)', 'hint.brailWind': 'W sheets in, X eases',
+    'lbl.boomLift': 'Boom lift (gejtawa)',
+    'hint.boomLift': 'Hauls the boom UP so the sail bellies \u2014 the "carrot" for deep courses. Needs the sheet eased to work at all.',
+    'boomLift.capped': (pct) => `sheet allows only ${pct}%`,
     // C-B (round 10c review, ROUND10d_helm_balance.md): the windward brail
     // has two real regimes (aero.js brailRegimeBlend) — this tooltip names
     // both so the split isn't only discoverable by reading the source.
@@ -3861,6 +3874,9 @@ const TRANSLATIONS = {
     'hint.boatDesign': 'Physical design parameters — hull, ama, sail, rudder, stability. Changes apply on "Apply" and reset the boat\'s motion state.',
     'tag.physics': 'affects physics', 'tag.graphics': 'drawing/UI only',
     'btn.applyBoat': 'Apply', 'btn.resetBoatDefaults': 'Reset to defaults',
+    'lbl.boatVariant': 'Boat', 'opt.boatDefault': 'PJOA FOLK (default)',
+    'opt.boatOld': 'PJOA FOLK \u2014 before the ama revision',
+    'hint.boatVariant': 'Switching rebuilds the boat from its own parameter file and discards edits below.',
     'h.boatPresets': 'Saved boats', 'lbl.boatName': 'Name',
     'btn.saveBoat': 'Save', 'btn.exportBoat': 'Export file', 'btn.importBoat': 'Import file',
     'lbl.boatPresetList': 'Saved', 'opt.boatPresetNone': '— select —', 'btn.deleteBoat': 'Delete',
@@ -3885,6 +3901,9 @@ const TRANSLATIONS = {
     'h.sail': 'Żagiel', 'lbl.sheet': 'Szot', 'hint.yard': 'Strzałki ←/→: luzuj / wybieraj',
     'lbl.brailLee': 'Gejtawa zawietrzna', 'hint.brailLee': 'Q wybiera, Z luzuje',
     'lbl.brailWind': 'Gejtawa nawietrzna', 'hint.brailWind': 'W wybiera, X luzuje',
+    'lbl.boomLift': 'Gejtawa bomu',
+    'hint.boomLift': 'Podci\u0105ga bom DO G\u00d3RY, \u017ceby \u017cagiel si\u0119 wyd\u0105\u0142 \u2014 \u201emarchewka\u201d na kursy pe\u0142ne. Dzia\u0142a dopiero przy wyluzowanym szocie.',
+    'boomLift.capped': (pct) => `szot pozwala tylko na ${pct}%`,
     'tooltip.brailWindZones': (pct) => `0-${pct}%: trym (marchewka) — żagiel dalej ciągnie · ${pct}-100%: zrzut mocy — panika/refowanie`,
     'h.steering': 'Sterowanie i wyważenie', 'lbl.rudder': 'Ster', 'hint.rudder': 'A/D wychyla ster, centruje się po puszczeniu',
     'lbl.tackX': 'Hals (przód/tył)', 'hint.tackX': 'Do przodu — odpadanie, do tyłu — ostrzenie. Tak steruje proa; wiosło to ostateczność.',
@@ -4002,6 +4021,7 @@ const sliders = {
   sheet: document.getElementById('sheet'),
   brailLee: document.getElementById('brailLee'),
   brailWind: document.getElementById('brailWind'),
+  boomLift: document.getElementById('boomLift'),
   tackX: document.getElementById('tackX'),
   halyard: document.getElementById('halyard'),
   shroud: document.getElementById('shroud'),
@@ -4014,6 +4034,7 @@ const outs = {
   sheet: document.getElementById('sheetOut'),
   brailLee: document.getElementById('brailLeeOut'),
   brailWind: document.getElementById('brailWindOut'),
+  boomLift: document.getElementById('boomLiftOut'),
   tackX: document.getElementById('tackXOut'),
   halyard: document.getElementById('halyardOut'),
   shroud: document.getElementById('shroudOut'),
@@ -4177,6 +4198,16 @@ function refreshOutputs() {
   outs.sheet.textContent = `${Math.round(controls.sheet / DEG__b12)}°`;
   outs.brailLee.textContent = `${Math.round(controls.brailLee * 100)}%`;
   outs.brailWind.textContent = `${Math.round(controls.brailWind * 100)}%`;
+  // The gejtawa's ask is capped by how far the sheet is eased (core/sheet.js
+  // effectiveBoomLiftMax, straight from the manual: "musimy odpowiednio
+  // luzowac szot, zeby bom mogl sie uniesc"). Show the ceiling whenever it
+  // binds -- otherwise hauling this slider with the sheet in looks broken.
+  {
+    const askPct = Math.round(controls.boomLift * 100);
+    const capPct = Math.round(effectiveBoomLiftMax(controls, dims) * 100);
+    outs.boomLift.textContent = askPct > capPct
+      ? `${askPct}% (${t('boomLift.capped', capPct)})` : `${askPct}%`;
+  }
   outs.tackX.textContent = controls.tackX.toFixed(2);
   outs.halyard.textContent = controls.halyard.toFixed(2);
   outs.shroud.textContent = controls.shroud.toFixed(2);
@@ -4191,6 +4222,7 @@ sliders.windSpeed.addEventListener('input', () => { controls.windSpeed = Number(
 sliders.sheet.addEventListener('input', () => { controls.sheet = Number(sliders.sheet.value) * DEG__b12; refreshOutputs(); });
 sliders.brailLee.addEventListener('input', () => { controls.brailLee = Number(sliders.brailLee.value) / 100; refreshOutputs(); });
 sliders.brailWind.addEventListener('input', () => { controls.brailWind = Number(sliders.brailWind.value) / 100; refreshOutputs(); });
+sliders.boomLift.addEventListener('input', () => { controls.boomLift = Number(sliders.boomLift.value) / 100; refreshOutputs(); });
 sliders.tackX.addEventListener('input', () => { controls.tackX = Number(sliders.tackX.value); refreshOutputs(); });
 sliders.halyard.addEventListener('input', () => { controls.halyard = Number(sliders.halyard.value); refreshOutputs(); });
 sliders.shroud.addEventListener('input', () => { controls.shroud = Number(sliders.shroud.value); refreshOutputs(); });
@@ -6604,16 +6636,50 @@ function buildBoatFieldRows() {
 
 // Full panel (re)build — first open, language switch, reset-to-defaults:
 // cases where the preset list's own selection has no reason to survive.
+const boatVariantSelect = document.getElementById('boatVariant');
+
+// Switching the named boat is NOT a field edit and cannot go through
+// collectBoatPatch: every value in BOAT_FIELDS is derived from the variant's
+// parameter file, so sending the current field values along would overwrite
+// the boat being switched to with the one being switched from. Send only the
+// variant, then rebuild the panel from whatever it produced.
+function applyBoatVariant(variant) {
+  let validated;
+  try {
+    validated = createConfig({ boat: variant });
+  } catch (err) {
+    boatErrorEl.style.color = '#ff8a8a';
+    boatErrorEl.textContent = t('boat.invalid', err.message);
+    return;
+  }
+  dims = validated;
+  sim.setConfig({ boat: variant });
+  sim.reset();
+  updateBrailZoneUI();
+  updateSheetRangeUI();
+  renderCrewPad();
+  buildBoatPanel();
+  boatErrorEl.style.color = '#7fe3a3';
+  boatErrorEl.textContent = t('boat.applied');
+}
+
+boatVariantSelect.addEventListener('change', () => applyBoatVariant(boatVariantSelect.value));
+
 function buildBoatPanel() {
   buildBoatFieldRows();
   refreshBoatPresetSelect();
+  boatVariantSelect.value = dims.boat ?? 'default';
 }
 
 // Reads every BOAT_FIELDS input back into a full nested patch object — see
 // the "Applying a change" note above for why this is always the COMPLETE
 // field set, not just whatever the user touched this time.
 function collectBoatPatch() {
-  const patch = {};
+  // Carries the selected variant, so Apply re-derives from the boat currently
+  // on screen. Without it createConfig() would rebuild from the DEFAULT boat
+  // and overlay these fields on top -- silently reverting everything the
+  // variant sets that has no field row (residuaryPeakCr, every inertia).
+  const patch = { boat: boatVariantSelect.value };
   for (const field of BOAT_FIELDS) {
     const input = boatFieldsEl.querySelector(`input[data-path="${field.path}"]`);
     setPath(patch, field.path, Number(input.value));
@@ -6646,7 +6712,9 @@ document.getElementById('btnApplyBoat').addEventListener('click', () => {
 });
 
 document.getElementById('btnResetBoatDefaults').addEventListener('click', () => {
-  dims = createConfig();
+  // Defaults OF THE SELECTED BOAT -- resetting on the old boat must not
+  // silently hand back the default one.
+  dims = createConfig({ boat: boatVariantSelect.value });
   updateBrailZoneUI();
   updateSheetRangeUI();
   renderCrewPad();
