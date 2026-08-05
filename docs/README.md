@@ -82,6 +82,7 @@ Append-only. Never edit an old ADR; supersede it with a new one.
 |---|---|
 | `work-order-2026-07-22.md` | Nearly complete. Open: **R13** (monoliths), **R10** (lint/types). |
 | `work-order-2026-07-30-physics-audit.md` | **Complete** — F1-F16 all executed. |
+| `work-order-2026-08-05-sterownosc.md` | **Open, current.** T1-T6: the carrot as the manual describes it (boom lift + belly), then the heel-dependent hull/ama terms. Blocks C-A/C-B/C-C. |
 | `work-order-2026-08-02-steering-and-sources.md` | Open: **S7** (R15 done; the rest outstanding), **S8** (vertical balance). S3 was implemented and withdrawn (ADR 0013); everything else is done. Sailing without the oar reached 3/6 (ADR 0017); the Munk double-count hypothesis was audited and rejected (ADR 0018), so it is blocked on Flay's yaw-moment data, not on a parameter. |
 
 Work that came from the primary source rather than a work order is tracked in
