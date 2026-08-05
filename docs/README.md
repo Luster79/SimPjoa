@@ -73,6 +73,7 @@ Append-only. Never edit an old ADR; supersede it with a new one.
 | 0024 | The sail hangs out to leeward -- the lateral CE lever was 11x too small, which is why the brail, the manual's primary bear-away control, was the weakest one |
 | 0025 | Comments describe the current model; history lives in the ADRs and `Archive/` |
 | 0026 | Fore-aft trim arms have no downwind authority -- they act on the sail's side force, which collapses on deep courses |
+| 0027 | The ama drags the bow up, and the dead run is unstable -- refines 0026's attribution; the broad reach holds with the manual's own recipe |
 
 ## Work orders — what to do
 

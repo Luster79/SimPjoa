@@ -2391,7 +2391,61 @@ export function runAsserts(config, { slow = true } = {}) {
     }
     check('C-B: paddle SHIPPED, every bear-away trim set (tack fwd + crew aft + carrot) -- deep courses hold within 15deg/min',
       nHeld === 2,
-      `${nHeld}/2 points hold -- ${rows.join(' | ')} -- worst ${worstRate.toFixed(1)}deg/min against the 15 ceiling. Rig trim is not the binding constraint: see this block's own comment for the measured moment budget (sail +6 N*m vs hull -116 N*m) and why enlarging the fore-aft arms does not move it`,
+      `${nHeld}/2 points hold -- ${rows.join(' | ')} -- worst ${worstRate.toFixed(1)}deg/min against the 15 ceiling. Rig trim is not the binding constraint: see this block's own comment for the measured moment budget (sail +6 N*m vs hull -116 N*m) and why enlarging the fore-aft arms does not move it. C-C below measures the manual's OWN recipe, which does better`,
+      'STEERING');
+  }
+
+  // --- C-C: the manual's own deep-course recipe, which is not the one C-B
+  // uses. C-B applies the plan-style bear-away trim and keeps the crew at its
+  // normal outboard station; this one pulls the windward brail HARD (the
+  // "carrot" at full travel) and takes the crew OFF the ama.
+  //
+  // The difference is the ama. At release the dominant round-up moment is not
+  // the hull's and not the rig's -- it is amaDrag's yaw moment, the float's
+  // drag acting at its own lateral offset, which is +53 N*m at crewPos 0.35
+  // against the sail's +6 and the hull's -8. Crew weight is what sets the
+  // float's immersion, so moving the crew inboard is the control that attacks
+  // it: crewPos 0.35 -> 0 drops that moment to +11 N*m and the drift from
+  // 31.0 to 21.6 deg/min at TWA140. Pulling the carrot the rest of the way
+  // takes it to 13.8. That is the manual's own prescription and it works.
+  //
+  // TWA160 does not hold at any setting, and the reason is worth recording
+  // because it is not "not enough authority". At brailWind=1 with the crew
+  // inboard, EVERY trim moment is essentially nulled at release -- sail +3,
+  // hull -2, ama +4 -- and the boat still rounds up at 31 deg/min. Nulling
+  // the static moments does not stop it, so near the dead run this is a
+  // directional STABILITY problem (no restoring yaw moment from the hull, a
+  // destabilising Munk moment), not a trim problem. It is the same deficit
+  // S1b/S1c carry, and it is why the manual prescribes the paddle for
+  // downwind steering rather than claiming a released rudder holds (C-A).
+  {
+    const dt = config.dt, tws = 6;
+    const rows = [];
+    let nHeld = 0;
+    for (const [twaDeg, sheetDeg] of [[140, 50], [160, 70]]) {
+      const windDirFrom = HEADING0 + twaDeg * DEG;
+      const trim = { brailLee: 0, brailWind: 1.0, crewPos: 0, crewPosX: -1.0,
+        tackX: 1.0, shuntRequest: false };
+      let state = freshState(sheetDeg * DEG);
+      for (let i = 0; i < Math.round(45 / dt); i++) {
+        state = integrate(state, { windDirFrom, windSpeed: tws, sheet: sheetDeg * DEG,
+          rudder: headingHoldRudder(state, HEADING0, config), ...trim }, config, dt);
+      }
+      const twaStart = Math.abs(normalizeAngle(windDirFrom - state.heading)) / DEG;
+      const speedStart = Math.hypot(state.u, state.v);
+      const releaseSeconds = 120;
+      for (let i = 0; i < Math.round(releaseSeconds / dt); i++) {
+        state = integrate(state, { windDirFrom, windSpeed: tws, sheet: sheetDeg * DEG,
+          rudder: 0, rudderUp: true, ...trim }, config, dt);
+      }
+      const twaEnd = Math.abs(normalizeAngle(windDirFrom - state.heading)) / DEG;
+      const rate = (twaStart - twaEnd) / (releaseSeconds / 60);
+      if (rate < 15 && !state.capsized) nHeld++;
+      rows.push(`TWA${twaDeg}: ${twaStart.toFixed(0)}->${twaEnd.toFixed(0)}deg ${rate.toFixed(1)}deg/min (v ${speedStart.toFixed(2)}->${Math.hypot(state.u, state.v).toFixed(2)})`);
+    }
+    check("C-C: the manual's own recipe (carrot at full travel + crew OFF the ama) holds a deep course rudder-free within 15deg/min",
+      nHeld === 2,
+      `${nHeld}/2 points hold -- ${rows.join(' | ')} -- what fails here does not fail for want of authority: at this setting every trim moment at release is within a few N*m of zero and the near-dead-run still rounds up. See this block's own comment`,
       'STEERING');
   }
 
