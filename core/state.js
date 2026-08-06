@@ -99,17 +99,6 @@ export function createDefaultControls() {
     halyard: 1,
     shroud: 1,
     stays: 0,
-    // boomLift (T1, docs/work-order-2026-08-05-sterownosc.md): 0..1, how far
-    // the BOOM (the lower spar, "bom") is hauled up toward the yard with the
-    // gejtawa — a separate line and a separate DOF from `halyard`, which sets
-    // the YARD's own peak angle. This is the manual's first-named step for
-    // running nearly dead downwind: "podciągamy bom wysoko do góry gejtawą...
-    // by żagiel bardzo się wydął" (haul the boom up so the sail bellies).
-    // 0 is neutral (today's geometry, unchanged). Its EFFECTIVE value is
-    // capped by how eased the sheet is — see core/sheet.js's
-    // effectiveBoomLiftMax, which the manual states as a direct coupling
-    // ("we must ease the sheet enough for the boom to rise").
-    boomLift: 0,
     shuntRequest: false,
   };
 }

@@ -36,7 +36,6 @@
 
 import { polhamusAR, polhamusKp, polhamusKv, polhamusCL } from './config.js';
 import { clrXPosition } from './hydro.js';
-import { effectiveBoomLiftMax } from './sheet.js';
 
 const DEG = Math.PI / 180;
 // Flogging-drag window: how close to a genuine zero-AoA weathervane
@@ -215,18 +214,8 @@ export function sailCoefficients(alpha, controls, config) {
   // not bagged. camberEff is a DELTA beyond the active table's own built-in
   // camber (see camberCLDelta).
   const brailCamberGain = sail.brailCamberGain ?? 0;
-  // boomLiftCamberGain (T1): the manual's "boom hauled up so the sail
-  // bellies" step, wired into the SAME camberCLDelta machinery brailCamberGain
-  // uses rather than a new curve. Defaulted to 0 by config.js's own
-  // boomLiftCamberGain comment: brailCamberGain plus the table's built-in
-  // camber already sit at the total-camber ceiling, with no headroom left for
-  // a third additive term. The plumbing is here so enabling it later needs
-  // only a value.
-  const boomLiftEff = Math.min(Math.max(0, Math.min(1, controls.boomLift ?? 0)), effectiveBoomLiftMax(controls, config));
-  const boomLiftCamberGain = sail.boomLiftCamberGain ?? 0;
   const camberEff = sail.camber
-    + brailRegimeBlend(brailWind, brailTrimRange, 0, brailCamberGain, 0)
-    + boomLiftCamberGain * boomLiftEff;
+    + brailRegimeBlend(brailWind, brailTrimRange, 0, brailCamberGain, 0);
   const builtinCamber = sail.aeroTableVersion === 'v2' ? (sail.aeroV2BuiltinCamber ?? 0.10) : 0;
 
   const camberCLf = camberCLDelta(alphaAbsDeg, camberEff, builtinCamber);
@@ -431,21 +420,13 @@ export function sailForces(state, controls, config) {
   // classical cure for weather helm.
   const stays = Math.max(-1, Math.min(1, controls.stays ?? 0));
   const stayRake = (config.sail.stayRakeMaxDeg ?? 0) * DEGR * stays;
-  // boomLift (T1, docs/work-order-2026-08-05-sterownosc.md): hauling the
-  // BOOM up toward the yard with the gejtawa, a separate line and DOF from
-  // `halyard` above (which sets the YARD's own peak angle). Capped by how
-  // eased the commanded sheet is (core/sheet.js's effectiveBoomLiftMax) — the
-  // manual states this coupling outright. Recomputed here independently of
-  // sailCoefficients()'s own boomLiftEff (same formula, no shared state to
-  // thread through a pure function).
-  const boomLiftEff = Math.min(Math.max(0, Math.min(1, controls.boomLift ?? 0)), effectiveBoomLiftMax(controls, config));
   // Height of the CE above the water: up the yard, tipped by both rakes, then
   // raised by boom lift (shortening the leech's vertical droop). The rake
   // terms below (xRake/yRake) are computed FROM this already-raised height,
   // which is physically right: a rake is a rotation about the mast step, and
   // a CE point further from that step swings further under the same angle.
   const CEheightYard = yardR * Math.sin(yardPsi) * Math.cos(mastRake) * Math.cos(stayRake);
-  const CEheightEff = CEheightYard * (1 + (config.sail.boomLiftCEHeightFrac ?? 0) * boomLiftEff);
+  const CEheightEff = CEheightYard;
   // Fore-aft: only the CHANGE from full hoist, so the baseline lever that
   // `lead` anchors is untouched (the same discipline as the trim swing).
   const xHalyard = -yardR * (Math.cos(yardPsi) - Math.cos(yardPeak));
@@ -510,17 +491,7 @@ export function sailForces(state, controls, config) {
   // Sharing one length makes the second 11x too small: 0.25 m against the
   // sail's real tack-to-centroid distance of 2.76 m.
   const ceRadiusEff = (config.sail.ceRadius ?? halfChord) * (config.sail.yceFraction ?? 1);
-  // boomLiftYceShrink (T1): an ADDITIONAL, separate gathering mechanism —
-  // hauling the boom up toward the yard from below, not spilling the leech
-  // toward the tack the way the brail does — so it multiplies the brail's own
-  // shrink rather than replacing or re-deriving it. This is what directly
-  // attacks the deep-course round-up moment (-yCE*Fx below): at TWA160-175
-  // with the brail already at full travel, the sail's own yawMoment is still
-  // the LARGEST round-up contributor in the budget (docs/adr's own
-  // measurement), because yCE has not shrunk any further than brailWind=1
-  // alone gets it.
-  const boomLiftYceShrink = config.sail.boomLiftYceShrink ?? 0;
-  const halfChordEffY = ceRadiusEff * (1 - yceBrailShift * brailWind) * (1 - boomLiftYceShrink * boomLiftEff);
+  const halfChordEffY = ceRadiusEff * (1 - yceBrailShift * brailWind);
   // tackX: the rig's own fore-aft position — THE proa steering control
   // (docs/adr/0011). On an Oceanic lateen the tack travels along the hull and
   // the mast's rake is adjustable, so the CE moves longitudinally by a real

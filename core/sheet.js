@@ -87,30 +87,3 @@ export function isLuffing(state, controls, config) {
   return state.delta < deltaMax - 2 * DEG;
 }
 
-// effectiveBoomLiftMax(controls, config) -> [0,1], the ceiling
-// controls.boomLift can reach given the COMMANDED sheet. The manual states
-// the coupling outright for hauling the boom up with the gejtawa: "musimy
-// odpowiednio luzować szot, żeby bom (dolne drzewce) mógł się unieść" — we
-// must ease the sheet enough for the boom to be able to rise. Sheeted in
-// tight, the sheet holds the boom's foot down and it cannot lift regardless
-// of what the gejtawa is asked to do; the same one-sided-constraint pattern
-// as effectiveDeltaMax above (a ceiling on an ASK, not a command), except the
-// direction of the coupling runs the other way: MORE sheet (more eased)
-// raises the ceiling here, where more sheet LOWERS it for the yard's own
-// swing.
-//   Tied to the COMMANDED controls.sheet, not effectiveDeltaMax's shunt-
-// released value: the boom is a different line, on its own gejtawa, and does
-// not get carried along by the yard's shunt release the way the sheet
-// ceiling does.
-//   boomLiftMinSheetDeg/FullSheetDeg are estimates, not measured — the
-// manual gives the coupling's existence and direction, not a curve. The
-// default band (30-70deg) brackets a "moderate reach and beyond" trim range,
-// matching where this technique is actually used (docs/adr's own deep-course
-// searches start at TWA>=135, sheets 50-88deg there).
-export function effectiveBoomLiftMax(controls, config) {
-  const commandedSheetDeg = clamp(Math.abs(controls.sheet ?? 0), 0, Math.PI / 2) / DEG;
-  const lo = config.sail.boomLiftMinSheetDeg ?? 30;
-  const hi = config.sail.boomLiftFullSheetDeg ?? 70;
-  if (hi <= lo) return commandedSheetDeg >= lo ? 1 : 0;
-  return clamp((commandedSheetDeg - lo) / (hi - lo), 0, 1);
-}

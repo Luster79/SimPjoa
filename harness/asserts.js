@@ -2428,26 +2428,29 @@ export function runAsserts(config, { slow = true } = {}) {
   // takes it to 13.8. That is the manual's own prescription and it works.
   //
   // The recipe below is the manual's own, and it includes the RIG controls:
-  // the carrot, standing the mast toward vertical by easing the backstay and
-  // shortening the shroud (`stays: 1.0`), and hauling the boom up with the
-  // gejtawa (`boomLift: 1.0`, T1, docs/work-order-2026-08-05-sterownosc.md --
-  // the manual's own FIRST-named step for this course). Omitting any of them
-  // understates what the boat can do: `stays` alone takes TWA140 from ~14 to
-  // ~9 deg/min (T2 later re-derived yceBrailShift geometrically, moving this
-  // baseline slightly); `boomLift` on top of that flips it negative (still
-  // comfortably inside the ceiling, now overshooting the other way, which is
-  // why the check below takes an absolute value rather than a one-sided
-  // bound) -- see the printed numbers below for the current, exact values.
+  // the carrot, and standing the mast toward vertical by easing the backstay
+  // and shortening the shroud (`stays: 1.0`). Omitting them understates what
+  // the boat can do: `stays` alone takes TWA140 from ~14 to ~9 deg/min (T2
+  // later re-derived yceBrailShift geometrically, moving this baseline
+  // slightly) -- see the printed numbers below for the current, exact values.
+  //
+  // The manual's FIRST-named step for this course -- hauling the boom up with
+  // the gejtawa so the sail bellies -- is carried here by the carrot and the
+  // sheet, which is what the gejtawa and the szot are. A separate boomLift
+  // control was tried (T1) and WITHDRAWN: the sheet is bent to the boom, so
+  // easing it is what lets the boom rise, and the gejtawa is the brail this
+  // recipe already pulls. See docs/adr/0031.
   //
   // TWA160 does not hold at any setting reached here, and the reason is worth
   // recording because it is not "not enough authority" in the way a bigger
-  // number would fix. `boomLift` DOES measurably help at TWA160/175 (its yCE
-  // shrink is the mechanism, not its CE-height rise, which is negligible for
-  // yaw) -- 29.2 -> 26.4 deg/min at TWA160 with the default gain -- but a
-  // sensitivity sweep (config.js's own boomLiftYceShrink comment) found even
-  // an UNDEFENSIBLE 0.99 (yCE nearly zeroed) only gets TWA160 to 16.1, still
-  // over the ceiling, while every trim moment at release is already within a
-  // few N*m of zero. Nulling the static moments does not stop the round-up,
+  // number would fix. Shrinking the sail's lateral CE arm further does help
+  // -- that was the mechanism the withdrawn boomLift actually supplied -- but
+  // a sensitivity sweep found even an UNDEFENSIBLE setting (yCE nearly
+  // zeroed) only gets TWA160 to 16.1, still over the ceiling, while every
+  // trim moment at release is already within a few N*m of zero. This check
+  // measures ONE fixed recipe; docs/adr/0030 separately found that a
+  // different trim does hold TWA160 rudder-free. Nulling the static moments
+  // does not stop the round-up,
   // so near the dead run this is a directional STABILITY problem (no
   // restoring yaw moment from the hull, a destabilising Munk moment), not a
   // trim-authority one. It is the same deficit S1b/S1c carry.
@@ -2463,7 +2466,7 @@ export function runAsserts(config, { slow = true } = {}) {
     for (const [twaDeg, sheetDeg] of [[140, 50], [160, 70]]) {
       const windDirFrom = HEADING0 + twaDeg * DEG;
       const trim = { brailLee: 0, brailWind: 1.0, crewPos: 0, crewPosX: -1.0,
-        tackX: 1.0, stays: 1.0, boomLift: 1.0, shuntRequest: false };
+        tackX: 1.0, stays: 1.0, shuntRequest: false };
       let state = freshState(sheetDeg * DEG);
       for (let i = 0; i < Math.round(45 / dt); i++) {
         state = integrate(state, { windDirFrom, windSpeed: tws, sheet: sheetDeg * DEG,
@@ -2478,16 +2481,16 @@ export function runAsserts(config, { slow = true } = {}) {
       }
       const twaEnd = Math.abs(normalizeAngle(windDirFrom - state.heading)) / DEG;
       const rate = (twaStart - twaEnd) / (releaseSeconds / 60);
-      // Symmetric: T1's boomLift can overshoot PAST a stable equilibrium into
+      // Symmetric: the recipe can overshoot PAST a stable equilibrium into
       // bearing away further (measured at TWA140), so a one-sided "rounds up"
       // bound would silently accept a large drift the other way, which is not
       // "holding the course" either.
       if (Math.abs(rate) < 15 && !state.capsized) nHeld++;
       rows.push(`TWA${twaDeg}: ${twaStart.toFixed(0)}->${twaEnd.toFixed(0)}deg ${rate.toFixed(1)}deg/min (v ${speedStart.toFixed(2)}->${Math.hypot(state.u, state.v).toFixed(2)})`);
     }
-    check("C-C: the manual's own recipe (carrot + crew off the ama + mast toward vertical + boom hauled up) holds a deep course rudder-free within 15deg/min",
+    check("C-C: the manual's own recipe (carrot + crew off the ama + mast toward vertical) holds a deep course rudder-free within 15deg/min",
       nHeld === 2,
-      `${nHeld}/2 points hold -- ${rows.join(' | ')} -- TWA140 holds (T1's boomLift overshoots into the opposite direction but stays inside the band); TWA160 does not, and not for want of authority: see this block's own comment for the sensitivity sweep. The manual claims this course IS holdable with these controls, so this is a disagreement with the source (docs/adr/0028), not an accepted limitation`,
+      `${nHeld}/2 points hold -- ${rows.join(' | ')} -- TWA160 does not hold at THIS fixed recipe, and not for want of authority: see this block's own comment. docs/adr/0030 found a different trim that does hold it rudder-free, so this line measures the manual's recipe, not the boat's limit`,
       'STEERING');
   }
 

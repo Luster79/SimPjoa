@@ -487,7 +487,7 @@ function buildDefaultConfig(boat = 'default') {
       // half — hydro.js's stationWeights, driven by hull.heelClrShiftCoeff/
       // heelClrSign — and re-ran the SAME matrix at all four sign
       // combinations of (heelClrSign, yawHeelSign), against the CURRENT
-      // acceptance grid (crewPos/crewPosX/tackX/stays/boomLift all live since
+      // acceptance grid (crewPos/crewPosX/tackX/stays all live since
       // this comment was first written):
       //
       //   (heelClrSign,yawHeelSign)   AC-1.1   AC-1.2   AC-4.2a         AC-4.2b
@@ -645,79 +645,6 @@ function buildDefaultConfig(boat = 'default') {
       // the yard is whatever puts the CE at CEheight when the yard is at its
       // full-hoist angle. That is what keeps the default state identical.
       yardCERadius: p.CE_height_m / Math.sin(YARD_PEAK_ANGLE_DEG * Math.PI / 180),
-      // --- Boom lift (T1, docs/work-order-2026-08-05-sterownosc.md) --------
-      // controls.boomLift's sheet-coupled ceiling (core/sheet.js's
-      // effectiveBoomLiftMax) and its two effects on the CE. Both bands and
-      // both gains are ESTIMATES: the manual states the mechanism and its
-      // direction, not a curve, and this is a brand-new control the model
-      // did not have before, with nothing yet measured against it the way
-      // ceBrailXShift or yceBrailShift were.
-      boomLiftMinSheetDeg: 30,             // sheet angle below which the boom cannot rise at all
-      boomLiftFullSheetDeg: 70,            // sheet angle at/above which boomLift can reach its full effect
-      // boomLiftCEHeightFrac: fraction of CEheight the CE rises by at full
-      // effective boom lift — hauling the boom up toward the yard shortens
-      // the leech's vertical droop. Order-of-magnitude, geometrically
-      // reasoned (a meaningful rise, not a doubling), same status as
-      // yceBrailShift when it was first introduced.
-      boomLiftCEHeightFrac: 0.15,
-      // boomLiftYceShrink: ADDITIONAL fraction the lateral CE offset (yCE)
-      // shrinks by at full effective boom lift, on top of whatever
-      // yceBrailShift already removed — a genuinely separate gathering
-      // mechanism (toward the yard from below, not toward the tack from the
-      // leech). ceRadiusEff's own base length (docs/adr/0024) comes from the
-      // FULL triangle's tack-to-centroid distance; hauling the boom's foot up
-      // toward the yard collapses that triangle toward something closer to a
-      // line along the yard alone, which argues for a real, fairly large
-      // fraction here, not a token one.
-      //   MEASURED SENSITIVITY (T1): at brailWind=1/stays=1 (the manual's full
-      // deep-course recipe), pushing this from 0.3 to 0.9 to 0.99 moves TWA160
-      // drift 26.4 -> 18.3 -> 16.1 deg/min and TWA175 33.4 -> 15.2 -> 0.8 --
-      // real, correctly-directed, but even at 0.99 (yCE nearly zeroed, not a
-      // defensible physical value) TWA160 still does not clear the 15deg/min
-      // ceiling. boomLiftCEHeightFrac's own contribution to this moment is
-      // negligible by comparison (swept 0.15-0.5, TWA160 moves only
-      // 26.4->25.7). This mechanism measurably helps and is not enough by
-      // itself; see docs/work-order-2026-08-05-sterownosc.md's T1 entry and
-      // C-C's own comment in harness/asserts.js. NOT tuned to the extreme
-      // that nearly passes -- 0.5 is the geometric argument above, not a
-      // number chosen to move the tally.
-      boomLiftYceShrink: 0.5,
-      // boomLiftCamberGain: the "belly" the manual names ("żagiel bardzo się
-      // wydął") is wired into the SAME camberCLDelta machinery brailCamberGain
-      // uses, not a new curve — but is left at 0 rather than given a number.
-      // brailCamberGain (0.10) plus the v2 table's own built-in camber (0.10)
-      // already sit exactly at validateConfig's 0.20 total-camber ceiling
-      // (the linear 1+1.75c fit's own validity limit), and the two gains are
-      // not mutually exclusive at runtime (brailWind and boomLift/sheet are
-      // independent controls), so there is no headroom for a third additive
-      // term without either lowering brailCamberGain (an already-measured
-      // value) or loosening the ceiling itself. The machinery is wired up and
-      // the config total-camber check already accounts for this field, so
-      // enabling it later needs only a value and a measurement pass, not a
-      // structural change. Same status as sail.verticalLiftFraction: mechanism
-      // present, deliberately inactive.
-      boomLiftCamberGain: 0,
-      // ceBrailXShift (docs/adr/0015): metres the CE moves FORWARD at full
-      // windward brail, as its own mechanism rather than as a modulation of
-      // the trim swing. See core/aero.js for why it has to be its own term.
-      //
-      // Expressed in the same scaled chord the rest of the CE machinery uses
-      // (chord = CEheight/2), NOT in the rig's real streamwise extent, so it
-      // stays consistent with ceSwingFraction and halfChord. chord/3 is the
-      // centroid shift from spilling the REAR HALF of the chord, which is what
-      // the manual describes at a full pull: "pull this brailing line ...
-      // unless it deform the sailcloth and continue to make rear part of the
-      // sail, breaking over to lee".
-      //
-      // Sensitivity checked rather than assumed: the brail acceptance criteria
-      // reach 6/6 anywhere from 0.3 to 0.8 and collapse below ~0.25, so any
-      // value in that band sits on a plateau rather than on a peak.
-      //   NOTE ON ITS REACH: this term enters the yaw moment as xCE*Fy, so its
-      // authority scales with the sail's SIDE force. That force collapses on
-      // deep courses (Fy is -24 N at TWA140 and -3 N at TWA160, against -185 N
-      // close-hauled), so raising this does essentially nothing downwind — the
-      // brail's deep-course authority is the LATERAL arm instead, yceBrailShift
-      // below. Do not reach for this knob to fix a downwind problem.
       ceBrailXShift: 0.5,
       // tackTravel: half-range, in metres, of the tack's fore-aft travel —
       // controls.tackX = +-1 maps to +-this. An estimate, and unlike
@@ -860,7 +787,7 @@ function buildDefaultConfig(boat = 'default') {
       // areaAtFullBrail above, since JS object literals cannot reference
       // sibling properties -- if areaAtFullBrail is ever retuned, re-derive
       // this alongside it).
-      //   MEASURED SENSITIVITY (T2), full deep-course recipe, boomLift=0 to
+      //   MEASURED SENSITIVITY (T2), full deep-course recipe, to
       // isolate this term alone: 0.0 -> 0.3 -> 0.553 -> 0.9 moves TWA140 drift
       // 21.6 -> 15.3 -> 8.5 -> -8.6 deg/min and TWA160 34.3 -> 32.7 -> 29.9 ->
       // 21.2. The derived value (8.5) is slightly WORSE for C-C's own tally
@@ -1133,17 +1060,15 @@ export function validateConfig(config) {
   inRange(config.sail.camber, 0, 0.20, 'sail.camber');
   // The TOTAL camber the CL curve is ever evaluated at — the table's own
   // built-in camber plus sail.camber plus the brail's TRIM-regime bagging
-  // gain plus boomLift's own gain (T1) — must stay inside the band the
+  // gain — must stay inside the band the
   // linear 1+1.75c fit is valid over. Bounding sail.camber alone leaves
   // brailCamberGain unchecked, which admits c = 0.55: a 55%-of-chord draft,
   // i.e. a half-circle, roughly 4x outside the fit's validity. brailWind and
-  // boomLift are independent controls, so their gains' maxima are summed as
-  // worst case rather than assumed mutually exclusive.
   {
     const builtin = config.sail.aeroTableVersion === 'v2' ? (config.sail.aeroV2BuiltinCamber ?? 0.10) : 0;
-    const totalCamber = config.sail.camber + (config.sail.brailCamberGain ?? 0) + (config.sail.boomLiftCamberGain ?? 0) + builtin;
+    const totalCamber = config.sail.camber + (config.sail.brailCamberGain ?? 0) + builtin;
     if (!(totalCamber <= 0.20)) {
-      errs.push(`sail.camber + sail.brailCamberGain + sail.boomLiftCamberGain + built-in table camber = ${totalCamber.toFixed(3)} exceeds the 0.20 physical ceiling`);
+      errs.push(`sail.camber + sail.brailCamberGain + built-in table camber = ${totalCamber.toFixed(3)} exceeds the 0.20 physical ceiling`);
     }
   }
   // ceSwingFraction is a fraction of the half-chord, so values outside (0,1]
