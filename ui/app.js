@@ -27,7 +27,7 @@ import { createSimulator } from '../core/simulator.js';
 import { createConfig, CONFIG_VERSION } from '../core/config.js';
 import { clrXPosition } from '../core/hydro.js';
 import { createDefaultControls } from '../core/state.js';
-import { deltaAlign, effectiveBoomLiftMax } from '../core/sheet.js';
+import { deltaAlign } from '../core/sheet.js';
 import { computePolar, computePolarSteps, SWEEP_FULL } from '../harness/polar.js';
 import { hashState } from '../harness/checksum.js';
 
@@ -76,9 +76,6 @@ const TRANSLATIONS = {
     'h.sail': 'Sail', 'lbl.sheet': 'Sheet (szot)', 'hint.yard': '←/→ arrow keys ease/sheet',
     'lbl.brailLee': 'Brail (lee)', 'hint.brailLee': 'Q sheets in, Z eases',
     'lbl.brailWind': 'Brail (wind)', 'hint.brailWind': 'W sheets in, X eases',
-    'lbl.boomLift': 'Boom lift (gejtawa)',
-    'hint.boomLift': 'Hauls the boom UP so the sail bellies \u2014 the "carrot" for deep courses. Needs the sheet eased to work at all.',
-    'boomLift.capped': (pct) => `sheet allows only ${pct}%`,
     // C-B (round 10c review, ROUND10d_helm_balance.md): the windward brail
     // has two real regimes (aero.js brailRegimeBlend) — this tooltip names
     // both so the split isn't only discoverable by reading the source.
@@ -156,9 +153,6 @@ const TRANSLATIONS = {
     'h.sail': 'Żagiel', 'lbl.sheet': 'Szot', 'hint.yard': 'Strzałki ←/→: luzuj / wybieraj',
     'lbl.brailLee': 'Gejtawa zawietrzna', 'hint.brailLee': 'Q wybiera, Z luzuje',
     'lbl.brailWind': 'Gejtawa nawietrzna', 'hint.brailWind': 'W wybiera, X luzuje',
-    'lbl.boomLift': 'Gejtawa bomu',
-    'hint.boomLift': 'Podci\u0105ga bom DO G\u00d3RY, \u017ceby \u017cagiel si\u0119 wyd\u0105\u0142 \u2014 \u201emarchewka\u201d na kursy pe\u0142ne. Dzia\u0142a dopiero przy wyluzowanym szocie.',
-    'boomLift.capped': (pct) => `szot pozwala tylko na ${pct}%`,
     'tooltip.brailWindZones': (pct) => `0-${pct}%: trym (marchewka) — żagiel dalej ciągnie · ${pct}-100%: zrzut mocy — panika/refowanie`,
     'h.steering': 'Sterowanie i wyważenie', 'lbl.rudder': 'Ster', 'hint.rudder': 'A/D wychyla ster, centruje się po puszczeniu',
     'lbl.tackX': 'Hals (przód/tył)', 'hint.tackX': 'Do przodu — odpadanie, do tyłu — ostrzenie. Tak steruje proa; wiosło to ostateczność.',
@@ -276,7 +270,6 @@ const sliders = {
   sheet: document.getElementById('sheet'),
   brailLee: document.getElementById('brailLee'),
   brailWind: document.getElementById('brailWind'),
-  boomLift: document.getElementById('boomLift'),
   tackX: document.getElementById('tackX'),
   halyard: document.getElementById('halyard'),
   shroud: document.getElementById('shroud'),
@@ -289,7 +282,6 @@ const outs = {
   sheet: document.getElementById('sheetOut'),
   brailLee: document.getElementById('brailLeeOut'),
   brailWind: document.getElementById('brailWindOut'),
-  boomLift: document.getElementById('boomLiftOut'),
   tackX: document.getElementById('tackXOut'),
   halyard: document.getElementById('halyardOut'),
   shroud: document.getElementById('shroudOut'),
@@ -453,16 +445,6 @@ function refreshOutputs() {
   outs.sheet.textContent = `${Math.round(controls.sheet / DEG)}°`;
   outs.brailLee.textContent = `${Math.round(controls.brailLee * 100)}%`;
   outs.brailWind.textContent = `${Math.round(controls.brailWind * 100)}%`;
-  // The gejtawa's ask is capped by how far the sheet is eased (core/sheet.js
-  // effectiveBoomLiftMax, straight from the manual: "musimy odpowiednio
-  // luzowac szot, zeby bom mogl sie uniesc"). Show the ceiling whenever it
-  // binds -- otherwise hauling this slider with the sheet in looks broken.
-  {
-    const askPct = Math.round(controls.boomLift * 100);
-    const capPct = Math.round(effectiveBoomLiftMax(controls, dims) * 100);
-    outs.boomLift.textContent = askPct > capPct
-      ? `${askPct}% (${t('boomLift.capped', capPct)})` : `${askPct}%`;
-  }
   outs.tackX.textContent = controls.tackX.toFixed(2);
   outs.halyard.textContent = controls.halyard.toFixed(2);
   outs.shroud.textContent = controls.shroud.toFixed(2);
@@ -477,7 +459,6 @@ sliders.windSpeed.addEventListener('input', () => { controls.windSpeed = Number(
 sliders.sheet.addEventListener('input', () => { controls.sheet = Number(sliders.sheet.value) * DEG; refreshOutputs(); });
 sliders.brailLee.addEventListener('input', () => { controls.brailLee = Number(sliders.brailLee.value) / 100; refreshOutputs(); });
 sliders.brailWind.addEventListener('input', () => { controls.brailWind = Number(sliders.brailWind.value) / 100; refreshOutputs(); });
-sliders.boomLift.addEventListener('input', () => { controls.boomLift = Number(sliders.boomLift.value) / 100; refreshOutputs(); });
 sliders.tackX.addEventListener('input', () => { controls.tackX = Number(sliders.tackX.value); refreshOutputs(); });
 sliders.halyard.addEventListener('input', () => { controls.halyard = Number(sliders.halyard.value); refreshOutputs(); });
 sliders.shroud.addEventListener('input', () => { controls.shroud = Number(sliders.shroud.value); refreshOutputs(); });
