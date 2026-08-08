@@ -163,9 +163,46 @@ ale rundy 10c, 10d i 11 przez nią nie przeszły. **Odbiór:** w korzeniu zostaj
 `README.md`, `CLAUDE.md`, `ARCHITECTURE_physics_core_EN.md`, `PROMPT_*`.
 *Nakład: mały.*
 
-### R13. Monolity
+### R13. Monolity — CZĘŚCIOWO WYKONANE (2026-08-08)
 `ui/app.js` 2734 linie, `harness/asserts.js` 1498. Podział przed dalszą rozbudową.
 *Nakład: duży. Bez pilności.*
+
+**`harness/asserts.js` (2567 linii do dziś) — WYKONANE.** Podzielony na
+orkiestrator (48 linii, `harness/asserts.js`) + `harness/asserts-helpers.js`
++ 7 modułów `harness/asserts-{aero-steering,polar-helm,scenarios-units,
+sail-trim,capsize,hull-ama,deep-course}.js`, cięty na istniejących granicach
+sekcji **w kolejności pliku, bez przetasowania tematycznego** (sekcje nie są
+ułożone tematycznie — kolejność odzwierciedla historię edycji, nie temat;
+przegrupowanie oznaczałoby przesuwanie kodu przez granice cięcia, znacznie
+większe ryzyko dla problemu, który nie wymaga takiego rozwiązania). Każdy
+plik to dosłowny, nieedytowany fragment ciała. Zweryfikowane dokładnym
+diffem, nie ponownym czytaniem kodu: pełne `run_tests.js` (z polarą) przed
+i po cięciu, **bajt w bajt identyczne** (118/118 linii, wliczając wszystkie
+xfaile i ich zmierzone liczby). `out/*.csv` nietknięte. ESLint/tsc (R10)
+czyste poza jedną, przeniesioną z oryginału, nieużywaną zmienną lokalną
+(`momentDropLee`), świadomie nieruszoną. Dwie pułapki złapane przed
+napisaniem czegokolwiek, nie po: (a) ścieżki plików liczone z
+`import.meta.url` wymagały płaskiej struktury w `harness/`, nie
+podkatalogu — inaczej `'..'` wskazywałoby o jeden poziom za płytko; (b)
+`slow` bramkuje tylko 3 z 7 modułów — potwierdzone grepem na dosłowny
+warunek, nie samo wystąpienie słowa (goła fraza łapała też „slow-mannered"
+w niepowiązanym komentarzu).
+
+**`ui/app.js` — ŚWIADOMIE ODŁOŻONE.** Inny profil ryzyka, nie ten sam
+problem w większej skali: plik ma ~30 współdzielonych zmiennych modułowych
+(`paused`, `sim`, `dims`, `controls`, `scale`, ślad wodny, stan nagrywania…)
+mutowanych z wielu miejsc w całym pliku (np. `paused = !paused;`). ESM nie
+pozwala zaimportować `let` i mutować go z zewnątrz — uczciwy podział
+wymaga opakowania stanu w jeden mutowalny obiekt i zamiany **każdego**
+odczytu/zapisu tych ~30 zmiennych w całym pliku, nie samego przecięcia
+plików. Do tego zero testów automatycznych (jedyna weryfikacja to ręczne
+przejście w przeglądarce, AC-6.2's "by inspection") — błąd tu nie zostanie
+złapany przez `run_tests.js`. Właściciel zdecydował: osobna sesja, z czasem
+na pełny ręczny test (serwer dev, złota ścieżka), nie doklejać do reszty
+R13. Plan przy podjęciu: `ui/app-state.js` z jednym mutowalnym obiektem
+stanu, potem podział tematyczny (rysowanie canvas, HUD, ślad wodny,
+nagrywanie, widok polary, panel łódki, obsługa wejścia) na wzór już
+istniejących sekcji `// ---------------------------------------------------------------------`.
 
 ### R10. Brak lintera, formatera i type-checkingu
 `@types/node` jest w zależnościach, nic go nie używa. *Nakład: średni.*

@@ -84,7 +84,7 @@ Append-only. Never edit an old ADR; supersede it with a new one.
 
 | File | Status |
 |---|---|
-| `work-order-2026-07-22.md` | Nearly complete. Open: **R13** (monoliths), **R10** (lint/types). |
+| `work-order-2026-07-22.md` | Nearly complete. **R10 done** (eslint/tsc/prettier tooling added, R10 commit). **R13 partial**: `harness/asserts.js` split into 8 files, verified byte-identical `run_tests.js` output before/after. `ui/app.js` deliberately deferred -- a state-management rewrite (~30 shared mutable module vars, no automated UI tests), not a mechanical file cut, owner's call to do it as its own dedicated session. |
 | `work-order-2026-07-30-physics-audit.md` | **Complete** — F1-F16 all executed. |
 | `work-order-2026-08-05-sterownosc.md` | **Complete, with T1 withdrawn.** T1's `boomLift` was a line the rig does not carry (ADR 0031); T2-T6 stand. Its Part IV TWA160+ "structural limit" is withdrawn by ADR 0030. |
 | `work-order-2026-08-05-boat-data.md` | **Complete.** Ama length/buoyancy revised x1.40 (ADR 0029). Its TWA155-165 "structural gap" is **withdrawn by ADR 0030** -- the search had the sheet pinned. `hull.massSway` left untouched by owner decision (collides with ADR 0018). |
