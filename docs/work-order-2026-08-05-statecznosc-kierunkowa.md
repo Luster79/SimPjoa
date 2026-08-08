@@ -76,14 +76,31 @@ zależeć od lokalnego dryfu paska, nie tylko od trymu załogi i przechyłu.
 Uwaga: paski **już** liczą własny dryf (`v + r*x`) — brakuje sprzężenia
 zwrotnego rozkładu POLA od tego dryfu.
 
-**Źródło — to jest wąskie gardło.** Projekt ma z Flaya siłę boczną (ADR 0004),
-ale **nie ma jego momentu odchylającego** — work order 08-02 zapisał, że S7/S8
-są tym zablokowane. Do wyboru:
-- (a) odszukać w źródle Flaya `N(β)` i zdigitalizować wg kontraktu z ADR 0009;
+**Źródło — sprawdzone wprost, zamknięte.** Projekt ma z Flaya siłę boczną
+(ADR 0004); brak jego momentu odchylającego był od ADR 0017 zapisywany jako
+„nigdy niezdigitalizowane" — sformułowanie sugerujące, że dane gdzieś czekają.
+Właściciel dostarczył pełny artykuł (`data/sname-jst-2025-15.pdf`, Flay,
+Irwin & Viola 2025, JST 10(1), 329-351) i po przeczytaniu go w całości
+(wszystkie 23 strony, do bibliografii) wynik jest inny: **danych o momencie
+tam nie ma, bo dynamometr Giforda (Rys. 4, str. 335) ma tylko dwa kanały —
+X (opór) i Y (siła boczna).** Płyta holownicza jest sztywno przykręcona w
+jednym ustalonym punkcie; układ dwuskładnikowy fizycznie nie mierzy momentu
+ani położenia środka naporu. Cała reszta artykułu to `CD/CL/CR/CS` w funkcji
+prędkości i kąta dryfu — żadnej tabeli ani rysunku z N(β) czy CLR. To nie
+luka w digitalizacji, tylko w samym pomiarze źródłowym.
+
+Zostają więc:
+- ~~(a) odszukać w źródle Flaya `N(β)`~~ — **zamknięte, źródło nie ma tych
+  danych** (sprawdzone bezpośrednio, nie założone).
 - (b) oprzeć się na regresji manewrowej dla smukłych kadłubów (Clarke,
-  Inoue) — z jawnym oznaczeniem, że to regresja, nie pomiar tej łódki;
-- (c) wyprowadzić geometrycznie z teorii ciała smukłego — najsłabsze, ale
-  obronione, i spójne z tym, jak wyprowadzono `yceBrailShift` (T2).
+  Inoue) — **zdyskwalifikowana przez kontrakt danych projektu** (ADR 0009):
+  ADR 0018 cytuje te współczynniki "z pamięci, nie z pliku w `data/`" i
+  używa ich wyłącznie jako sprawdzenia rzędu wielkości, wprost zastrzegając,
+  że żadna asercja nie jest na nich zakotwiczona. Użycie ich tu wprost jako
+  fizyki powtórzyłoby to, przed czym ADR 0018 ostrzega.
+- (c) wyprowadzić geometrycznie z teorii ciała smukłego — **jedyna droga
+  zgodna z kontraktem**, najsłabsza, ale obroniona, i spójna z tym, jak
+  wyprowadzono `yceBrailShift` (T2).
 
 **Weryfikacja.** `dM_kad/dTWA > 0` na całym zakresie TWA70–175 przy trymie
 neutralnym, z wartością wyprowadzoną ze źródła, nie dobraną pod próg.

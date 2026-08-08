@@ -180,10 +180,17 @@ the helm balance.
   PRIMARY calibration source for the sail (round 10).
 - **Flay R.G.J., Irwin G., Viola I.M. (2025)**, "Hydrodynamics of Three
   Slender Models Resembling Pacific Canoe Hulls", Journal of Sailing
-  Technology 10(1). Fig 18 (CS vs leeway) and Fig 15 (resistance)
+  Technology 10(1), pp. 329-351. Full text at `sname-jst-2025-15.pdf`
+  (this directory). Fig 18 (CS vs leeway) and Fig 15 (resistance)
   digitized for `flay_2025_hull_sideforce_digitized.csv`; uncertainty
   +-0.01. Now the PRIMARY calibration source for hull side force (round
-  10, R10-3).
+  10, R10-3). **Read in full** (docs/work-order-2026-08-05-statecznosc-
+  kierunkowa.md's D1): the paper carries no yaw-moment or lateral-centroid
+  data at any leeway angle — the Gifford dynamometer used (Fig 4) is a
+  two-channel rig, X (drag) and Y (side force) only, with the towing plate
+  rigidly fixed at one point (Fig 5), so no moment channel exists to
+  digitize. This closes, rather than merely continues, the search for that
+  measurement in this source.
 - Irwin G., Flay R.G.J., Dudley L., Johns D. (2023), Archaeology in
   Oceania 58: 74-90, DOI: 10.1002/arco.5277 — Cdf/Csf/Crm figures are for
   East-Polynesian SPRITSAILS, not numerically extractable from the
