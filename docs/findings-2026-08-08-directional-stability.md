@@ -83,8 +83,8 @@ Part I.3 quotes — that figure is two orders of magnitude below where the bound
 would even be tested. No code change; the term is doing what T4 intended and
 is not overstated.
 
-*(The repo already had an ad hoc probe at `scratch/evaluate_d3.js`, at
-`r=0.3` — right at the point this sweep shows the bound starts to be
+*(An earlier ad hoc probe in this same investigation, not committed, checked
+only `r=0.3` — right at the point this sweep shows the bound starts to be
 exceeded. That is not a bug in the term; `r=0.3 rad/s` sustained is not a
 steady-sailing state, so that single point does not generalise the way the
 sweep above does.)*
