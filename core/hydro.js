@@ -144,7 +144,12 @@ function stationWeights(crewPosX, phi, config) {
   const out = [];
   for (let i = 0; i < HULL_STATIONS; i++) {
     const x = -L / 2 + (i + 0.5) * (L / HULL_STATIONS);
-    out.push({ x, dA: dA * (1 + k * x) });
+    // dAFlat (untapered per-strip share) rides along so hullSideForce's own
+    // migrating-CLR term (D1, docs/work-order-2026-08-05-statecznosc-
+    // kierunkowa.md) can build its OWN weighting from the same area budget
+    // without re-deriving it — see that function's own comment for why it
+    // needs a second distribution, not this one reused.
+    out.push({ x, dA: dA * (1 + k * x), dAFlat: dA });
   }
   return out;
 }
@@ -178,7 +183,13 @@ function stationWeights(crewPosX, phi, config) {
 export function hullSideForce(u, v, r, crewPosX, phi, config) {
   const { hull, rho_w } = config;
   const DEG = Math.PI / 180;
+  const L = hull.length;
   const stations = stationWeights(crewPosX, phi, config);
+  // uDirection: smoothed sign of u, shared below by the migrating-CLR ramp
+  // and by FxStrip's own direction term further down — one definition, one
+  // u=0 regularisation (RK4 crosses u=0 on every shunt; see FxStrip's own
+  // comment for why a bare sign() is not used).
+  const uDirection = u / Math.sqrt(u * u + U_SMOOTH * U_SMOOTH);
   let Fy = 0;
   let Fx = 0;
   let yawMoment = 0;
@@ -191,9 +202,69 @@ export function hullSideForce(u, v, r, crewPosX, phi, config) {
     const leewayAbs = leewayFoldedRad;
     const leewayAbsDeg = leewayAbs / DEG;
 
+    // --- Migrating centre of lateral resistance (D1, docs/work-order-2026-
+    // 08-05-statecznosc-kierunkowa.md) --------------------------------------
+    // The station taper above (stationWeights) is fixed once crewPosX/phi are
+    // set -- at r=0 every station sees the SAME leeway, the strip sum
+    // factors, and the hull's whole yaw moment collapses to clrX*Fy with a
+    // FIXED clrX. Measured directly: dM_hull/dTWA is 0.00-0.20 N*m/deg across
+    // TWA70-160, i.e. no real directional stiffness. A real slender body's
+    // lateral centre of pressure is not fixed either: Flay's CS(leeway) is
+    // superlinear with no saturation (ADR 0004), which the paper's own
+    // methodology (a two-channel force balance, X/Y only -- no yaw-moment
+    // channel exists in the source, confirmed by reading it in full, see
+    // data/README_input_data_EN.md's Flay citation) attributes to a
+    // strengthening VORTEX-LIFT mechanism, not a stalling foil. A vortex that
+    // strengthens with angle also strengthens as it convects along the hull,
+    // which is a migration mechanism: it is weak where it forms (the LEADING
+    // end, in the direction of travel) and strongest where it has had the
+    // whole hull length to develop (the TRAILING end).
+    //
+    // Split CS at each station into a small-angle reference slope (csV2A*lambda,
+    // the same linear term ADR 0004's own digitized fit already carries) and
+    // the remainder -- the part responsible for the superlinear growth, i.e.
+    // the vortex contribution:
+    //   CS_lin  = min(CS, csV2A*lambda)   -- carried by the EXISTING taper
+    //             (stationWeights), unchanged: this is what the model already
+    //             does at small angles, where it is not the diagnosed problem.
+    //   CS_vtx  = CS - CS_lin             -- carried by a SEPARATE, aft-
+    //             ramped distribution (below), zero at leeway=0 by
+    //             construction (CS_lin=CS there) and growing to dominate CS
+    //             as leeway grows, per ADR 0004's own "strengthens, does not
+    //             saturate" characterisation.
+    // As leeway grows, more of the force routes through the aft-ramped term,
+    // so the BLENDED centroid migrates aft -- toward, then past, the
+    // existing fixed clrX -- exactly the missing mechanism the measurement
+    // above named.
+    //
+    // The ramp's own shape is an explicit ASSUMPTION, not a fit: absent any
+    // measured growth-rate for the vortex along the hull (Flay's source has
+    // none, see above), a LINEAR ramp from 0 at the leading end to 2x the
+    // flat share at the trailing end is the simplest non-degenerate choice
+    // that (a) is parameter-free -- no new tunable magnitude, only the
+    // existing measured CS curve reused -- and (b) preserves the total area
+    // budget (mean weight 1, same discipline as stationWeights' own taper).
+    // Its centroid works out to L/6 aft of the geometric midpoint (the
+    // standard first moment of a linear ramp), materially further aft than
+    // the existing clrX (L*0.05/2 = L/40) -- so the migration this adds is
+    // not a rounding-error-sized correction.
+    // "Leading"/"trailing" reads off uDirection, not a fixed hull end: this
+    // is a flow-development effect, so it has to reverse with the direction
+    // of travel (sternway, or the first instant after a shunt before u has
+    // caught up) the same way FxStrip's own direction term already does --
+    // not the boat-frame end-flip trap (ARCHITECTURE.md's own "no end
+    // factor" note), a different thing: st.x already reads correctly across
+    // a shunt because +x is defined as the active bow, but flow direction
+    // within a single frame still needs u's own sign.
     const CS = hullSideForceCoeff(leewayAbsDeg, hull);
+    const csLin = Math.min(CS, hull.csV2A * leewayAbsDeg);
+    const csVtx = CS - csLin;
+    const rampWeight = 1 - uDirection * (2 * st.x / L);
+    const dARamp = st.dAFlat * rampWeight;
+
     const V2 = u * u + vLocal * vLocal;
-    const FyQuadratic = -Math.sign(vLocal) * CS * 0.5 * rho_w * st.dA * V2;
+    const FyQuadratic = -Math.sign(vLocal) * 0.5 * rho_w * V2
+      * (csLin * st.dA + csVtx * dARamp);
     // The lift-like term above is quadratic in speed and vanishes as V -> 0,
     // but real hull/ama drag has a linear (viscous-regime) component that
     // dominates at very low speed instead of disappearing — without it, a
@@ -266,8 +337,8 @@ export function hullSideForce(u, v, r, crewPosX, phi, config) {
     // unlike the u*|u| terms elsewhere in this file it does NOT vanish
     // there, because |FyFoil| keeps its nonzero low-speed linear part. RK4
     // loses its order across such a step, and the boat crosses u=0 on every
-    // shunt.
-    const uDirection = u / Math.sqrt(u * u + U_SMOOTH * U_SMOOTH);
+    // shunt. (uDirection itself is computed once, above the loop — shared
+    // with the migrating-CLR ramp.)
     const FxStrip = -uDirection * Math.abs(FyFoil) * Math.sin(leewayAbs) * (1 - relief);
 
     Fy += FyStrip;

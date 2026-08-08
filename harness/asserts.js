@@ -220,11 +220,30 @@ export function runAsserts(config, { slow = true } = {}) {
     // is the same reason a drifting boat lies beam to the wind rather than
     // wandering off downwind. The check's own stated intent is unchanged: it
     // drifts, it is not stuck, and it does not sail off.
-    check('H3: parked hull, beam TWS6, sail furled -> lies beam-ish (TWA in [60,130]) and drifts at a mean 0.2-0.8 m/s over 60-180s',
-      speed >= 0.2 && speed <= 0.8 && minTwa >= 60 && maxTwa <= 130,
+    //
+    // Re-anchored again 2026-08-08 for D1 (docs/work-order-2026-08-05-
+    // statecznosc-kierunkowa.md), the migrating centre of lateral resistance.
+    // A QUALITATIVE change this time, not just a number: before D1 this state
+    // is a sustained limit-cycle yaw oscillation (period ~90s, matching this
+    // check's own old description) that never damps out inside the 180s
+    // window -- u and TWA keep cycling right through t=180s. D1 adds real
+    // restoring stiffness, and the same oscillation now DAMPS OUT, converging
+    // to a steady beam-on drift by ~t=140s (verified directly: r settles to
+    // ~0, u/v stop changing). The window [60,180]s used to sample close to a
+    // full cycle of the old oscillation (mean 0.535 m/s); now it samples the
+    // tail of a decaying transient plus a longer steady-state segment at a
+    // higher settled speed (mean 0.801 m/s). Band widened to [0.2,0.9] to
+    // hold the new mean with the same kind of margin the old band held its
+    // own value by -- not narrowed to the new number, since a genuinely
+    // decaying-to-steady state is less repeatable near its own transient tail
+    // than a sustained cycle was. The TWA window (it lies beam-ish, does not
+    // sail off) is UNCHANGED and still the check's real intent; matches the
+    // check's own account of what changed.
+    check('H3: parked hull, beam TWS6, sail furled -> lies beam-ish (TWA in [60,130]) and drifts at a mean 0.2-0.9 m/s over 60-180s',
+      speed >= 0.2 && speed <= 0.9 && minTwa >= 60 && maxTwa <= 130,
       `mean speed=${speed.toFixed(4)} m/s over the window, TWA range [${minTwa.toFixed(0)},${maxTwa.toFixed(0)}] -- ` +
-      '0.43 m/s is ~0.8kn of bare-pole drift in a 12kn breeze, lying between beam-on and slightly off. ' +
-      'The band is deliberately an order-of-magnitude one: the check exists to say the hull drifts, is not pinned, and does not sail off, and the TWA window is what asserts the last of those. Earlier readings under earlier models: 0.06 (stiff estimated damping, effectively pinned), 0.57 (weak estimated damping, weathervaned 54deg and slid)');
+      '0.80 m/s is ~1.6kn of bare-pole drift in a 12kn breeze, lying between beam-on and slightly off. ' +
+      'The band is deliberately an order-of-magnitude one: the check exists to say the hull drifts, is not pinned, and does not sail off, and the TWA window is what asserts the last of those. Earlier readings under earlier models: 0.06 (stiff estimated damping, effectively pinned), 0.57 (weak estimated damping, weathervaned 54deg and slid), 0.535 (pre-D1 strip-derived yaw damping, sustained 90s oscillation)');
   }
 
   // --- 2b. Sheeting tolerance (S5, work-order-2026-08-02) ---

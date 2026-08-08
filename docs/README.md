@@ -78,6 +78,7 @@ Append-only. Never edit an old ADR; supersede it with a new one.
 | 0029 | Ama geometry revised (length/buoyancy x1.40); closes TWA150 and TWA170-180 rudder-free -- its TWA155-165 "structural limit" is **withdrawn by 0030** |
 | 0030 | The TWA155-165 gap was a search artifact (the sheet was pinned) -- corrects 0029; the speed cost of rudder-free holding is quantified. Its coverage claim was measured WITH boomLift -- see 0031 |
 | 0031 | The boom lift is the sheet and the brail, not a third line -- withdraws T1's `controls.boomLift`; the sheet is bent to the boom and the gejtawa is `brailWind` |
+| 0032 | The hull's centre of lateral resistance migrates with drift angle (D1) -- roughly doubles yaw stiffness TWA94-158, costs TWA162-174 (a real trade, understood not fixed); TWA165-180's rudder-free capability survives on new trims, not the ADR 0030 ones; capsize margins re-validated, H3 re-anchored (qualitative: oscillation -> damped convergence) |
 
 ## Work orders — what to do
 
@@ -87,7 +88,7 @@ Append-only. Never edit an old ADR; supersede it with a new one.
 | `work-order-2026-07-30-physics-audit.md` | **Complete** — F1-F16 all executed. |
 | `work-order-2026-08-05-sterownosc.md` | **Complete, with T1 withdrawn.** T1's `boomLift` was a line the rig does not carry (ADR 0031); T2-T6 stand. Its Part IV TWA160+ "structural limit" is withdrawn by ADR 0030. |
 | `work-order-2026-08-05-boat-data.md` | **Complete.** Ama length/buoyancy revised x1.40 (ADR 0029). Its TWA155-165 "structural gap" is **withdrawn by ADR 0030** -- the search had the sheet pinned. `hull.massSway` left untouched by owner decision (collides with ADR 0018). |
-| `work-order-2026-08-05-statecznosc-kierunkowa.md` | **D2-D4 done, D1 open.** D4: fore-aft symmetry confirmed zero to float precision once the three named CLR shifts are zeroed -- no hidden rocker term. D3: the ama's own lateral-plane term is bounded by drag*spacing at realistic yaw rates, only exceeds it past ~0.28 rad/s (a turn, not steady sailing). D2: Munk magnitude re-affirmed defended, ADR 0018 unchanged. D1 (CoP migration with drift angle) remains blocked on Flay's yaw-moment data, the same block S7/S8 carry -- separate round per the order's own Part III/IV. |
+| `work-order-2026-08-05-statecznosc-kierunkowa.md` | **Complete, D1-D4 all done.** D4: fore-aft symmetry confirmed zero to float precision. D3: the ama's own lateral-plane term is bounded and not overstated. D2: Munk magnitude re-affirmed defended, ADR 0018 unchanged. D1 (ADR 0032): geometric CLR migration, roughly doubles hull yaw stiffness TWA94-158, costs TWA162-174 -- a real, measured trade, not a bug; capsize margins re-validated (all three scenarios), H3 re-anchored. |
 | `work-order-2026-08-02-steering-and-sources.md` | Open: **S7** (R15 done; the rest outstanding), **S8** (vertical balance). S3 was implemented and withdrawn (ADR 0013); everything else is done. Sailing without the oar reached 3/6 (ADR 0017); the Munk double-count hypothesis was audited and rejected (ADR 0018), so it is blocked on Flay's yaw-moment data, not on a parameter. |
 
 Work that came from the primary source rather than a work order is tracked in

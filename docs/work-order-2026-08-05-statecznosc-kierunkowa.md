@@ -63,7 +63,7 @@ Zero to podejrzana wartość. Słaba stateczność to nie to samo co żadna.
 
 ## Część II. Pozycje
 
-### D1. Wędrówka środka naporu bocznego z kątem dryfu — **blokująca**
+### D1. Wędrówka środka naporu bocznego z kątem dryfu — WYKONANE, kompromis — **blokująca**
 
 **Teza.** Na kadłubie o skończonej smukłości środek naporu bocznego przesuwa
 się z kątem dryfu: przy małym β napór jest skupiony z przodu (krawędź natarcia
@@ -112,6 +112,21 @@ ruszania `hull.lead` ani `clrXFraction`.
 **Ryzyko: wysokie.** To ustawia jednocześnie nawietrzność, więc ruszy
 **każdą** asercję sterowania i `out/polar.csv` (bramka bajtowa). Zaplanować
 jako osobną rundę z pełną re-walidacją, nie doklejać do innej pracy.
+
+**Wynik (`docs/adr/0032`).** Wyprowadzenie geometryczne (droga c) wdrożone:
+rozbicie `CS(λ)` na część liniową (niesie ją istniejący taper) i resztę,
+przypisaną narastającej wstecz rampie (0 na dziobie, 2× udział płaski na
+rufie — parametrowy tylko w kierunku, nie w sile). `dM_kad/dTWA` **rośnie
+mniej więcej dwukrotnie na TWA94-158**, ale **pogarsza się na TWA162-174**
+(zrozumiane, nie zgadnięte: dryf sam maleje ku fordewindowi, więc siła i
+ramię kurczą się razem zamiast się kompensować). Praktyczna weryfikacja
+zwolnieniem steru: stare trymy z ADR 0030 przestają trzymać TWA165-180, ale
+świeże przeszukiwanie (10800 kandydatów, dwuetapowe 60s/300s) znajduje nowe
+trzymające trymy na **każdym** sprawdzonym punkcie — zdolność nie zginęła,
+zmieniły się ustawienia. Marginesy wywrotki (T6, aback, through-gybe aback)
+zmierzone wprost przed/po: żaden próg nie przeskoczył punktu zaczepienia
+testu. `H3` przekotwiczone — zmiana jakościowa (trwała oscylacja → tłumione
+zbieganie do stanu ustalonego), nie tylko liczbowa. Pełne dowody w ADR 0032.
 
 ### D2. Audyt wielkości momentu Munka — WYKONANE, obronione — **nie zmieniać bez nowej decyzji**
 
