@@ -344,6 +344,11 @@ function readFileSync(p) {
 //   it, not because of a frame argument: the yard is not bolted to a fixed
 //   physical side, it swings to whichever side the wind demands (up to the
 //   end-aware chordAngle = end*delta — see aero.js).
+// - Heave: `z` (m) and `w` (m/s), the 5th DOF (S8, docs/work-order-2026-08-02-
+//   steering-and-sources.md). z is vertical displacement from the DESIGN
+//   waterline, positive = UP (riding higher, less draft than design); w =
+//   dz/dt. Like phi/p, this is a world-vertical, physical-frame quantity —
+//   unaffected by heading and left unchanged at a shunt swap.
 // - Moments: positive = counterclockwise rotation (top-down view).
 // - Sail angle of attack and leeway angle are always computed via atan2,
 //   never asin/acos.
@@ -361,6 +366,8 @@ function createInitialState(config) {
     r: 0,
     phi: 0,
     p: 0,
+    z: 0, // heave: vertical displacement from the design waterline [m], +up
+    w: 0, // heave rate [m/s], dz/dt
     delta: 0, // actual yard angle [rad], >=0 — see sheet-constraint comment above
     end: 1,
     amaLoad: 0,
@@ -755,6 +762,12 @@ function buildDefaultConfig(boat = 'default') {
       length: p.boat_length_m,           // 5.5 m
       beam: p.hull_beam_m,                // 0.45 m (see example_proa_parameters.csv)
       displacement: p.displacement_kg,    // 190 kg (see example_proa_parameters.csv)
+      // draft (docs/adr/0022): exposed so hydro.js can scale wetted surface
+      // and lateral area with the heave DOF's dynamic sinkage (S8, docs/
+      // work-order-2026-08-02-steering-and-sources.md) — DERIVED, not a
+      // second free parameter; identical to the local `draft` this file
+      // already computes HULL_LATERAL_AREA from, two lines up from here.
+      draft,
       // massSurge / massSway / yawInertia: see the F8 note above for each
       // term's derivation. All three are configurable, as the work order asks.
       massSurge: dryMass + 0.10 * p.displacement_kg,
@@ -1288,6 +1301,59 @@ function buildDefaultConfig(boat = 'default') {
         posXMin: -1.0,            // fore-aft crew position range
         posXMax: 1.0,
       };
+    })(),
+
+    // --- Heave, the 5th DOF (S8, docs/work-order-2026-08-02-steering-and-
+    // sources.md) -----------------------------------------------------------
+    // Fz (the sail's vertical force component from heel, aero.js) and the
+    // ama's own net buoyancy-minus-weight when pressed or lifted (stability.js
+    // amaVerticalForce) used to have no consumer — the vertical balance was
+    // computed and shown (forcesBreakdown) but never closed. `heave.stiffness`
+    // is the one RIGOROUS piece: a hull's resistance to sinking IS its
+    // waterplane area times rho*g, the standard hydrostatic result, not an
+    // estimate. `heave.mass`/`dampingCoeff` are a TUNED PAIR against a target
+    // response, the same discipline stability.rollDampingCoeff's own comment
+    // documents for roll — not derived from a rigorous 2D heave-added-mass
+    // calculation this project has no source for.
+    heave: (() => {
+      // waterlineBeam/waterplaneArea reuse ADR 0022's own V-section derivation
+      // (35deg half-angle, the Flay V2 hull form) rather than a second,
+      // independently-guessed hull-form number: waterlineBeam = 2*draft*
+      // tan(35deg) is the SAME formula that section's own math already
+      // states in its comment, just evaluated here instead of by hand.
+      // Cwp (waterplane coefficient) is NOT separately estimated -- reusing
+      // Cp=0.58 (ADR 0022's own prismatic coefficient, the middle of its
+      // 0.55-0.62 span) as a stand-in is an approximation ON TOP OF an
+      // approximation, flagged as such rather than inventing a second,
+      // unsourced "Cwp = Cp + 0.15"-style correction this project has no
+      // basis for.
+      const waterlineBeam = 2 * draft * Math.tan(35 * Math.PI / 180);
+      const Cwp = 0.58;
+      const waterplaneArea = Cwp * p.boat_length_m * waterlineBeam;
+      const stiffness = 1025 * 9.81 * waterplaneArea; // rho_w*g*Awp — N/m, rigorous
+      // addedMassFraction: heave added mass for a surface-piercing hull is
+      // NOT the surge case's small few-percent (pushing water aside
+      // lengthwise) — it is comparable in order of magnitude to the
+      // displaced mass itself (radiating waves up and down disturbs a lot
+      // more water than sliding forward does). 0.5 is a round, explicitly
+      // coarse mid-estimate: it sets the heave DOF's response SPEED, not
+      // its equilibrium (which the stiffness above alone fixes, independent
+      // of mass) — see the step-response measurement this constant is
+      // tuned against, docs/adr's own S8 record.
+      const addedMassFraction = 0.5;
+      // dryMass, not dryMass+CREW_MASS_KG: p.displacement_kg (which dryMass
+      // is built from) is ITSELF "rigged hull + one 90kg crew" per the CSV's
+      // own note (docs/adr/0021) -- the same dryMass massSurge/massSway/
+      // yawInertia already use alone, with no separate crew term added.
+      const mass = dryMass * (1 + addedMassFraction);
+      // dampingCoeff: tuned alongside `mass` for a target step response —
+      // critically-adjacent (zeta~0.6), settling within about two damped
+      // periods rather than ringing, the same "reasonably damped, not
+      // undamped or overdamped" target roll's own I_roll/rollDampingCoeff
+      // pair was chosen against. c = 2*zeta*sqrt(k*m).
+      const zeta = 0.6;
+      const dampingCoeff = 2 * zeta * Math.sqrt(stiffness * mass);
+      return { waterplaneArea, stiffness, mass, dampingCoeff };
     })(),
 
     stability: {
@@ -2228,11 +2294,29 @@ function ittc57Cf(u, length) {
   return 0.075 / ((logRe - 2) * (logRe - 2));
 }
 
-function hullResistance(u, config) {
+// heaveZ (S8, docs/work-order-2026-08-02-steering-and-sources.md): the 5th
+// DOF's vertical displacement from the design waterline [m], +up — trailing
+// and OPTIONAL (defaults to 0, the design draft) rather than inserted
+// alongside u: every isolated hull-physics probe in harness/asserts-hull-
+// ama.js calls this at the design draft on purpose (testing the baseline
+// hull, not the heave coupling), and a positional insert would have forced
+// updating all of them for no benefit. Only core/integrator.js's live path
+// passes the real state.z. Named heaveZ, not z: this function's own Gaussian
+// residuary hump below already uses a local `z` for something unrelated.
+function hullResistance(u, config, heaveZ = 0) {
   const { hull, rho_w, g } = config;
   const uAbs = Math.abs(u);
+  // draftRatio: wetted surface and lateral area both scale roughly with
+  // draft (the same linear-in-one-dimension assumption this project already
+  // uses for the ama's own wettedSurface, docs/adr/0029) — riding higher
+  // (heaveZ>0) shrinks the effective draft and, with it, both quantities.
+  // Floored well short of 0: an actual zero/negative draft is not a smaller
+  // hull, it is the hull leaving the water, which this linear approximation
+  // does not model and must not be extrapolated into.
+  const draftRatio = Math.max(0.1, (hull.draft - heaveZ) / hull.draft);
+  const wettedSurface = hull.wettedSurface * draftRatio;
   const Cf = ittc57Cf(u, hull.length);
-  const friction = 0.5 * rho_w * hull.wettedSurface * Cf * uAbs * uAbs;
+  const friction = 0.5 * rho_w * wettedSurface * Cf * uAbs * uAbs;
 
   // Residuary (wave-making) resistance (docs/adr/0001). A slender L/B=10:1
   // canoe hull makes little wave and has no hard "hull speed" wall the way a
@@ -2253,7 +2337,7 @@ function hullResistance(u, config) {
   const Cr = hull.residuaryPeakCr * (Fr > hull.residuaryFrPeak
     ? hull.residuaryTailPlateau + (1 - hull.residuaryTailPlateau) * gaussian
     : gaussian);
-  const residuary = 0.5 * rho_w * hull.wettedSurface * Cr * uAbs * uAbs;
+  const residuary = 0.5 * rho_w * wettedSurface * Cr * uAbs * uAbs;
 
   // sign(u)*uAbs^2 is exactly u*|u| — written directly, no sign() switch.
   return -(friction + residuary) * Math.sign(u);
@@ -2331,14 +2415,17 @@ function clrXPosition(crewPosX, config) {
 // the strips still sum to hull.lateralArea), centroid k*L^2/12, hence
 // k = 12*xc/L^2. Clamped to |k| <= 2/L, past which the taper would ask for
 // negative area at one end.
-function stationWeights(crewPosX, phi, config) {
+function stationWeights(crewPosX, phi, config, draftRatio) {
   const { hull } = config;
   const L = hull.length;
   const heelClrSign = hull.heelClrSign ?? 1;
   const heelShift = heelClrSign * (hull.heelClrShiftCoeff ?? 0) * Math.sin(phi) * (L / 2);
   const xc = clrXPosition(crewPosX, config) + heelShift;
   const k = Math.max(-2 / L, Math.min(2 / L, (12 * xc) / (L * L)));
-  const dA = (hull.lateralArea ?? 0) / HULL_STATIONS;
+  // draftRatio (S8, heaveZ's effective-draft scaling — see hullResistance's
+  // own comment for the derivation): the lateral plane shrinks/grows with it
+  // the same way wetted surface does, so every strip's own share does too.
+  const dA = ((hull.lateralArea ?? 0) * draftRatio) / HULL_STATIONS;
   const out = [];
   for (let i = 0; i < HULL_STATIONS; i++) {
     const x = -L / 2 + (i + 0.5) * (L / HULL_STATIONS);
@@ -2378,11 +2465,16 @@ function stationWeights(crewPosX, phi, config) {
 // going forward. A V-sectioned hull travelling backwards is not the same
 // foil. Folding is the better of the two available approximations, not a
 // claim that direction does not matter.
-function hullSideForce(u, v, r, crewPosX, phi, config) {
+// heaveZ (S8, trailing and optional — see hullResistance's own comment for
+// why: isolated probes want the design-draft baseline, only core/
+// integrator.js's live path passes the real state.z).
+function hullSideForce(u, v, r, crewPosX, phi, config, heaveZ = 0) {
   const { hull, rho_w } = config;
   const DEG = Math.PI / 180;
   const L = hull.length;
-  const stations = stationWeights(crewPosX, phi, config);
+  const draftRatio = Math.max(0.1, (hull.draft - heaveZ) / hull.draft);
+  const stations = stationWeights(crewPosX, phi, config, draftRatio);
+  const effectiveLateralArea = (hull.lateralArea ?? 0) * draftRatio;
   // uDirection: smoothed sign of u, shared below by the migrating-CLR ramp
   // and by FxStrip's own direction term further down — one definition, one
   // u=0 regularisation (RK4 crosses u=0 on every shunt; see FxStrip's own
@@ -2473,7 +2565,7 @@ function hullSideForce(u, v, r, crewPosX, phi, config) {
     // the quadratic term already dominates.
     //   Per strip it carries the station's own share of the lateral area, so
     // the strips still sum to exactly -lowSpeedSideDamping*v at r = 0.
-    const areaShare = (hull.lateralArea ?? 0) > 0 ? st.dA / hull.lateralArea : 0;
+    const areaShare = effectiveLateralArea > 0 ? st.dA / effectiveLateralArea : 0;
     const FyLinear = -hull.lowSpeedSideDamping * areaShare * vLocal;
     const FyFoil = FyQuadratic + FyLinear;
 
@@ -2812,6 +2904,31 @@ const DEG__b5 = Math.PI / 180;
 // restoring intact — a pure ramp from the threshold measurably weakens the
 // gust-recovery margin that the phi-aware brail/crew controllers rely on.
 const HOLD_FRAC = 0.5;
+
+// engagementFraction(absPhi, thresholdRad, capsizeRad) -> dimensionless, in
+// [-1, 1] (plus a little past -1 in the capped capsizing-arm reversal): how
+// much of the float's weight-or-buoyancy is currently engaged, from the
+// ease-in at absPhi=0 through the flat hold to the capsizing-arm reversal.
+// Factored out of rollRestoreMoment (S8, docs/work-order-2026-08-02-
+// steering-and-sources.md) so heaveVerticalForce below can read the SAME
+// engagement the roll moment already uses, rather than a second, drifting
+// copy of this shape — the two must agree for the same reason
+// rollRestoreMoment's own comment already gives for sharing cos(phi) with
+// crewRollMoment. Pure refactor: rollRestoreMoment's numeric output is
+// unchanged (verified by a direct before/after sweep, not just by reading
+// the algebra).
+function engagementFraction(absPhi, thresholdRad, capsizeRad) {
+  if (absPhi <= thresholdRad) {
+    const frac = absPhi / thresholdRad;
+    return frac * (2 - frac);
+  }
+  const holdRad = thresholdRad + HOLD_FRAC * (capsizeRad - thresholdRad);
+  if (absPhi <= holdRad) return 1;
+  const span = Math.max(capsizeRad - holdRad, 1e-6);
+  const frac2 = Math.min((absPhi - holdRad) / span, 2);
+  return 1 - frac2;
+}
+
 function rollRestoreMoment(phi, config) {
   const { ama, g, stability } = config;
   const capsizeRad = stability.phiCapsizeDeg * DEG__b5;
@@ -2827,27 +2944,33 @@ function rollRestoreMoment(phi, config) {
   if (phi >= 0) {
     const liftoffRad = stability.phiLiftoffDeg * DEG__b5;
     const Mmax = ama.mass * g * ama.spacing * leverProjection;
-    if (phi <= liftoffRad) {
-      const frac = phi / liftoffRad;
-      return -Mmax * frac * (2 - frac);
-    }
-    const holdRad = liftoffRad + HOLD_FRAC * (capsizeRad - liftoffRad);
-    if (phi <= holdRad) return -Mmax;
-    const span = Math.max(capsizeRad - holdRad, 1e-6);
-    const frac2 = Math.min((phi - holdRad) / span, 2);
-    return -Mmax * (1 - frac2);
+    return -Mmax * engagementFraction(phi, liftoffRad, capsizeRad);
   }
   const submergeRad = stability.phiSubmergeDeg * DEG__b5;
   const Mmax = ama.maxBuoyancy * g * ama.spacing * leverProjection;
-  if (-phi <= submergeRad) {
-    const frac = -phi / submergeRad;
-    return Mmax * frac * (2 - frac);
+  return Mmax * engagementFraction(-phi, submergeRad, capsizeRad);
+}
+
+// amaVerticalForce(phi, config) -> N, the ama's NET contribution to the
+// WHOLE SYSTEM's heave (vertical) balance — buoyancy MINUS its own weight,
+// not the gross buoyancy rollRestoreMoment's Mmax uses for its (separately
+// tuned, unrelated) moment magnitude. At phi=0 the ama floats on its own,
+// self-supporting: zero net force. Lifting clear (phi>0) leaves its own
+// weight unsupported by the time it is fully clear — the main hull now
+// carries that weight via the crossbeams, a force that GROWS negative with
+// phi. Pressing under (phi<0) adds buoyancy in EXCESS of its own weight —
+// a force that grows POSITIVE (lifts the whole system) as it submerges.
+// No leverProjection here: unlike a MOMENT, a net vertical FORCE does not
+// pick up a cos(phi) from the roll angle.
+function amaVerticalForce(phi, config) {
+  const { ama, g, stability } = config;
+  const capsizeRad = stability.phiCapsizeDeg * DEG__b5;
+  if (phi >= 0) {
+    const liftoffRad = stability.phiLiftoffDeg * DEG__b5;
+    return -ama.mass * g * engagementFraction(phi, liftoffRad, capsizeRad);
   }
-  const holdRad = submergeRad + HOLD_FRAC * (capsizeRad - submergeRad);
-  if (-phi <= holdRad) return Mmax;
-  const span = Math.max(capsizeRad - holdRad, 1e-6);
-  const frac2 = Math.min((-phi - holdRad) / span, 2);
-  return Mmax * (1 - frac2);
+  const submergeRad = stability.phiSubmergeDeg * DEG__b5;
+  return (ama.maxBuoyancy - ama.mass) * g * engagementFraction(-phi, submergeRad, capsizeRad);
 }
 
 // crewRollMoment(phi, crewPos, config) -> N*m. A genuine PENDULUM torque,
@@ -2873,6 +2996,23 @@ function crewRollMoment(phi, crewPos, config) {
 // rollDampingMoment(p, config) -> N*m, linear damping opposing roll rate.
 function rollDampingMoment(p, config) {
   return -config.stability.rollDampingCoeff * p;
+}
+
+// --- Heave, the 5th DOF (S8) -----------------------------------------------
+// heaveRestoreForce(z, config) -> N, the hull's own hydrostatic spring. A
+// linear restoring force around the design waterline — rho*g*waterplaneArea
+// per metre of sinkage, the standard small-perturbation hydrostatic result
+// (config.js's own heave.stiffness comment has the derivation). z>0 = riding
+// HIGHER than design (less draft), so the restoring force pulls back DOWN.
+function heaveRestoreForce(z, config) {
+  return -config.heave.stiffness * z;
+}
+
+// heaveDampingForce(w, config) -> N, linear damping opposing heave rate.
+// Tuned as a pair with heave.mass against a target step response — see
+// config.js's own heave.dampingCoeff comment; not a measured coefficient.
+function heaveDampingForce(w, config) {
+  return -config.heave.dampingCoeff * w;
 }
 
 // computeAmaLoad(phi, config) -> amaLoad, derived from the roll angle:
@@ -3123,8 +3263,8 @@ function computeForces(state, controls, config) {
   const amaLoad = computeAmaLoad(state.phi, config);
   const amaLoadDisplay = Math.min(amaLoad, config.stability.amaLoadDisplayCap);
 
-  const resist = hullResistance(state.u, config);
-  const side = hullSideForce(state.u, state.v, state.r, controls.crewPosX ?? 0, state.phi, config);
+  const resist = hullResistance(state.u, config, state.z);
+  const side = hullSideForce(state.u, state.v, state.r, controls.crewPosX ?? 0, state.phi, config, state.z);
   const drag = amaDrag(state.u, state.v, state.r, state.phi, controls.crewPos, state.end, config);
   const rudder = rudderForce(state, controls, config);
   const windage = windageForce(state, controls, config);
@@ -3143,11 +3283,23 @@ function computeForces(state, controls, config) {
   const Mdamp = rollDampingMoment(state.p, config);
   const Mroll = Msail + Mrestore + Mcrew + Mdamp;
 
+  // Heave (S8, the 5th DOF, docs/work-order-2026-08-02-steering-and-
+  // sources.md): the sail's own vertical force component (aero.Fz, computed
+  // since before S8 but never consumed) plus the ama's net buoyancy-minus-
+  // weight contribution (stability.js amaVerticalForce) — the two forces
+  // that were missing a place to go. The hull's own hydrostatic spring and
+  // damping are added in derivatives() below, the same split roll uses
+  // (Mrestore/Mdamp here, Fspring/Fdamp there) between "forces computed here
+  // from the rig/ama" and "the hull's own response, added at the point of
+  // integration".
+  const Famaz = amaVerticalForce(state.phi, config);
+  const Fz = aero.Fz + Famaz;
+
   const deltaMax = effectiveDeltaMax(state, controls, config);
   const luffing = isLuffing(state, controls, config);
 
   return {
-    Fx, Fy, M, Mroll, amaLoad, amaLoadDisplay,
+    Fx, Fy, M, Mroll, Fz, amaLoad, amaLoadDisplay,
     heelMoment: aero.heelMoment, alpha: aero.alpha, alphaSailor: aero.alphaSailor,
     aw: aero.aw, CL: aero.CL, CD: aero.CD, deltaMax, luffing,
     breakdown: {
@@ -3158,6 +3310,7 @@ function computeForces(state, controls, config) {
       rudder: { Fx: rudder.Fx, Fy: rudder.Fy, yawMoment: rudder.yawMoment },
       windage: { Fx: windage.Fx, Fy: windage.Fy },
       roll: { Msail, Mrestore, Mcrew, Mdamp, Mroll },
+      heave: { Fsail: aero.Fz, Fama: Famaz, Fz },
     },
   };
 }
@@ -3178,6 +3331,13 @@ function computeForces(state, controls, config) {
 function derivatives(state, forces, config) {
   const { massSurge, massSway, yawInertia } = config.hull;
   const Iroll = config.stability.I_roll;
+  // Heave (S8): forces.Fz (computeForces) carries the RIG/AMA contributions.
+  // The hull's own hydrostatic spring and damping are the hull's structural
+  // response to z/w themselves, not a force any control or module supplies —
+  // added here, beside the mass they divide by, same reasoning rollDampingMoment
+  // gets folded into Mroll rather than kept separate.
+  const Fspring = heaveRestoreForce(state.z, config);
+  const Fdamp = heaveDampingForce(state.w, config);
   return {
     du: forces.Fx / massSurge + (massSway / massSurge) * state.v * state.r,
     dv: forces.Fy / massSway - (massSurge / massSway) * state.u * state.r,
@@ -3187,11 +3347,13 @@ function derivatives(state, forces, config) {
     dheading: state.r,
     dphi: state.p,
     dp: forces.Mroll / Iroll,
+    dz: state.w,
+    dw: (forces.Fz + Fspring + Fdamp) / config.heave.mass,
   };
 }
 
 function odeState(state) {
-  return { x: state.x, y: state.y, heading: state.heading, u: state.u, v: state.v, r: state.r, phi: state.phi, p: state.p };
+  return { x: state.x, y: state.y, heading: state.heading, u: state.u, v: state.v, r: state.r, phi: state.phi, p: state.p, z: state.z, w: state.w };
 }
 
 function addScaled(base, deriv, h) {
@@ -3206,12 +3368,15 @@ function addScaled(base, deriv, h) {
 const DIVERGENCE_MAX_PHI = 2 * Math.PI;   // rad; a real capsize fires near 50deg
 const DIVERGENCE_MAX_SPEED = 100;         // m/s; the boat sails at a few m/s
 const DIVERGENCE_MAX_RATE = 50;           // rad/s, for both yaw r and roll p
+const DIVERGENCE_MAX_Z = 5;               // m; heave (S8) genuinely moves a few cm
+const DIVERGENCE_MAX_W = 50;              // m/s; heave rate, same "absurd" margin as DIVERGENCE_MAX_RATE
 function isPhysicallyPlausible(s) {
-  for (const k of ['x', 'y', 'heading', 'u', 'v', 'r', 'phi', 'p']) {
+  for (const k of ['x', 'y', 'heading', 'u', 'v', 'r', 'phi', 'p', 'z', 'w']) {
     if (!Number.isFinite(s[k])) return false;
   }
   if (Math.abs(s.phi) > DIVERGENCE_MAX_PHI) return false;
   if (Math.hypot(s.u, s.v) > DIVERGENCE_MAX_SPEED) return false;
+  if (Math.abs(s.z) > DIVERGENCE_MAX_Z || Math.abs(s.w) > DIVERGENCE_MAX_W) return false;
   return Math.abs(s.r) <= DIVERGENCE_MAX_RATE && Math.abs(s.p) <= DIVERGENCE_MAX_RATE;
 }
 
@@ -3223,18 +3388,20 @@ function isPhysicallyPlausible(s) {
 // every caller of integrate() — the harness scenarios and the polar sweep
 // included, which bypass the facade entirely — gets the same "no ghost
 // sailing at some absurd heel" guarantee. Resetting is a facade concern.
+// w (heave rate) bleeds alongside p, the same rate-not-position treatment;
+// z (heave position) stays frozen at whatever it was, like phi does.
 function integrate(state, controls, config, dt) {
   if (state.capsized) {
     const bleed = Math.exp(-dt / 0.3);
     const decay = (v) => (Math.abs(v) < 1e-4 ? 0 : v * bleed);
-    return { ...state, t: state.t + dt, u: decay(state.u), v: decay(state.v), r: decay(state.r), p: decay(state.p) };
+    return { ...state, t: state.t + dt, u: decay(state.u), v: decay(state.v), r: decay(state.r), p: decay(state.p), w: decay(state.w) };
   }
 
   const evalDeriv = (s) => {
     const full = { ...state, ...s };
     const forces = computeForces(full, controls, config);
     const d = derivatives(full, forces, config);
-    return { x: d.dx, y: d.dy, heading: d.dheading, u: d.du, v: d.dv, r: d.dr, phi: d.dphi, p: d.dp };
+    return { x: d.dx, y: d.dy, heading: d.dheading, u: d.du, v: d.dv, r: d.dr, phi: d.dphi, p: d.dp, z: d.dz, w: d.dw };
   };
 
   const s0 = odeState(state);
@@ -3422,7 +3589,7 @@ function makeInitialState(deltaStart = 0) {
   // the sheet dynamics still fully govern delta from there on; nothing
   // stops it moving away again if that isn't actually where it settles.
   return {
-    t: 0, x: 0, y: 0, heading: HEADING0, u: 1.0, v: 0, r: 0, phi: 0, p: 0, delta: deltaStart, end: 1,
+    t: 0, x: 0, y: 0, heading: HEADING0, u: 1.0, v: 0, r: 0, phi: 0, p: 0, z: 0, w: 0, delta: deltaStart, end: 1,
     amaLoad: 0, abackTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 },
   };
 }
@@ -3720,14 +3887,14 @@ const MS_TO_KN = 1.9438;
 // recording's codeVersion is meaningful (harness/replay.js warns on
 // mismatch) for a downloaded bundle without requiring a build step for
 // plain `python3 -m http.server` development.
-const CODE_VERSION = "672aa61";
+const CODE_VERSION = "381b3d5";
 // BUILD_TIME: same pattern as CODE_VERSION above — tools/bundle.js
 // replaces this with the COMMIT's timestamp (not wall-clock build time),
 // so it stays stable across re-bundling the same commit and always
 // matches CODE_VERSION's hash. Shown in the bottom-right version footer
 // so a bug report/recording can be tied to an exact, dated build without
 // having to separately ask "which commit was this."
-const BUILD_TIME = "2026-08-08T20:43:54+02:00";
+const BUILD_TIME = "2026-08-09T01:42:32+02:00";
 
 // ---------------------------------------------------------------------
 // i18n — EN/PL. Static labels are marked with data-i18n="key" in
