@@ -10,7 +10,7 @@ const HEADING0 = Math.PI / 2;
 
 function initialState() {
   return {
-    t: 0, x: 0, y: 0, heading: HEADING0, u: 1.0, v: 0, r: 0, phi: 0, p: 0, delta: 0, end: 1,
+    t: 0, x: 0, y: 0, heading: HEADING0, u: 1.0, v: 0, r: 0, phi: 0, p: 0, z: 0, w: 0, delta: 0, end: 1,
     amaLoad: 0, abackTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 },
   };
 }
@@ -169,7 +169,14 @@ export function scenarioAback(config) {
   // scenario's whole point is that an unrelieved aback state ends in a
   // capsize; the real boat is 24% wider in the stance with a third less sail
   // and rides TWS 10 out. Measured threshold is between 12 and 13.
-  const tws = 14;
+  //
+  // TWS 14 -> 16 for S8 (heave DOF, docs/adr/0033): the draft-ratio coupling
+  // into hull resistance/side-force shifted this scenario's capsize
+  // threshold from 13.4/13.6 to a tighter 14.0/14.2, leaving the old TWS=14
+  // right on the new edge (barely survives instead of capsizing). Measured
+  // TWS=16 capsizes with a comfortable margin (~1.97s, comparable in
+  // character to the pre-S8 TWS=14 behaviour).
+  const tws = 16;
   const sheetDeg = 30;
   // Wind sourced from the -y (non-ama) side from the start: aback immediately.
   const windDirFrom = HEADING0 - 80 * DEG;

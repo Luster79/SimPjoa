@@ -338,6 +338,12 @@ function buildDefaultConfig(boat = 'default') {
       length: p.boat_length_m,           // 5.5 m
       beam: p.hull_beam_m,                // 0.45 m (see example_proa_parameters.csv)
       displacement: p.displacement_kg,    // 190 kg (see example_proa_parameters.csv)
+      // draft (docs/adr/0022): exposed so hydro.js can scale wetted surface
+      // and lateral area with the heave DOF's dynamic sinkage (S8, docs/
+      // work-order-2026-08-02-steering-and-sources.md) — DERIVED, not a
+      // second free parameter; identical to the local `draft` this file
+      // already computes HULL_LATERAL_AREA from, two lines up from here.
+      draft,
       // massSurge / massSway / yawInertia: see the F8 note above for each
       // term's derivation. All three are configurable, as the work order asks.
       massSurge: dryMass + 0.10 * p.displacement_kg,
@@ -871,6 +877,59 @@ function buildDefaultConfig(boat = 'default') {
         posXMin: -1.0,            // fore-aft crew position range
         posXMax: 1.0,
       };
+    })(),
+
+    // --- Heave, the 5th DOF (S8, docs/work-order-2026-08-02-steering-and-
+    // sources.md) -----------------------------------------------------------
+    // Fz (the sail's vertical force component from heel, aero.js) and the
+    // ama's own net buoyancy-minus-weight when pressed or lifted (stability.js
+    // amaVerticalForce) used to have no consumer — the vertical balance was
+    // computed and shown (forcesBreakdown) but never closed. `heave.stiffness`
+    // is the one RIGOROUS piece: a hull's resistance to sinking IS its
+    // waterplane area times rho*g, the standard hydrostatic result, not an
+    // estimate. `heave.mass`/`dampingCoeff` are a TUNED PAIR against a target
+    // response, the same discipline stability.rollDampingCoeff's own comment
+    // documents for roll — not derived from a rigorous 2D heave-added-mass
+    // calculation this project has no source for.
+    heave: (() => {
+      // waterlineBeam/waterplaneArea reuse ADR 0022's own V-section derivation
+      // (35deg half-angle, the Flay V2 hull form) rather than a second,
+      // independently-guessed hull-form number: waterlineBeam = 2*draft*
+      // tan(35deg) is the SAME formula that section's own math already
+      // states in its comment, just evaluated here instead of by hand.
+      // Cwp (waterplane coefficient) is NOT separately estimated -- reusing
+      // Cp=0.58 (ADR 0022's own prismatic coefficient, the middle of its
+      // 0.55-0.62 span) as a stand-in is an approximation ON TOP OF an
+      // approximation, flagged as such rather than inventing a second,
+      // unsourced "Cwp = Cp + 0.15"-style correction this project has no
+      // basis for.
+      const waterlineBeam = 2 * draft * Math.tan(35 * Math.PI / 180);
+      const Cwp = 0.58;
+      const waterplaneArea = Cwp * p.boat_length_m * waterlineBeam;
+      const stiffness = 1025 * 9.81 * waterplaneArea; // rho_w*g*Awp — N/m, rigorous
+      // addedMassFraction: heave added mass for a surface-piercing hull is
+      // NOT the surge case's small few-percent (pushing water aside
+      // lengthwise) — it is comparable in order of magnitude to the
+      // displaced mass itself (radiating waves up and down disturbs a lot
+      // more water than sliding forward does). 0.5 is a round, explicitly
+      // coarse mid-estimate: it sets the heave DOF's response SPEED, not
+      // its equilibrium (which the stiffness above alone fixes, independent
+      // of mass) — see the step-response measurement this constant is
+      // tuned against, docs/adr's own S8 record.
+      const addedMassFraction = 0.5;
+      // dryMass, not dryMass+CREW_MASS_KG: p.displacement_kg (which dryMass
+      // is built from) is ITSELF "rigged hull + one 90kg crew" per the CSV's
+      // own note (docs/adr/0021) -- the same dryMass massSurge/massSway/
+      // yawInertia already use alone, with no separate crew term added.
+      const mass = dryMass * (1 + addedMassFraction);
+      // dampingCoeff: tuned alongside `mass` for a target step response —
+      // critically-adjacent (zeta~0.6), settling within about two damped
+      // periods rather than ringing, the same "reasonably damped, not
+      // undamped or overdamped" target roll's own I_roll/rollDampingCoeff
+      // pair was chosen against. c = 2*zeta*sqrt(k*m).
+      const zeta = 0.6;
+      const dampingCoeff = 2 * zeta * Math.sqrt(stiffness * mass);
+      return { waterplaneArea, stiffness, mass, dampingCoeff };
     })(),
 
     stability: {

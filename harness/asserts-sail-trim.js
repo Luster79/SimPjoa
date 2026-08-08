@@ -13,7 +13,7 @@ export function check_sail_trim(config, check) {
     // must converge to a static equilibrium near phi=0, not just some
     // bounded value — restoring + damping with nothing driving it should
     // settle the platform upright.
-    let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 0, v: 0, r: 0, phi: 15 * DEG, p: 0, delta: 0, end: 1, amaLoad: 0,
+    let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 0, v: 0, r: 0, phi: 15 * DEG, p: 0, z: 0, w: 0, delta: 0, end: 1, amaLoad: 0,
       abackTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
     const zeroWindControls = { windDirFrom: 0, windSpeed: 0, sheet: 0, rudder: 0,
       brailLee: 0, brailWind: 0, crewPos: 0, crewPosX: 0, shuntRequest: false };
@@ -35,7 +35,7 @@ export function check_sail_trim(config, check) {
     // overload-timer assertions, not what this test is checking.
     const twaDeg = 90;
     const windDirFrom = HEADING0 + twaDeg * DEG;
-    let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 1, v: 0, r: 0, phi: 0, p: 0, delta: 0, end: 1, amaLoad: 0,
+    let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 1, v: 0, r: 0, phi: 0, p: 0, z: 0, w: 0, delta: 0, end: 1, amaLoad: 0,
       abackTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
     const controls = { windDirFrom, windSpeed: 5, sheet: 25 * DEG, rudder: 0,
       brailLee: 0, brailWind: 0, crewPos: 0.3, crewPosX: 0, shuntRequest: false };

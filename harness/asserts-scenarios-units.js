@@ -13,7 +13,7 @@ import { DEG, HEADING0, normalizeAngle, finiteSeries } from './asserts-helpers.j
 export function check_scenarios_units(config, check) {
   // --- 4. Numerical stability + energy damping at zero wind ---
   {
-    let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 2, v: 0.5, r: 0.1, phi: 0, p: 0, delta: 0, end: 1, amaLoad: 0,
+    let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 2, v: 0.5, r: 0.1, phi: 0, p: 0, z: 0, w: 0, delta: 0, end: 1, amaLoad: 0,
       abackTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
     const controls = { windDirFrom: 0, windSpeed: 0, sheet: 30 * DEG, rudder: 0,
       brailLee: 0, brailWind: 0, crewPos: 0, crewPosX: 0, shuntRequest: false };
@@ -43,7 +43,7 @@ export function check_scenarios_units(config, check) {
   // going over) and the frozen state is still physical (what gets recorded
   // and replayed has to be a boat).
   {
-    let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 3, v: 0, r: 0, phi: 0, p: 0, delta: 80 * DEG, end: 1,
+    let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 3, v: 0, r: 0, phi: 0, p: 0, z: 0, w: 0, delta: 80 * DEG, end: 1,
       amaLoad: 0, abackTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
     const controls = { windDirFrom: HEADING0 + 100 * DEG, windSpeed: 6, sheet: 80 * DEG, rudder: -1,
       rudderUp: false, brailLee: 0, brailWind: 0, crewPos: 0.3, crewPosX: 0, shuntRequest: false };
@@ -200,7 +200,7 @@ export function check_scenarios_units(config, check) {
     // a control field — this is a direct force-function unit probe (no
     // integrate() loop to let the sheet dynamics settle), so the probed
     // angle is set on state.delta directly.
-    const state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 3, v: 0, r: 0, phi: 0, p: 0, delta: 10 * DEG, end: 1, amaLoad: 0,
+    const state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 3, v: 0, r: 0, phi: 0, p: 0, z: 0, w: 0, delta: 10 * DEG, end: 1, amaLoad: 0,
       abackTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
     const base = { windDirFrom: HEADING0 + 70 * DEG, windSpeed: 8, rudder: 0, crewPos: 0, crewPosX: 0, shuntRequest: false };
 
@@ -376,7 +376,7 @@ export function check_scenarios_units(config, check) {
     // makeInitialState for the same reasoning): the yard's own swing time
     // is otherwise a large low-speed transient in its own right.
     const runFor = (sheetDeg, seconds = 20) => {
-      let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 1, v: 0, r: 0, phi: 0, p: 0, delta: sheetDeg * DEG, end: 1, amaLoad: 0,
+      let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 1, v: 0, r: 0, phi: 0, p: 0, z: 0, w: 0, delta: sheetDeg * DEG, end: 1, amaLoad: 0,
         abackTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
       const controls = { windDirFrom, windSpeed: tws, sheet: sheetDeg * DEG, rudder: 0,
         brailLee: 0, brailWind: 0, crewPos, crewPosX: 0, shuntRequest: false };
@@ -408,7 +408,7 @@ export function check_scenarios_units(config, check) {
     // alphaSailor must stay an acute angle of attack across a full yard
     // sweep on a beam reach, even though the raw `alpha` it's derived from
     // routinely reads ~140-170deg on the very same courses.
-    const state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 2, v: 0, r: 0, phi: 0, p: 0, delta: 0, end: 1, amaLoad: 0,
+    const state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 2, v: 0, r: 0, phi: 0, p: 0, z: 0, w: 0, delta: 0, end: 1, amaLoad: 0,
       abackTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
     const controls = { windDirFrom: HEADING0 + 90 * DEG, windSpeed: 6, rudder: 0,
       brailLee: 0, brailWind: 0, crewPos: 0, crewPosX: 0, shuntRequest: false };

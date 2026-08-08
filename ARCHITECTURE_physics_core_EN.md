@@ -1,6 +1,6 @@
 # Physics core architecture
 
-*Last reviewed: 2026-08-04*
+*Last reviewed: 2026-08-09*
 
 Context map for the dependency-free ES-module physics core and its test
 harness. It describes **the model as it stands** — module layout, frame and
@@ -74,6 +74,10 @@ These are mandatory and are restated at the top of `core/state.js`.
 - **Roll:** `phi` (rad) and `p` (rad/s), defined about the PHYSICAL hull
   longitudinal axis, not the shunt-rotating active-bow frame. Positive `phi`
   means the AMA SIDE RISING.
+- **Heave (ADR 0033):** `z` (m) and `w` (m/s), vertical displacement from the
+  design waterline and its rate, positive `z` = riding higher (less draft than
+  design). World-vertical, physical-frame quantities — like `phi`/`p`,
+  unaffected by heading and left untouched at a shunt swap.
 - **A trap worth naming:** the boat frame's +x already points at the active
   bow, so a quantity referenced to the bow or the stern carries **no `end`
   factor**. This has caught the steering oar's lever arm (ADR 0016), the mast's
@@ -96,6 +100,7 @@ These are mandatory and are restated at the top of `core/state.js`.
       heading,          // direction of the active bow [rad]
       u, v, r,          // boat-frame velocities [m/s, m/s, rad/s]
       phi, p,           // roll angle [rad], roll rate [rad/s]
+      z, w,             // heave displacement [m, +up], heave rate [m/s]
       delta,            // actual yard angle [rad], >= 0
       end,              // +1 | -1 — which hull end is the bow, and the ama's side
       amaLoad,          // 0..1+ ; 1.0 = ama just clear / just fully submerged
@@ -175,8 +180,8 @@ it pushes rather than retards.
 Heel projection is split three ways: the in-plane transverse force gets a
 second `cos(phi)` to become the horizontal `Fy`, `sin(phi)` to become the
 vertical `Fz`, and the heeling moment is taken from the **in-plane** force.
-`Fz` is exposed but **not integrated** — there is no heave DOF (see "Known
-simplifications").
+`Fz` is integrated into the heave DOF (ADR 0033, see below) alongside the
+ama's own net vertical force (`stability.js`'s `amaVerticalForce`).
 
 The heeling arm is `CEheightEff + hull.clrDepth`: the sail's side force and the
 hull's hydrodynamic reaction form a couple, so the arm is the distance between
@@ -416,7 +421,7 @@ edge-triggered pulse; turning a held key into that edge is the facade's job.
 ### integrator.js
 
     computeForces(state, controls, config) -> totals + breakdown + readouts
-    derivatives(state, forces, config) -> { du, dv, dr, dx, dy, dheading, dphi, dp }
+    derivatives(state, forces, config) -> { du, dv, dr, dx, dy, dheading, dphi, dp, dz, dw }
 
 Three **separate** inertias: `hull.massSurge`, `hull.massSway` (carrying the
 added mass of the water a hull drags sideways) and `hull.yawInertia`. Because
@@ -428,15 +433,16 @@ is not read by the dynamics.
 
     integrate(state, controls, config, dt) -> newState
 
-RK4 over `[x, y, heading, u, v, r, phi, p]` at fixed `dt`, then the discrete,
+RK4 over `[x, y, heading, u, v, r, phi, p, z, w]` at fixed `dt`, then the discrete,
 non-ODE updates once per substep: the shunt patch, then `sheetStep` (so a phase
 transition landing on this step is already reflected in the ceiling delta relaxes
 against), then the ama-load/aback/capsize statics. `delta` and the shunt phase
 are held constant across a step's own k1..k4 evaluations.
 
 **Capsize freeze.** If `state.capsized`, `integrate()` short-circuits to a pure
-exponential bleed of u/v/r/p and returns — no forces, no controls read, phi/x/y/
-heading frozen. This lives here rather than in the facade so that every caller —
+exponential bleed of u/v/r/p/w and returns — no forces, no controls read,
+phi/z/x/y/heading frozen. `w` bleeds like `p` (a rate); `z` freezes like `phi`
+(a position). This lives here rather than in the facade so that every caller —
 the harness scenarios and the polar sweep call `integrate()` directly — gets the
 same "no ghost sailing at some absurd heel" guarantee.
 
@@ -483,6 +489,30 @@ roll period and settling time, not derived. `phiLiftoffDeg` / `phiSubmergeDeg`
 are free constants, not derived from the ama's geometry. All four predate the
 re-parameterisation onto the real PJOA FOLK (ADR 0021) and are the model's
 weakest calibration.
+
+---
+
+## Heave dynamics (ADR 0033)
+
+    config.heave.mass · dw/dt = Fz + Fspring(z) + Fdamp(w)
+    Fz = aero.Fz + amaVerticalForce(phi, config)
+    Fspring(z) = -config.heave.stiffness · z
+    Fdamp(w) = -config.heave.dampingCoeff · w
+
+Same split as roll: forces from the rig/ama are gathered in `computeForces`
+(`Fz`, folded into `breakdown.heave`), the hull's own structural response
+(spring/damping) is added beside the mass it divides by, in `derivatives`.
+`config.heave.stiffness` is a rigorous hydrostatic result
+(`rho_w·g·A_waterplane`); `mass` and `dampingCoeff` are tuned as a pair
+against a target step response, the same methodology as `I_roll`/
+`rollDampingCoeff` above — not derived, and the model's newest calibration.
+
+`z` feeds back into hydrodynamics through a single `draftRatio` computed in
+`hydro.js` (`(hull.draft - z) / hull.draft`, floored at 0.1), which scales
+wetted surface and lateral area in both `hullResistance` and `hullSideForce`
+— riding higher wets less hull, riding lower wets more. This is the only
+feedback path from heave into the rest of the dynamics; it does not reach
+`amaDrag` (the ama's own lateral plane, ADR 0017/T4) or roll.
 
 ---
 
@@ -549,10 +579,9 @@ the facade's private edge-detection itself.
 
 Stated so they are visible and measurable rather than silently missing.
 
-- **No heave or pitch DOF.** `Fz` is computed and exposed through
-  `forcesBreakdown()` but not integrated, so the vertical balance is not closed.
-  Fore-aft trim exists only as the phenomenological CLR shift in
-  `clrXPosition()`.
+- **No pitch DOF.** Heave (`z`/`w`) is integrated and closes the vertical
+  balance (ADR 0033); pitch is not modelled. Fore-aft trim exists only as the
+  phenomenological CLR shift in `clrXPosition()`.
 - **Nothing underwater depends on heel.** `hullSideForce` does not take `phi`,
   so the hull's lateral plane, its side-force coefficient and its heeled yaw
   moment are all heel-independent. This is why `hull.yawHeelSign` is 0.

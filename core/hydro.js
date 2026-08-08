@@ -30,11 +30,29 @@ function ittc57Cf(u, length) {
   return 0.075 / ((logRe - 2) * (logRe - 2));
 }
 
-export function hullResistance(u, config) {
+// heaveZ (S8, docs/work-order-2026-08-02-steering-and-sources.md): the 5th
+// DOF's vertical displacement from the design waterline [m], +up — trailing
+// and OPTIONAL (defaults to 0, the design draft) rather than inserted
+// alongside u: every isolated hull-physics probe in harness/asserts-hull-
+// ama.js calls this at the design draft on purpose (testing the baseline
+// hull, not the heave coupling), and a positional insert would have forced
+// updating all of them for no benefit. Only core/integrator.js's live path
+// passes the real state.z. Named heaveZ, not z: this function's own Gaussian
+// residuary hump below already uses a local `z` for something unrelated.
+export function hullResistance(u, config, heaveZ = 0) {
   const { hull, rho_w, g } = config;
   const uAbs = Math.abs(u);
+  // draftRatio: wetted surface and lateral area both scale roughly with
+  // draft (the same linear-in-one-dimension assumption this project already
+  // uses for the ama's own wettedSurface, docs/adr/0029) — riding higher
+  // (heaveZ>0) shrinks the effective draft and, with it, both quantities.
+  // Floored well short of 0: an actual zero/negative draft is not a smaller
+  // hull, it is the hull leaving the water, which this linear approximation
+  // does not model and must not be extrapolated into.
+  const draftRatio = Math.max(0.1, (hull.draft - heaveZ) / hull.draft);
+  const wettedSurface = hull.wettedSurface * draftRatio;
   const Cf = ittc57Cf(u, hull.length);
-  const friction = 0.5 * rho_w * hull.wettedSurface * Cf * uAbs * uAbs;
+  const friction = 0.5 * rho_w * wettedSurface * Cf * uAbs * uAbs;
 
   // Residuary (wave-making) resistance (docs/adr/0001). A slender L/B=10:1
   // canoe hull makes little wave and has no hard "hull speed" wall the way a
@@ -55,7 +73,7 @@ export function hullResistance(u, config) {
   const Cr = hull.residuaryPeakCr * (Fr > hull.residuaryFrPeak
     ? hull.residuaryTailPlateau + (1 - hull.residuaryTailPlateau) * gaussian
     : gaussian);
-  const residuary = 0.5 * rho_w * hull.wettedSurface * Cr * uAbs * uAbs;
+  const residuary = 0.5 * rho_w * wettedSurface * Cr * uAbs * uAbs;
 
   // sign(u)*uAbs^2 is exactly u*|u| — written directly, no sign() switch.
   return -(friction + residuary) * Math.sign(u);
@@ -133,14 +151,17 @@ export function clrXPosition(crewPosX, config) {
 // the strips still sum to hull.lateralArea), centroid k*L^2/12, hence
 // k = 12*xc/L^2. Clamped to |k| <= 2/L, past which the taper would ask for
 // negative area at one end.
-function stationWeights(crewPosX, phi, config) {
+function stationWeights(crewPosX, phi, config, draftRatio) {
   const { hull } = config;
   const L = hull.length;
   const heelClrSign = hull.heelClrSign ?? 1;
   const heelShift = heelClrSign * (hull.heelClrShiftCoeff ?? 0) * Math.sin(phi) * (L / 2);
   const xc = clrXPosition(crewPosX, config) + heelShift;
   const k = Math.max(-2 / L, Math.min(2 / L, (12 * xc) / (L * L)));
-  const dA = (hull.lateralArea ?? 0) / HULL_STATIONS;
+  // draftRatio (S8, heaveZ's effective-draft scaling — see hullResistance's
+  // own comment for the derivation): the lateral plane shrinks/grows with it
+  // the same way wetted surface does, so every strip's own share does too.
+  const dA = ((hull.lateralArea ?? 0) * draftRatio) / HULL_STATIONS;
   const out = [];
   for (let i = 0; i < HULL_STATIONS; i++) {
     const x = -L / 2 + (i + 0.5) * (L / HULL_STATIONS);
@@ -180,11 +201,16 @@ function stationWeights(crewPosX, phi, config) {
 // going forward. A V-sectioned hull travelling backwards is not the same
 // foil. Folding is the better of the two available approximations, not a
 // claim that direction does not matter.
-export function hullSideForce(u, v, r, crewPosX, phi, config) {
+// heaveZ (S8, trailing and optional — see hullResistance's own comment for
+// why: isolated probes want the design-draft baseline, only core/
+// integrator.js's live path passes the real state.z).
+export function hullSideForce(u, v, r, crewPosX, phi, config, heaveZ = 0) {
   const { hull, rho_w } = config;
   const DEG = Math.PI / 180;
   const L = hull.length;
-  const stations = stationWeights(crewPosX, phi, config);
+  const draftRatio = Math.max(0.1, (hull.draft - heaveZ) / hull.draft);
+  const stations = stationWeights(crewPosX, phi, config, draftRatio);
+  const effectiveLateralArea = (hull.lateralArea ?? 0) * draftRatio;
   // uDirection: smoothed sign of u, shared below by the migrating-CLR ramp
   // and by FxStrip's own direction term further down — one definition, one
   // u=0 regularisation (RK4 crosses u=0 on every shunt; see FxStrip's own
@@ -275,7 +301,7 @@ export function hullSideForce(u, v, r, crewPosX, phi, config) {
     // the quadratic term already dominates.
     //   Per strip it carries the station's own share of the lateral area, so
     // the strips still sum to exactly -lowSpeedSideDamping*v at r = 0.
-    const areaShare = (hull.lateralArea ?? 0) > 0 ? st.dA / hull.lateralArea : 0;
+    const areaShare = effectiveLateralArea > 0 ? st.dA / effectiveLateralArea : 0;
     const FyLinear = -hull.lowSpeedSideDamping * areaShare * vLocal;
     const FyFoil = FyQuadratic + FyLinear;
 

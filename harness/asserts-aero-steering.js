@@ -38,7 +38,7 @@ export function check_aero_steering(config, check) {
   // run, which would just end up re-testing that same, expected, low-speed
   // directional instability instead of the sail's near-wind thrust.
   {
-    let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 0, v: 0, r: 0, phi: 0, p: 0, delta: 0, end: 1, amaLoad: 0,
+    let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 0, v: 0, r: 0, phi: 0, p: 0, z: 0, w: 0, delta: 0, end: 1, amaLoad: 0,
       abackTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
     const controls = { windDirFrom: HEADING0, windSpeed: 6, sheet: 5 * DEG, rudder: 0,
       brailLee: 0, brailWind: 0, crewPos: 0, crewPosX: 0, shuntRequest: false };
@@ -74,7 +74,7 @@ export function check_aero_steering(config, check) {
   // negative probes attempted) and is called out there as an open item
   // rather than silently assumed fixed.
   {
-    let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 0, v: 0, r: 0, phi: 0, p: 0, delta: 0, end: 1, amaLoad: 0,
+    let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 0, v: 0, r: 0, phi: 0, p: 0, z: 0, w: 0, delta: 0, end: 1, amaLoad: 0,
       abackTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
     const controls = { windDirFrom: HEADING0 + 90 * DEG, windSpeed: 6, sheet: 0, rudder: 0, rudderUp: true,
       brailLee: 1, brailWind: 1, crewPos: 0, crewPosX: 0, shuntRequest: false };
@@ -172,7 +172,7 @@ export function check_aero_steering(config, check) {
   // clear of both, so this fails on a qualitative collapse of the curve's
   // breadth, not on ordinary drift.
   {
-    const sheetBase = { t: 0, x: 0, y: 0, heading: 0, u: 0, v: 0, r: 0, phi: 0, p: 0, end: 1, amaLoad: 0,
+    const sheetBase = { t: 0, x: 0, y: 0, heading: 0, u: 0, v: 0, r: 0, phi: 0, p: 0, z: 0, w: 0, end: 1, amaLoad: 0,
       abackTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
     const rows = [];
     for (const awa of [50, 70, 90, 110]) {
@@ -213,7 +213,7 @@ export function check_aero_steering(config, check) {
   {
     const tackTurn = (twa, tws, sheetDeg, crewPos, tackX) => {
       const windDirFrom = HEADING0 + twa * DEG;
-      let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 1.0, v: 0, r: 0, phi: 0, p: 0,
+      let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 1.0, v: 0, r: 0, phi: 0, p: 0, z: 0, w: 0,
         delta: sheetDeg * DEG, end: 1, amaLoad: 0, abackTimer: 0, capsized: false,
         shunt: { phase: 'none', progress: 0 } };
       const controls = { windDirFrom, windSpeed: tws, sheet: sheetDeg * DEG, rudder: 0,
@@ -293,7 +293,7 @@ export function check_aero_steering(config, check) {
     const csvPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'data', 'driving_force_vs_AWA.csv');
     const rows = parseCSV(readFileSync(csvPath, 'utf8')).filter((r) => r.series === 'SantaCruz');
     const q = 0.5 * config.rho_air * config.sail.area * 36; // 6 m/s reference
-    const driveBase = { t: 0, x: 0, y: 0, heading: 0, u: 0, v: 0, r: 0, phi: 0, p: 0, end: 1,
+    const driveBase = { t: 0, x: 0, y: 0, heading: 0, u: 0, v: 0, r: 0, phi: 0, p: 0, z: 0, w: 0, end: 1,
       amaLoad: 0, abackTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
     const compared = rows.map((r) => {
       const theta = Number(r.theta_deg);
@@ -383,7 +383,7 @@ export function check_aero_steering(config, check) {
       const controls = { windDirFrom: wind, windSpeed: 6, sheet: 16 * DEG, rudder: 0,
         rudderUp, brailLee: 0, brailWind: 0, crewPos: 0.3, crewPosX: 0, tackX: 0,
         halyard: 1, shroud: 1, stays: 0, shuntRequest: false, ...patch };
-      let state = { t: 0, x: 0, y: 0, heading, u: 3.5, v: 0, r: 0, phi: 0, p: 0, delta: 16 * DEG,
+      let state = { t: 0, x: 0, y: 0, heading, u: 3.5, v: 0, r: 0, phi: 0, p: 0, z: 0, w: 0, delta: 16 * DEG,
         end, amaLoad: 0, abackTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
       for (let i = 0; i < Math.round(20 / config.dt); i++) state = integrate(state, controls, config, config.dt);
       const a = (((wind - state.heading) / DEG) % 360 + 360) % 360;

@@ -193,7 +193,13 @@ export function check_capsize(config, check) {
     // branch, so it needs a capsize to observe; the real boat is 24% wider in
     // the stance and carries a third less sail, and no longer goes over at
     // TWS 10. Measured: the threshold is between 12 and 13, so 14 keeps margin.
-    const controls = { windDirFrom, windSpeed: 14, sheet: 30 * DEG, rudder: 0, brailLee: 0, brailWind: 0, crewPos: 0, crewPosX: 0, shuntRequest: false };
+    //
+    // TWS 14 -> 16 for S8 (heave DOF, docs/adr/0033): same scenario as
+    // scenarioAback (harness/scenarios.js), and the draft-ratio coupling
+    // into hull resistance/side-force shifted this threshold the same way,
+    // from 13.4/13.6 to 14.0/14.2 — TWS 14 no longer reliably capsizes.
+    // Measured TWS=16 capsizes with margin.
+    const controls = { windDirFrom, windSpeed: 16, sheet: 30 * DEG, rudder: 0, brailLee: 0, brailWind: 0, crewPos: 0, crewPosX: 0, shuntRequest: false };
     const dt = config.dt;
     let capsizeT = null;
     const series = [];

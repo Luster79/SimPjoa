@@ -1,6 +1,6 @@
 # docs/ — index
 
-*Last reviewed: 2026-08-04*
+*Last reviewed: 2026-08-09*
 
 `ARCHITECTURE_physics_core_EN.md` in the repo root is the context map for the
 code. This file is the map for everything in `docs/`.
@@ -79,6 +79,7 @@ Append-only. Never edit an old ADR; supersede it with a new one.
 | 0030 | The TWA155-165 gap was a search artifact (the sheet was pinned) -- corrects 0029; the speed cost of rudder-free holding is quantified. Its coverage claim was measured WITH boomLift -- see 0031 |
 | 0031 | The boom lift is the sheet and the brail, not a third line -- withdraws T1's `controls.boomLift`; the sheet is bent to the boom and the gejtawa is `brailWind` |
 | 0032 | The hull's centre of lateral resistance migrates with drift angle (D1) -- roughly doubles yaw stiffness TWA94-158, costs TWA162-174 (a real trade, understood not fixed); TWA165-180's rudder-free capability survives on new trims, not the ADR 0030 ones; capsize margins re-validated, H3 re-anchored (qualitative: oscillation -> damped convergence) |
+| 0033 | Heave is the fifth DOF (S8) -- closes the vertical force balance (sail Fz + ama net buoyancy vs. hydrostatic spring/damping); couples into hull resistance/side-force via draft ratio. Polar speed genuinely moves (mean -0.36%, -4.25% to +2.14%); `scenarioAback`/T10 re-anchored 14->16 m/s; S1c demoted 6/6 pass -> 4/6 xfail:STEERING (root-caused, not assumed -- see ADR) |
 
 ## Work orders — what to do
 
@@ -89,7 +90,7 @@ Append-only. Never edit an old ADR; supersede it with a new one.
 | `work-order-2026-08-05-sterownosc.md` | **Complete, with T1 withdrawn.** T1's `boomLift` was a line the rig does not carry (ADR 0031); T2-T6 stand. Its Part IV TWA160+ "structural limit" is withdrawn by ADR 0030. |
 | `work-order-2026-08-05-boat-data.md` | **Complete.** Ama length/buoyancy revised x1.40 (ADR 0029). Its TWA155-165 "structural gap" is **withdrawn by ADR 0030** -- the search had the sheet pinned. `hull.massSway` left untouched by owner decision (collides with ADR 0018). |
 | `work-order-2026-08-05-statecznosc-kierunkowa.md` | **Complete, D1-D4 all done.** D4: fore-aft symmetry confirmed zero to float precision. D3: the ama's own lateral-plane term is bounded and not overstated. D2: Munk magnitude re-affirmed defended, ADR 0018 unchanged. D1 (ADR 0032): geometric CLR migration, roughly doubles hull yaw stiffness TWA94-158, costs TWA162-174 -- a real, measured trade, not a bug; capsize margins re-validated (all three scenarios), H3 re-anchored. |
-| `work-order-2026-08-02-steering-and-sources.md` | **S7 complete** (audited 2026-08-08: all 18 narrow-band assertions checked against the criterion, none non-compliant -- most already converted or justified by earlier rounds and D1). Open: **S8** (vertical balance, a real physics decision, not code hygiene). S3 was implemented and withdrawn (ADR 0013); everything else is done. Sailing without the oar reached 3/6 (ADR 0017); the Munk double-count hypothesis was audited and rejected (ADR 0018). What used to block further progress here on Flay's yaw-moment data is resolved two ways: that data does not exist in the source at all (ADR 0032), and D1 found a geometric route around the gap instead (same ADR). |
+| `work-order-2026-08-02-steering-and-sources.md` | **Complete.** S7 audited 2026-08-08: all 18 narrow-band assertions checked against the criterion, none non-compliant -- most already converted or justified by earlier rounds and D1. **S8 done** (ADR 0033): heave DOF closes the vertical force balance; polar speed measured (mean -0.36%); one steering check (S1c) demoted to xfail as a genuine, root-caused consequence, not a bug. S3 was implemented and withdrawn (ADR 0013). Sailing without the oar reached 3/6 (ADR 0017); the Munk double-count hypothesis was audited and rejected (ADR 0018). What used to block further progress here on Flay's yaw-moment data is resolved two ways: that data does not exist in the source at all (ADR 0032), and D1 found a geometric route around the gap instead (same ADR). |
 
 Work that came from the primary source rather than a work order is tracked in
 the findings document, not here — see its last four sections.

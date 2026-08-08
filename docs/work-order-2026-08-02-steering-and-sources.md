@@ -1,6 +1,6 @@
 # Lista poprawek — sterowanie żaglami i zakotwiczenie w źródłach
 
-*Last reviewed: 2026-08-02*
+*Last reviewed: 2026-08-09*
 *Wejście: `docs/findings-2026-07-30-physics-audit.md` (wykonanie F1–F16),
 `docs/capsize-margins-2026-07-30.md`, ADR 0006/0007/0008, stan repo na
 `2d6211d`. Pomiary własne na tym commicie.*
@@ -536,6 +536,20 @@ wpływające na powierzchnię zwilżoną i `lateralArea`, bez dynamiki pionowej.
 prędkości z tego tytułu zmierzona i zaraportowana.
 
 *Nakład: średni (b) / duży (a). Zależności: brak.*
+
+**WYKONANE (2026-08-09, wariant (a), ADR 0033).** Pełny 5. DOF (heave):
+`z`/`w` w stanie, sztywność hydrostatyczna rygorystyczna
+(`rho_w*g*A_waterplane`), masa/tłumienie strojone parą jak `I_roll` przy
+rollu. Sprzężenie do `hullResistance`/`hullSideForce` przez `draftRatio`.
+Zmiana prędkości zmierzona: średnio -0,36% na 42 punktach polary, od -4,25%
+do +2,14% (nie jednostronnie — zależy od punktu, czy łódź się unosi czy
+siada). Próg wywrotki `scenarioAback`/T10 przeniesiony 14->16 m/s (nowy
+mierzony próg 14,0/14,2, był 13,4/13,6). Jeden test sterowania (`S1c`,
+utrzymanie kursu samym trymem przy wiośle schowanym) spadł z 6/6 do 4/6 —
+zdemontowany do `xfail:STEERING` po zlokalizowaniu przyczyny (nie zgadywanej):
+z odsprzężonym `heaveZ` w izolowanym integratorze stary margines odtwarza się
+dokładnie, więc to realna zmiana hydrodynamiki kadłuba, nie artefakt
+przeszukiwania. Zobacz ADR 0033.
 
 ---
 

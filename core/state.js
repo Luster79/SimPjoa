@@ -33,6 +33,11 @@
 //   it, not because of a frame argument: the yard is not bolted to a fixed
 //   physical side, it swings to whichever side the wind demands (up to the
 //   end-aware chordAngle = end*delta — see aero.js).
+// - Heave: `z` (m) and `w` (m/s), the 5th DOF (S8, docs/work-order-2026-08-02-
+//   steering-and-sources.md). z is vertical displacement from the DESIGN
+//   waterline, positive = UP (riding higher, less draft than design); w =
+//   dz/dt. Like phi/p, this is a world-vertical, physical-frame quantity —
+//   unaffected by heading and left unchanged at a shunt swap.
 // - Moments: positive = counterclockwise rotation (top-down view).
 // - Sail angle of attack and leeway angle are always computed via atan2,
 //   never asin/acos.
@@ -50,6 +55,8 @@ export function createInitialState(config) {
     r: 0,
     phi: 0,
     p: 0,
+    z: 0, // heave: vertical displacement from the design waterline [m], +up
+    w: 0, // heave rate [m/s], dz/dt
     delta: 0, // actual yard angle [rad], >=0 — see sheet-constraint comment above
     end: 1,
     amaLoad: 0,

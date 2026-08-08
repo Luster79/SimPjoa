@@ -10,7 +10,7 @@ const HEADING0 = Math.PI / 2;
 function normalizeAngle(a) { return Math.atan2(Math.sin(a), Math.cos(a)); }
 
 function freshState(deltaStart = 0) {
-  return { t: 0, x: 0, y: 0, heading: HEADING0, u: 1, v: 0, r: 0, phi: 0, p: 0, delta: deltaStart, end: 1,
+  return { t: 0, x: 0, y: 0, heading: HEADING0, u: 1, v: 0, r: 0, phi: 0, p: 0, z: 0, w: 0, delta: deltaStart, end: 1,
     amaLoad: 0, abackTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 } };
 }
 

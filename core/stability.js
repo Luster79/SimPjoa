@@ -40,6 +40,31 @@ const DEG = Math.PI / 180;
 // restoring intact — a pure ramp from the threshold measurably weakens the
 // gust-recovery margin that the phi-aware brail/crew controllers rely on.
 const HOLD_FRAC = 0.5;
+
+// engagementFraction(absPhi, thresholdRad, capsizeRad) -> dimensionless, in
+// [-1, 1] (plus a little past -1 in the capped capsizing-arm reversal): how
+// much of the float's weight-or-buoyancy is currently engaged, from the
+// ease-in at absPhi=0 through the flat hold to the capsizing-arm reversal.
+// Factored out of rollRestoreMoment (S8, docs/work-order-2026-08-02-
+// steering-and-sources.md) so heaveVerticalForce below can read the SAME
+// engagement the roll moment already uses, rather than a second, drifting
+// copy of this shape — the two must agree for the same reason
+// rollRestoreMoment's own comment already gives for sharing cos(phi) with
+// crewRollMoment. Pure refactor: rollRestoreMoment's numeric output is
+// unchanged (verified by a direct before/after sweep, not just by reading
+// the algebra).
+function engagementFraction(absPhi, thresholdRad, capsizeRad) {
+  if (absPhi <= thresholdRad) {
+    const frac = absPhi / thresholdRad;
+    return frac * (2 - frac);
+  }
+  const holdRad = thresholdRad + HOLD_FRAC * (capsizeRad - thresholdRad);
+  if (absPhi <= holdRad) return 1;
+  const span = Math.max(capsizeRad - holdRad, 1e-6);
+  const frac2 = Math.min((absPhi - holdRad) / span, 2);
+  return 1 - frac2;
+}
+
 export function rollRestoreMoment(phi, config) {
   const { ama, g, stability } = config;
   const capsizeRad = stability.phiCapsizeDeg * DEG;
@@ -55,27 +80,33 @@ export function rollRestoreMoment(phi, config) {
   if (phi >= 0) {
     const liftoffRad = stability.phiLiftoffDeg * DEG;
     const Mmax = ama.mass * g * ama.spacing * leverProjection;
-    if (phi <= liftoffRad) {
-      const frac = phi / liftoffRad;
-      return -Mmax * frac * (2 - frac);
-    }
-    const holdRad = liftoffRad + HOLD_FRAC * (capsizeRad - liftoffRad);
-    if (phi <= holdRad) return -Mmax;
-    const span = Math.max(capsizeRad - holdRad, 1e-6);
-    const frac2 = Math.min((phi - holdRad) / span, 2);
-    return -Mmax * (1 - frac2);
+    return -Mmax * engagementFraction(phi, liftoffRad, capsizeRad);
   }
   const submergeRad = stability.phiSubmergeDeg * DEG;
   const Mmax = ama.maxBuoyancy * g * ama.spacing * leverProjection;
-  if (-phi <= submergeRad) {
-    const frac = -phi / submergeRad;
-    return Mmax * frac * (2 - frac);
+  return Mmax * engagementFraction(-phi, submergeRad, capsizeRad);
+}
+
+// amaVerticalForce(phi, config) -> N, the ama's NET contribution to the
+// WHOLE SYSTEM's heave (vertical) balance — buoyancy MINUS its own weight,
+// not the gross buoyancy rollRestoreMoment's Mmax uses for its (separately
+// tuned, unrelated) moment magnitude. At phi=0 the ama floats on its own,
+// self-supporting: zero net force. Lifting clear (phi>0) leaves its own
+// weight unsupported by the time it is fully clear — the main hull now
+// carries that weight via the crossbeams, a force that GROWS negative with
+// phi. Pressing under (phi<0) adds buoyancy in EXCESS of its own weight —
+// a force that grows POSITIVE (lifts the whole system) as it submerges.
+// No leverProjection here: unlike a MOMENT, a net vertical FORCE does not
+// pick up a cos(phi) from the roll angle.
+export function amaVerticalForce(phi, config) {
+  const { ama, g, stability } = config;
+  const capsizeRad = stability.phiCapsizeDeg * DEG;
+  if (phi >= 0) {
+    const liftoffRad = stability.phiLiftoffDeg * DEG;
+    return -ama.mass * g * engagementFraction(phi, liftoffRad, capsizeRad);
   }
-  const holdRad = submergeRad + HOLD_FRAC * (capsizeRad - submergeRad);
-  if (-phi <= holdRad) return Mmax;
-  const span = Math.max(capsizeRad - holdRad, 1e-6);
-  const frac2 = Math.min((-phi - holdRad) / span, 2);
-  return Mmax * (1 - frac2);
+  const submergeRad = stability.phiSubmergeDeg * DEG;
+  return (ama.maxBuoyancy - ama.mass) * g * engagementFraction(-phi, submergeRad, capsizeRad);
 }
 
 // crewRollMoment(phi, crewPos, config) -> N*m. A genuine PENDULUM torque,
@@ -101,6 +132,23 @@ export function crewRollMoment(phi, crewPos, config) {
 // rollDampingMoment(p, config) -> N*m, linear damping opposing roll rate.
 export function rollDampingMoment(p, config) {
   return -config.stability.rollDampingCoeff * p;
+}
+
+// --- Heave, the 5th DOF (S8) -----------------------------------------------
+// heaveRestoreForce(z, config) -> N, the hull's own hydrostatic spring. A
+// linear restoring force around the design waterline — rho*g*waterplaneArea
+// per metre of sinkage, the standard small-perturbation hydrostatic result
+// (config.js's own heave.stiffness comment has the derivation). z>0 = riding
+// HIGHER than design (less draft), so the restoring force pulls back DOWN.
+export function heaveRestoreForce(z, config) {
+  return -config.heave.stiffness * z;
+}
+
+// heaveDampingForce(w, config) -> N, linear damping opposing heave rate.
+// Tuned as a pair with heave.mass against a target step response — see
+// config.js's own heave.dampingCoeff comment; not a measured coefficient.
+export function heaveDampingForce(w, config) {
+  return -config.heave.dampingCoeff * w;
 }
 
 // computeAmaLoad(phi, config) -> amaLoad, derived from the roll angle:

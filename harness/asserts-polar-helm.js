@@ -141,7 +141,7 @@ export function check_polar_helm(config, check, slow) {
         const a = (((windDirFrom - heading) / DEG) % 360 + 360) % 360;
         return a > 180 ? 360 - a : a;
       };
-      let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 1.0, v: 0, r: 0, phi: 0, p: 0,
+      let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 1.0, v: 0, r: 0, phi: 0, p: 0, z: 0, w: 0,
         delta: row.bestSheetAngle * DEG, end: 1, amaLoad: 0, abackTimer: 0, capsized: false,
         shunt: { phase: 'none', progress: 0 } };
       const controls = { windDirFrom, windSpeed: row.tws, sheet: row.bestSheetAngle * DEG, rudder: 0,
@@ -219,6 +219,26 @@ export function check_polar_helm(config, check, slow) {
     // This is a genuine, structural improvement (the ama supplying real
     // directional stability, exactly the missing piece ADR 0027/0028
     // diagnosed), not a re-picked band -- promoted out of xfail.
+    //
+    // DEMOTED back to xfail (S8, heave DOF, docs/adr/0033): the draft-ratio
+    // coupling S8 puts into hullResistance/hullSideForce (a boat riding a few
+    // cm higher or lower changes its wetted surface and lateral plane) is a
+    // real, first-order change to the SAME hull hydrodynamics this check's
+    // margin depends on, and it costs 2 of the 6 points. Isolated by running
+    // the release phase through a patched integrator with the heave->hull
+    // coupling forced off (heave itself still free to move, just not fed
+    // back into resistance/side-force): TWS10/TWA70 at the pre-S8 holding
+    // trim (tack=0.5, crewX=-0.5) reproduces the old 13.1deg/80%-speed hold
+    // exactly with the coupling off, and fails (capsizes) with it on — the
+    // release-phase dynamics themselves, not a different starting trim, are
+    // what changed. TWS6/TWA110 additionally has the polar optimizer itself
+    // legitimately picking a different bestCrewPos (0 -> 1) once resistance
+    // depends on draft, which starts the release from a different settled
+    // heel; with the coupling off the old row and something close to the old
+    // margin come back. Both are downstream of S8 actually changing the hull
+    // physics, not an artifact of the search or a bug in the heave wiring
+    // (confirmed by the exact reproduction above) -- reported, not retuned,
+    // the same rule this file applies to S1a/S1b/S2.
     const shippedTrials = [];
     for (const t of [0, 0.5, 1]) for (const x of [0, -0.25, -0.5, -0.75, -1]) shippedTrials.push({ t, x });
     const shippedHolders = grid.map((row) => {
@@ -233,7 +253,8 @@ export function check_polar_helm(config, check, slow) {
       nShippedHeld === shippedHolders.length,
       `${nShippedHeld}/${shippedHolders.length} points hold -- ` +
       shippedHolders.map((h) => `TWS${h.tws}/TWA${h.twa}:${h.found.length ? `tack=${h.found[0].t} crewX=${h.found[0].x} exc=${h.found[0].excursion.toFixed(1)}deg v=${(h.found[0].speedRatio * 100).toFixed(0)}%` : 'none'}`).join(' ') +
-      ' -- was 0/6 before the hull\'s side force was strip-integrated (docs/adr/0017), 3/6 after it, 6/6 since the ama gained its own lateral plane (T4). See this check\'s own comment');
+      ' -- was 0/6 before the hull\'s side force was strip-integrated (docs/adr/0017), 3/6 after it, 6/6 since the ama gained its own lateral plane (T4), 4/6 since S8\'s heave-draft coupling changed the same hull hydrodynamics (docs/adr/0033). See this check\'s own comment',
+      'STEERING');
 
     // (c) S2's payoff, and the reason S1a is left failing rather than
     // redefined. S1a measures the boat at the SPEED-optimal trim with the
