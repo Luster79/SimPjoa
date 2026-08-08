@@ -93,11 +93,13 @@ Zostają więc:
 - ~~(a) odszukać w źródle Flaya `N(β)`~~ — **zamknięte, źródło nie ma tych
   danych** (sprawdzone bezpośrednio, nie założone).
 - (b) oprzeć się na regresji manewrowej dla smukłych kadłubów (Clarke,
-  Inoue) — **zdyskwalifikowana przez kontrakt danych projektu** (ADR 0009):
-  ADR 0018 cytuje te współczynniki "z pamięci, nie z pliku w `data/`" i
-  używa ich wyłącznie jako sprawdzenia rzędu wielkości, wprost zastrzegając,
-  że żadna asercja nie jest na nich zakotwiczona. Użycie ich tu wprost jako
-  fizyki powtórzyłoby to, przed czym ADR 0018 ostrzega.
+  Gedling, Hine — RINA Transactions, 1983) — **niedostępna**: właściciel
+  nie ma tego artykułu, a bez niego pozostaje dokładnie tym, czym ADR 0018
+  już to nazwał — cytatem z pamięci, zdyskwalifikowanym przez kontrakt
+  danych (ADR 0009). Nawet gdyby się znalazł: regresja jest dopasowana do
+  B/T 2-4, ten kadłub ma B/T ≈ 1.4 — poza zakresem, więc i tak zostałaby
+  sprawdzeniem rzędu wielkości, nie źródłem migracji CLR, jak dziś w
+  ADR 0018. Zamknięta na obu frontach, nie tylko na jednym.
 - (c) wyprowadzić geometrycznie z teorii ciała smukłego — **jedyna droga
   zgodna z kontraktem**, najsłabsza, ale obroniona, i spójna z tym, jak
   wyprowadzono `yceBrailShift` (T2).
