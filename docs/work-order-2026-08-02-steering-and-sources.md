@@ -475,7 +475,7 @@ już przy fizycznym zakresie trymu. **[rusza polarę]***
 
 ### Blok C — higiena pakietu
 
-#### S7. Zastąpić bezwzględne pasma niezmiennikami strukturalnymi
+#### S7. Zastąpić bezwzględne pasma niezmiennikami strukturalnymi — WYKONANE (audyt)
 
 R15 przekotwiczony siedem razy, `Sail steers` przebierany trzy razy, zanim
 został zmierzony jako agregat. To drugie rozwiązanie jest właściwe i powinno
@@ -495,6 +495,29 @@ została pozostawiona w formie bezwzględnej bez uzasadnienia w komentarzu, dlac
 niezmiennik nie wystarcza.
 
 *Nakład: średni. Zależności: brak.*
+
+**Audyt (2026-08-08).** Przejrzano wszystkie 18 asercji w `harness/asserts.js`
+z jawnym dwustronnym pasmem liczbowym (`grep` na `>= N && <= N`), dla każdej
+policzono historię przekotwiczeń z komentarzy. Wynik: pozycja, którą S7 sam
+podaje jako motywujący przykład, jest już zamknięta — i większość reszty
+także, w większości przez wcześniejsze rundy, dziś dodatkowo przez pracę D1.
+
+| asercja | przekotwiczeń | stan |
+|---|---|---|
+| `R15` (reach TWS10, było „8,47–8,55 m/s") | 8 | **skonwertowana** na niezmiennik (najszybszy punkt polary, bije ostry o ≥1,8×) + pasmo fizyczne (stosunek prędkość/wiatr 0,6–1,0) |
+| `R15` (opór amy przy pełnym zanurzeniu) | 3 | pasmo bezwzględne zostaje, **z jawnym uzasadnieniem**: sam stosunek (sprawdzany osobno, R7-4a) jest niewrażliwy na zmianę, która przesuwa opór amy i kadłuba o ten sam czynnik |
+| `stop scenario` (było „<0,5 m/s w 23s") | 1 (do niezmiennika) | **skonwertowana**: spadek do <1/3 szczytu, monotonicznie |
+| T6 (szczyt podmuchu, próg TWS) | 2 (parametr scenariusza, nie pasmo) | sama asercja **nigdy nie była** wartością bezwzględną — sprawdza przesłankę niebezpieczeństwa (`maxPhi > próg×1,5`), z jawnym komentarzem: „deliberately does NOT assert which side of that edge" |
+| `H3` (dryf zaparkowanego kadłuba) | 3 (dziś ADR 0032) | pasmo zostaje, **szerokie z rozmysłu** (0,2–0,9, krotność ~4,5×) i uzasadnione w komentarzu przy każdym przekotwiczeniu |
+| `R7-4a` (stosunek oporu ama/kadłub) | 1 (do niezmiennika) | już stosunek, zamiatany po fizycznym zakresie `formFactor`, nie po jednej wartości |
+| `C-speed` (stosunek TWA160/TWA105) | 1 (zweryfikowana, nie przesunięta) | pasmo z literatury (Di Piazza), przetrwało realną zmianę modelu bez ruszenia — dokładnie to, co niezmiennik ma robić |
+| `steeringOk` (nogi trim-in/brailed) | po 1 każda | jawna dyscyplina w komentarzu: „this leg is NOT re-picked a third time" |
+| CL/CLmax (kalibracja aero) | 1 | dane źródłowe (Di Piazza), nie tripwire modelu — inna kategoria |
+| pozostałe (~10) | 0–1 | pasma szerokie od początku albo asercje jednorazowe (zgodność z danymi, nie czułość modelu) |
+
+**Wniosek:** żadna asercja nie łamie kryterium odbioru. Dyscyplina, o którą
+prosi S7, jest już praktykowana konsekwentnie — potwierdzone pomiarem
+historii, nie założeniem. Kod nietknięty.
 
 #### S8. Zamknąć bilans pionowy albo zamknąć pytanie
 
