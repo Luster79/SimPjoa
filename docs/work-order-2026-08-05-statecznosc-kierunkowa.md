@@ -94,7 +94,7 @@ ruszania `hull.lead` ani `clrXFraction`.
 **każdą** asercję sterowania i `out/polar.csv` (bramka bajtowa). Zaplanować
 jako osobną rundę z pełną re-walidacją, nie doklejać do innej pracy.
 
-### D2. Audyt wielkości momentu Munka — **nie zmieniać bez nowej decyzji**
+### D2. Audyt wielkości momentu Munka — WYKONANE, obronione — **nie zmieniać bez nowej decyzji**
 
 ADR 0018 zamknął pytanie o podwójne liczenie, ale wielkość została na
 oszacowaniu (dzielnik `/4` zamiast teoretycznego `/2`), a regresja Clarke'a
@@ -109,7 +109,14 @@ podniesienie `massSway` odwraca cztery reguły sterowania z instrukcji.
 **Weryfikacja.** Notatka w findings z porównaniem do Clarke'a i wnioskiem
 „obronione / nieobronione", bez dotykania kodu.
 
-### D3. Moment odchylający amy — **nieblokująca, należna**
+**Wynik (`docs/findings-2026-08-08-directional-stability.md`).** Obronione —
+ADR 0018 samo jest tym audytem i jego liczby wciąż się zgadzają: model niesie
+455 kg dodanej masy bocznej wobec ~1010 kg z regresji Clarke'a (mniej niż
+połowa, nie więcej), a łączny moment Munk+kadłub trzyma się stałych 0.65
+regresji `N_v` w czterech rozstawionych stanach — w TWA160 nie jest wyjątkiem.
+Kod nietknięty.
+
+### D3. Moment odchylający amy — WYKONANE, w granicy — **nieblokująca, należna**
 
 Ama wnosi +2.8 N·m z reszty. T4 dodał jej plan boczny całkowany paskami, ale
 na pływaku, którego nikt nie zmierzył, a ADR 0029 zmienił jego długość ×1.40.
@@ -119,12 +126,31 @@ nowa 6.6), ale sama wielkość członu nie była nigdy sprawdzona wobec czegokol
 **Weryfikacja.** Człon amy porównany z niezależnym oszacowaniem (opór ×
 rozstaw jako górna granica). Jeśli mieści się w granicy — zapisać i zamknąć.
 
-### D4. Symetria dziób-rufa: sprawdzić, że to naprawdę zero
+**Wynik.** Przy `r=0` człon jest dokładnie zerowy (ta sama przyczyna co D4:
+rozkład pasków amy jest jednorodny, bez odpowiednika `clrX`). Przy realnym
+resztkowym `r` (setne rad/s, jak przy autopilocie osiadłym na kursie) człon
+mieści się w 7–35% granicy; przekracza ją dopiero od `r ≈ 0.28 rad/s`
+(~16°/s) — to jest tempo zwrotu, nie ustalonego żeglowania. Wartość +2.8 N·m
+z TWA160 leży dwa rzędy wielkości poniżej progu, gdzie granica w ogóle
+zaczyna być testowana. Kod nietknięty.
+
+### D4. Symetria dziób-rufa: sprawdzić, że to naprawdę zero — WYKONANE, potwierdzone
 
 Kadłub proa jest z założenia symetryczny, więc rocker/martwica nie powinny
 dawać momentu. To jest **założenie, nie pomiar**. Tania pozycja: sprawdzić, czy
 model rzeczywiście daje zero, i zapisać to jako świadomy fakt, a nie
 przeoczenie.
+
+**Wynik.** Po wyzerowaniu trzech świadomych przesunięć CLR
+(`clrXFraction`, `crewForeAftTrimCoeff`, `heelClrShiftCoeff`) moment odchylający
+kadłuba jest zerowy co do precyzji zmiennoprzecinkowej (~1e-13 N·m) w całym
+zamiecionym zakresie dryfu i przechyłu. W `/core` nie ma żadnego parametru
+kształtu kadłuba poza liniowym zwężeniem, które już buduje `stationWeights` z
+tych trzech przesunięć — nie ma więc czego więcej sprawdzać. Niezerowe momenty,
+które model daje, zawsze dają się przypisać jednemu z tych trzech, uzasadnionych
+ADR-ami członów. Kod nietknięty.
+
+**Dowód razem z pełnym pomiarem D2-D3: `docs/findings-2026-08-08-directional-stability.md`.**
 
 ---
 

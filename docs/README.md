@@ -87,7 +87,7 @@ Append-only. Never edit an old ADR; supersede it with a new one.
 | `work-order-2026-07-30-physics-audit.md` | **Complete** — F1-F16 all executed. |
 | `work-order-2026-08-05-sterownosc.md` | **Complete, with T1 withdrawn.** T1's `boomLift` was a line the rig does not carry (ADR 0031); T2-T6 stand. Its Part IV TWA160+ "structural limit" is withdrawn by ADR 0030. |
 | `work-order-2026-08-05-boat-data.md` | **Complete.** Ama length/buoyancy revised x1.40 (ADR 0029). Its TWA155-165 "structural gap" is **withdrawn by ADR 0030** -- the search had the sheet pinned. `hull.massSway` left untouched by owner decision (collides with ADR 0018). |
-| `work-order-2026-08-05-statecznosc-kierunkowa.md` | **Open, current.** D1-D4: the hull's yaw stiffness measures 0.00-0.20 N*m/deg -- effectively zero -- because `stationWeights` makes the lateral centre of pressure fixed, so N reduces to clrX*Fy. D1 (CoP migration with drift angle) is blocked on Flay's yaw-moment data, the same block S7/S8 carry. |
+| `work-order-2026-08-05-statecznosc-kierunkowa.md` | **D2-D4 done, D1 open.** D4: fore-aft symmetry confirmed zero to float precision once the three named CLR shifts are zeroed -- no hidden rocker term. D3: the ama's own lateral-plane term is bounded by drag*spacing at realistic yaw rates, only exceeds it past ~0.28 rad/s (a turn, not steady sailing). D2: Munk magnitude re-affirmed defended, ADR 0018 unchanged. D1 (CoP migration with drift angle) remains blocked on Flay's yaw-moment data, the same block S7/S8 carry -- separate round per the order's own Part III/IV. |
 | `work-order-2026-08-02-steering-and-sources.md` | Open: **S7** (R15 done; the rest outstanding), **S8** (vertical balance). S3 was implemented and withdrawn (ADR 0013); everything else is done. Sailing without the oar reached 3/6 (ADR 0017); the Munk double-count hypothesis was audited and rejected (ADR 0018), so it is blocked on Flay's yaw-moment data, not on a parameter. |
 
 Work that came from the primary source rather than a work order is tracked in
@@ -100,6 +100,7 @@ the findings document, not here — see its last four sections.
 | `findings-2026-07-22-work-order.md` | Execution of the 07-22 order |
 | `findings-2026-07-30-physics-audit.md` | Execution of the physics audit, with the measured numbers behind every change |
 | `findings-2026-08-02-steering-and-sources.md` | Execution of the 08-02 order stage by stage, **then** the acceptance run against the manual and everything it uncovered |
+| `findings-2026-08-08-directional-stability.md` | D2-D4 of the 08-05 directional-stability order: fore-aft symmetry, the ama's own yaw term, and the Munk-moment re-audit |
 | `acceptance-manual-2026-08-04.txt` | Raw output of `harness/acceptance-manual.js` — current |
 | `acceptance-manual-2026-08-03.txt` | The previous snapshot, cited by the findings |
 | `capsize-margins-2026-07-30.md` | Margin sweep run as a precondition for the audit's block D |
