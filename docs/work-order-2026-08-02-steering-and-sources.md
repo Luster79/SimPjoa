@@ -551,6 +551,76 @@ z odsprzężonym `heaveZ` w izolowanym integratorze stary margines odtwarza się
 dokładnie, więc to realna zmiana hydrodynamiki kadłuba, nie artefakt
 przeszukiwania. Zobacz ADR 0033.
 
+### Blok D — otwarte uproszczenia fizyczne (zidentyfikowane po S8)
+
+Trzy pozycje z `ARCHITECTURE_physics_core_EN.md`'s "Known simplifications",
+przepisane na format `S*` na życzenie właściciela (2026-08-09). Nowe,
+nieoszacowane w Części IV — nie były częścią oryginalnego planu wdrożenia
+tego dokumentu.
+
+#### S9. Piąty... szósty stopień swobody: pitch (dziobanie)
+
+Heave (S8, ADR 0033) domknął bilans pionowy, ale pochylenie wzdłużne (pitch)
+nie jest modelowane w ogóle. Trym wzdłużny (pozycja załogi, hals) istnieje
+dziś wyłącznie jako fenomenologiczne przesunięcie CLR w `clrXPosition()` —
+nie z rzeczywistej równowagi pitch, tylko z reguły kciuka. Prawdziwa łódź
+zmienia kąt trymu i długość zwilżoną pod wpływem trymu wzdłużnego, co realnie
+zmienia opór; dziś ten kanał nie istnieje.
+
+*Naprawa:* prawdziwy DOF `theta`/`q`, tą samą metodą co roll i heave —
+moment prostujący z podłużnej wysokości metacentrycznej płaszczyzny wodnicy
+(`BM_L = I_L / V`, `I_L` podłużny drugi moment wodnicy), tłumienie strojone
+w parze jak `I_roll`/`rollDampingCoeff` i `heave.mass`/`dampingCoeff`. Kąt
+trymu sprzęgnięty do `hullResistance` (długość zwilżona), potencjalnie
+zastępując lub uzupełniając `clrXPosition()`'s fenomenologiczny mechanizm.
+
+**Odbiór:** pitch całkowany jako prawdziwy DOF; zmiana polary zmierzona i
+zaraportowana; marginesy wywrotki i S1c-podobne testy sterowania
+zweryfikowane ponownie (ten sam zestaw co przy S8, bo pitch też zmienia
+`hullResistance`).
+
+*Nakład: duży (porównywalny z S8, ta sama procedura weryfikacji od zera).
+Zależności: żadne blokujące, ale wykonać po ustabilizowaniu S8.*
+
+#### S10. Ponownie zmierzyć macierz przechył→odpadanie pod aktualną fizyką
+
+`heelClrShiftCoeff`/`heelClrSign` (kadłub, T3) i `yawHeelSign` (żagiel) są
+zbudowane, działają, i trzymane na 0 — T3 zmierzył całą macierz czterech
+kombinacji znaków i żadna nie pomogła AC-4.2 przy jednoczesnym pogorszeniu
+AC-1.1/1.2. Ten pomiar był zrobiony PRZED D1 (migracja CLR kadłuba, ADR 0032)
+i PRZED S8 (heave, ADR 0033) — oba realnie zmieniły stateczność kierunkową i
+opór kadłuba, więc negatywny wniosek T3 nie jest już koniecznie aktualny.
+
+*Naprawa:* powtórzyć dokładnie tę samą macierz (cztery kombinacje znaków
+`heelClrSign`×`yawHeelSign`) na obecnej siatce akceptacyjnej, pod obecną
+fizyką.
+
+**Odbiór:** zmierzona macierz AC-1.1/1.2/4.2a/4.2b dla wszystkich 4
+kombinacji; potwierdzenie lub odwrócenie wniosku T3, zaraportowane
+niezależnie od wyniku — nie strojone do z góry założonej odpowiedzi.
+
+*Nakład: mały (procedura pomiaru już istnieje, tylko powtórzyć). Zależności:
+po S8 (już spełnione).*
+
+#### S11. Rozszerzyć płetwę boczną amy do pełnej strip-integration
+
+T4 dał amie realną siłę boczną i moment (`Fy`, `yawMoment`) — ale jako
+pojedynczy pasek, nie wielostanowiskową integrację jak `hullSideForce`
+(`HULL_STATIONS` stacji, taper zależny od `crewPosX`/przechyłu). Własny CLR
+amy mógłby migrować z jej lokalnym dryfem/przechyłem tym samym mechanizmem,
+którym migruje CLR kadłuba (D1, ADR 0032) — `amaDrag` dziś tego nie
+uchwytuje.
+
+*Naprawa:* rozbić `amaDrag`'s `FySide` na wielostanowiskową sumę analogiczną
+do `hullSideForce`'s `stationWeights`, na własnej (krótszej) długości amy.
+
+**Odbiór:** zmierzona zmiana `yawMoment` i testów sterowania
+(S1c/S2-podobnych); zaraportowana niezależnie od kierunku zmiany.
+
+*Nakład: średni. Zależności: żadne blokujące, ale prawdopodobnie ponownie
+rusza S1c/S2/marginesy głębokiego kursu — powtórzyć pełną procedurę
+weryfikacji jak przy S8.*
+
 ---
 
 ## Część IV. Plan wdrożenia
@@ -636,3 +706,92 @@ pasm), **S8** (bilans pionowy). Niezależne od siebie, w dowolnej kolejności.
 *Reprodukcja: bloki `repro` uruchamiane z katalogu repo. Żaden nie modyfikuje
 stanu repo. Pomiary w Części II wykonane tym samym sposobem — pełne skrypty
 w treści pozycji, do których się odnoszą.*
+
+---
+
+## Część V. Ocena względem kryterium sukcesu (2026-08-09)
+
+Kryterium sukcesu projektu (właściciel, 2026-08-09, zapisane w `docs/README.md`):
+**każdy kurs da się uzyskać i trwale utrzymać bez użycia wiosła**, na fizyce
+przybliżonej do realnej łodzi, z wolnością manipulowania cechami fizycznymi
+tylko w ograniczonym zakresie i głównie tam, gdzie nie są znane.
+
+### V.1. Wkład poszczególnych pozycji
+
+| poz. | stan | wkład w kryterium |
+|---|---|---|
+| S1 | wykonane | **definiuje pomiar** kryterium (S1b/S1c), ale na 6 punktach i w oknie 60 s |
+| S2 | wykonane (ADR 0011/0023) | jedyny mechanizm, który w ogóle dotknął kryterium — ale jego 6/6 jest z **wiosłem w wodzie** |
+| S3 | wdrożone i **wycofane** (ADR 0013) | druga połowa pary CE/CLR przestała być sterowaniem; D1 (ADR 0032) dał migrację CLR, ale **pasywną**, funkcją dryfu — nie sterowaną |
+| S4 | wykonane (ADR 0009) | realizm; zerowy wpływ na kryterium |
+| S5 | wykonane | zabezpieczenie własności; zerowy wpływ |
+| S6 | wykonane (ADR 0010) | realizm; na kryterium neutralne |
+| S7 | wykonane (audyt) | higiena; zerowy wpływ |
+| S8 | wykonane (ADR 0033) | realizm **+**, kryterium **−2 punkty** (S1c 6/6 → 4/6) |
+| S9 (pitch) | otwarte, duży nakład | realizm +; na kryterium wpływ pośredni (zastąpiłby fenomenologiczny `clrXPosition()` prawdziwym trymem) — niepewny zwrot przy dużym koszcie |
+| S10 (macierz przechył→odpadanie) | otwarte, mały nakład | **wprost na kryterium**, najtańsza otwarta pozycja: dwie dźwignie już zbudowane i trzymane na 0 |
+| S11 (płetwa amy, strip-integration) | otwarte, średni nakład | **wprost na kryterium, najwyższe prawdopodobieństwo a priori**: to płaszczyzna boczna amy przeniosła S1c z 3/6 na 6/6 (T4). To rozszerzenie tej samej dźwigni, która już zadziałała |
+
+**Wniosek o kolejności:** pod kryterium blok D powinien iść **S10 → S11 → S9**,
+a nie w kolejności, w jakiej został spisany. S9 jest realizmem; S10/S11 są
+kryterium.
+
+### V.2. Trzy miejsca, w których odbiór tego dokumentu jest słabszy niż kryterium
+
+1. **„Trwałe utrzymanie" nie jest sprawdzane.** Wszystkie testy trzymania kursu
+   są miarą *tempa* w skończonym oknie: wychylenie ≤ 15° w 60 s (S1a/S1b/S1c/S2)
+   albo ≤ 15–20°/min w 120 s (C-A/C-B/C-C). Łódka dryfująca 14°/min przechodzi
+   i jest 140° od kursu po dziesięciu minutach. Kryterium mówi *trwale* — a to
+   jest twierdzenie o **równowadze**, nie o tempie: kurs ma zbiegać, a moment
+   skręcający ma mieć nachylenie przywracające (dN/dψ < 0) wokół punktu pracy.
+   *Propozycja:* niezmiennik strukturalny (dokładnie doktryna S7) — puścić ster
+   na 600 s i wymagać zbieżności (|Δψ| w ostatnich 120 s poniżej ułamka |Δψ| z
+   pierwszych 120 s), plus osobny pomiar dN/dψ w punkcie ustalonym.
+2. **„Uzyskanie" kursu nie jest sprawdzane w ogóle.** Każdy test startuje **na**
+   kursie docelowym pod autopilotem i dopiero puszcza ster. Kryterium wymaga
+   *dojścia* do dowolnego kursu bez wiosła — manewrowania samym trymem, a na
+   proa również shuntu. W pakiecie nie ma ani jednego przebiegu kurs A → kurs B
+   przy `rudderUp = true`. *Propozycja:* z utrzymywanego TWA 90, samym trymem,
+   osiągnąć i utrzymać TWA 140 (i z powrotem) w budżecie czasu; osobno —
+   wykonać shunt z wiosłem wyjętym.
+3. **Pokrycie kursów to 6 punktów półwietrznych + 3 pełne, i nie ma agregatu.**
+   Brak TWA < 70 (choć polara zaczyna się na 40, a optimum VMG wypada ~45),
+   brak 120–135, kursy pełne tylko przy TWS 6. Postęp rozkłada się dziś na
+   kilka osobnych linii pass/fail — dlatego koszt S8 odczytał się jako „jeden
+   test zdemontowany", a nie jako **−2 na mierzonym pokryciu**. *Propozycja:*
+   jedna raportowana liczba — ułamek siatki polary (TWA 40–180 × TWS 4/6/10),
+   na której **istnieje** trym utrzymujący kurs z wiosłem wyjętym — raportowana
+   co rundę, z oczekiwaniem monotoniczności.
+
+### V.3. Dwie uwagi dodatkowe
+
+- **`harness/acceptance-manual.js` mierzy całą siatkę z wiosłem W WODZIE**
+  (świadomie — z wyjętym łódka staje w wiatr tak szybko, że zalewa mierzone
+  różnice; komentarz przy `baseControls`). To jest poprawna decyzja dla tego
+  raportu, ale oznacza, że tally 15 PASS / 7 PARTIAL **nie jest dowodem w
+  sprawie kryterium** i nie wolno go tak czytać.
+- **Wolność parametryczna z kryterium nie ma dziś odpowiednika w konwencjach.**
+  Projekt zna „przekotwiczenie po zamierzonej zmianie" i „nie przebierać
+  punktu pracy", ale nie zna podziału na stałe **zamknięte przez źródło** i
+  stałe **wolne w paśmie**. Kandydaci do klasy wolnej, dziś przypięci
+  założeniem, a nie pomiarem: `hull.heelClrShiftCoeff`/`heelClrSign` i
+  `sail.yawHeelSign` (oba 0 — to jest S10), para masa/tłumienie heave, form
+  factor amy, `clrXFraction`. Zapisanie tego rejestru zmienia S10 z
+  „powtórzyć pomiar" w „skorzystać z licencji, której kryterium udziela".
+
+### V.4. Stan Części IV
+
+Plan wdrożenia z Części IV jest **historią**: S1–S8 wykonane, blok D dopisany
+poza planem. Pod kryterium jego miejsce zajmuje:
+
+0. uczynić kryterium mierzalnym — pokrycie (V.2.3), trwałość (V.2.1),
+   uzyskiwanie kursu (V.2.2). Bez tego reszta znów mierzy przeciwko
+   brakującemu kryterium, czego zakazuje pierwsza reguła Części IV;
+1. **S10** (mały, wprost na kryterium);
+2. **S11** (ta sama dźwignia, która już raz zadziałała);
+3. **S9** albo przywrócenie **sterowanej** pozycji CLR — wycofana połowa S3, w
+   formie pasującej do kadłuba V (np. przez trym wzdłużny z S9, nie przez
+   miecz).
+
+*Pomiary cytowane w tej części pochodzą z własnych komunikatów asercji na
+`538eb07`; nie przeliczałem pakietu od zera na potrzeby tej oceny.*

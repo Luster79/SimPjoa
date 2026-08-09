@@ -8,7 +8,7 @@
 import { sailForces, windageForce } from './aero.js';
 import { hullResistance, hullSideForce, amaDrag } from './hydro.js';
 import { rudderForce } from './rudder.js';
-import { computeAmaLoad, updateAback, rollRestoreMoment, crewRollMoment, rollDampingMoment, amaVerticalForce, heaveRestoreForce, heaveDampingForce } from './stability.js';
+import { computeAmaLoad, updateAback, rollRestoreMoment, crewRollMoment, rollDampingMoment, amaVerticalForce, heaveRestoreForce, heaveDampingForce, crewPitchMoment, pitchRestoreMoment, pitchDampingMoment } from './stability.js';
 import { shuntStep } from './shunt.js';
 import { sheetStep, effectiveDeltaMax, isLuffing } from './sheet.js';
 
@@ -26,7 +26,11 @@ export function computeForces(state, controls, config) {
   const amaLoadDisplay = Math.min(amaLoad, config.stability.amaLoadDisplayCap);
 
   const resist = hullResistance(state.u, config, state.z);
-  const side = hullSideForce(state.u, state.v, state.r, controls.crewPosX ?? 0, state.phi, config, state.z);
+  // L5 (the 6th DOF, pitch): hullSideForce's fore-aft CLR argument is now
+  // state.theta, the pitch DOF's own dynamic angle, not controls.crewPosX
+  // directly — see clrXPosition's own comment for why the substitution is
+  // sign-preserving and needs no extra flip here.
+  const side = hullSideForce(state.u, state.v, state.r, state.theta ?? 0, state.phi, config, state.z);
   const drag = amaDrag(state.u, state.v, state.r, state.phi, controls.crewPos, state.end, config);
   const rudder = rudderForce(state, controls, config);
   const windage = windageForce(state, controls, config);
@@ -57,11 +61,19 @@ export function computeForces(state, controls, config) {
   const Famaz = amaVerticalForce(state.phi, config);
   const Fz = aero.Fz + Famaz;
 
+  // Pitch (L5, the 6th DOF, docs/work-order-2026-08-09-domkniecie-
+  // kryterium.md): the crew's fore-aft weight is the one control-driven
+  // pitching moment this model has (the same status crewRollMoment has for
+  // roll) — the hull's own hydrostatic restoring stiffness and damping are
+  // the STRUCTURAL response, added in derivatives() below, the same split
+  // heave's Fspring/Fdamp use.
+  const Mpitch = crewPitchMoment(controls.crewPosX ?? 0, config);
+
   const deltaMax = effectiveDeltaMax(state, controls, config);
   const luffing = isLuffing(state, controls, config);
 
   return {
-    Fx, Fy, M, Mroll, Fz, amaLoad, amaLoadDisplay,
+    Fx, Fy, M, Mroll, Fz, Mpitch, amaLoad, amaLoadDisplay,
     heelMoment: aero.heelMoment, alpha: aero.alpha, alphaSailor: aero.alphaSailor,
     aw: aero.aw, CL: aero.CL, CD: aero.CD, deltaMax, luffing,
     breakdown: {
@@ -73,6 +85,7 @@ export function computeForces(state, controls, config) {
       windage: { Fx: windage.Fx, Fy: windage.Fy },
       roll: { Msail, Mrestore, Mcrew, Mdamp, Mroll },
       heave: { Fsail: aero.Fz, Fama: Famaz, Fz },
+      pitch: { Mcrew: Mpitch },
     },
   };
 }
@@ -100,6 +113,14 @@ export function derivatives(state, forces, config) {
   // gets folded into Mroll rather than kept separate.
   const Fspring = heaveRestoreForce(state.z, config);
   const Fdamp = heaveDampingForce(state.w, config);
+  // Pitch (L5, the 6th DOF): same "forces here, structural response at the
+  // point of integration" split heave already established -- forces.Mpitch
+  // (computeForces) carries the crew-weight contribution; the hull's own
+  // hydrostatic pitch stiffness/damping are the structural response, added
+  // here beside the inertia they divide by.
+  const theta = state.theta ?? 0, q = state.q ?? 0;
+  const Mprestore = pitchRestoreMoment(theta, config);
+  const Mpdamp = pitchDampingMoment(q, config);
   return {
     du: forces.Fx / massSurge + (massSway / massSurge) * state.v * state.r,
     dv: forces.Fy / massSway - (massSurge / massSway) * state.u * state.r,
@@ -111,11 +132,13 @@ export function derivatives(state, forces, config) {
     dp: forces.Mroll / Iroll,
     dz: state.w,
     dw: (forces.Fz + Fspring + Fdamp) / config.heave.mass,
+    dtheta: q,
+    dq: (forces.Mpitch + Mprestore + Mpdamp) / config.pitch.inertia,
   };
 }
 
 function odeState(state) {
-  return { x: state.x, y: state.y, heading: state.heading, u: state.u, v: state.v, r: state.r, phi: state.phi, p: state.p, z: state.z, w: state.w };
+  return { x: state.x, y: state.y, heading: state.heading, u: state.u, v: state.v, r: state.r, phi: state.phi, p: state.p, z: state.z, w: state.w, theta: state.theta ?? 0, q: state.q ?? 0 };
 }
 
 function addScaled(base, deriv, h) {
@@ -132,13 +155,16 @@ const DIVERGENCE_MAX_SPEED = 100;         // m/s; the boat sails at a few m/s
 const DIVERGENCE_MAX_RATE = 50;           // rad/s, for both yaw r and roll p
 const DIVERGENCE_MAX_Z = 5;               // m; heave (S8) genuinely moves a few cm
 const DIVERGENCE_MAX_W = 50;              // m/s; heave rate, same "absurd" margin as DIVERGENCE_MAX_RATE
+const DIVERGENCE_MAX_THETA = 2 * Math.PI; // rad; pitch (L5) genuinely moves a few degrees
+const DIVERGENCE_MAX_Q = 50;              // rad/s; pitch rate, same "absurd" margin as DIVERGENCE_MAX_RATE
 function isPhysicallyPlausible(s) {
-  for (const k of ['x', 'y', 'heading', 'u', 'v', 'r', 'phi', 'p', 'z', 'w']) {
+  for (const k of ['x', 'y', 'heading', 'u', 'v', 'r', 'phi', 'p', 'z', 'w', 'theta', 'q']) {
     if (!Number.isFinite(s[k])) return false;
   }
   if (Math.abs(s.phi) > DIVERGENCE_MAX_PHI) return false;
   if (Math.hypot(s.u, s.v) > DIVERGENCE_MAX_SPEED) return false;
   if (Math.abs(s.z) > DIVERGENCE_MAX_Z || Math.abs(s.w) > DIVERGENCE_MAX_W) return false;
+  if (Math.abs(s.theta) > DIVERGENCE_MAX_THETA || Math.abs(s.q) > DIVERGENCE_MAX_Q) return false;
   return Math.abs(s.r) <= DIVERGENCE_MAX_RATE && Math.abs(s.p) <= DIVERGENCE_MAX_RATE;
 }
 
@@ -156,14 +182,14 @@ export function integrate(state, controls, config, dt) {
   if (state.capsized) {
     const bleed = Math.exp(-dt / 0.3);
     const decay = (v) => (Math.abs(v) < 1e-4 ? 0 : v * bleed);
-    return { ...state, t: state.t + dt, u: decay(state.u), v: decay(state.v), r: decay(state.r), p: decay(state.p), w: decay(state.w) };
+    return { ...state, t: state.t + dt, u: decay(state.u), v: decay(state.v), r: decay(state.r), p: decay(state.p), w: decay(state.w), q: decay(state.q ?? 0) };
   }
 
   const evalDeriv = (s) => {
     const full = { ...state, ...s };
     const forces = computeForces(full, controls, config);
     const d = derivatives(full, forces, config);
-    return { x: d.dx, y: d.dy, heading: d.dheading, u: d.du, v: d.dv, r: d.dr, phi: d.dphi, p: d.dp, z: d.dz, w: d.dw };
+    return { x: d.dx, y: d.dy, heading: d.dheading, u: d.du, v: d.dv, r: d.dr, phi: d.dphi, p: d.dp, z: d.dz, w: d.dw, theta: d.dtheta, q: d.dq };
   };
 
   const s0 = odeState(state);

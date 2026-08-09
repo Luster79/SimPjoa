@@ -1,0 +1,39 @@
+// L6: brake by EASING THE SHEET instead of pulling brail, keeping the hold
+// trim -- does that avoid the capsize?
+import { createConfig } from '../core/config.js';
+import { integrate } from '../core/integrator.js';
+import { computePolar, headingHoldRudder } from '../harness/polar.js';
+import { DEG, HEADING0 } from '../harness/asserts-helpers.js';
+
+const config = createConfig();
+const tws = 6, twa = 90, dt = config.dt;
+const row = computePolar(config, { twsList: [tws], twaFrom: twa, twaTo: twa, step: 1 })[0];
+const windDirFrom = HEADING0 + twa * DEG;
+
+let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 1.0, v: 0, r: 0, phi: 0, p: 0, z: 0, w: 0,
+  delta: row.bestSheetAngle * DEG, end: 1, amaLoad: 0, abackTimer: 0, capsized: false,
+  shunt: { phase: 'none', progress: 0 } };
+const settleControls = { windDirFrom, windSpeed: tws, sheet: row.bestSheetAngle * DEG, rudder: 0,
+  rudderUp: false, brailLee: 0, brailWind: row.bestBrailWind, crewPos: row.bestCrewPos,
+  crewPosX: 0, tackX: 0, shuntRequest: false };
+for (let i = 0; i < Math.round(45 / dt); i++) {
+  settleControls.rudder = headingHoldRudder(state, HEADING0, config);
+  state = integrate(state, settleControls, config, dt);
+}
+const holdControls = { windDirFrom, windSpeed: tws, sheet: row.bestSheetAngle * DEG, rudder: 0,
+  rudderUp: true, brailLee: 0, brailWind: row.bestBrailWind, crewPos: row.bestCrewPos,
+  crewPosX: -1, tackX: 1, shuntRequest: false };
+for (let i = 0; i < Math.round(120 / dt); i++) state = integrate(state, holdControls, config, dt);
+console.log('hold confirmed, capsized=', state.capsized);
+
+// Ease sheet to 88deg (near max) over 10s instead of pulling brail
+let capsizedAt = null, slowedAt = null;
+for (let i = 0; i < Math.round(40 / dt); i++) {
+  const t = i * dt;
+  const sheetDeg = row.bestSheetAngle + (88 - row.bestSheetAngle) * Math.min(1, t / 10);
+  state = integrate(state, { ...holdControls, sheet: sheetDeg * DEG }, config, dt);
+  const speed = Math.hypot(state.u, state.v);
+  if (slowedAt === null && speed <= config.shunt.speedLockout) slowedAt = t;
+  if (state.capsized) { capsizedAt = t; break; }
+}
+console.log(`sheet-eased braking: capsized=${capsizedAt !== null ? 'YES at t=' + capsizedAt.toFixed(1) : 'no'} slowedBelowLockout=${slowedAt !== null ? 'at t=' + slowedAt.toFixed(1) + 's' : 'no'} finalSpeed=${Math.hypot(state.u,state.v).toFixed(2)} phi=${(state.phi/DEG).toFixed(1)}`);

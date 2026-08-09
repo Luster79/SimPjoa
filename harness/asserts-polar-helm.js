@@ -4,7 +4,7 @@
 // for that file's own per-check provenance comments, preserved below unchanged.
 import { integrate } from '../core/integrator.js';
 import { computePolar, headingHoldRudder } from './polar.js';
-import { DEG, HEADING0, normalizeAngle } from './asserts-helpers.js';
+import { DEG, HEADING0, holdsCourse } from './asserts-helpers.js';
 
 export function check_polar_helm(config, check, slow) {
   // --- 3. Polar shape + speed anchor (TWS=6) --- (slow: computePolar sweep)
@@ -77,10 +77,26 @@ export function check_polar_helm(config, check, slow) {
   // same rule the 2026-07-30 work order sets for its own thresholds ("if it
   // now fails, that is a result to report, not to calibrate"). 0.557 vs 0.55
   // is 1.3% over a bound whose own wording is approximate ("~50deg").
-  check('no meaningful progress below ~50deg TWA',
-    bySpeed(40) < 0.55 * globalMax,
-    `speed(40)=${bySpeed(40).toFixed(2)} globalMax=${globalMax.toFixed(2)} ratio=${(bySpeed(40) / globalMax).toFixed(3)} -- block B + F14 cut globalMax 5.61->4.59 while speed(40) held (2.76->2.68), leaving this denominator-driven; S6's geometric sheeting floor then cut the NUMERATOR too (speed(40) 2.40->2.27, ratio 0.591->0.558), the first movement here that is not denominator-driven, and S2's tack trim gave part of it back (2.27->2.37, 0.558->0.583) by letting the boat null its helm and stop dragging the oar sideways. Still failing, still reported not retuned`,
-    'CALIBRATION');
+  // RETIRED 2026-08-09 by owner decision, not by a fix: the check
+  // 'no meaningful progress below ~50deg TWA' (xfail:CALIBRATION,
+  // bySpeed(40) < 0.55*globalMax) is gone because TWA < 50 is now OUT OF
+  // SCOPE for this project's success criterion -- see docs/README.md, "The
+  // success criterion". It is deferred, NOT solved.
+  //
+  // Last measured before retirement: speed(40)=2.33, globalMax=3.60,
+  // ratio=0.646 against the 0.55 ceiling. Its history, for whoever brings
+  // the zone back into scope: 0.502 (in band, post-P1/P2) -> block B + F14
+  // pushed it out, denominator-driven (globalMax 5.61->4.59 while speed(40)
+  // barely moved) -> 0.591 -> S6's geometric sheeting floor cut the
+  // NUMERATOR for the first time (0.558) -> S2's tack trim gave part back
+  // (0.583) -> 0.646 today. The boat points BETTER than the criterion wants,
+  // i.e. it has no real dead angle near 50deg, which is why the zone cannot
+  // simply be called "the dead angle" and dismissed -- the model treats
+  // TWA40-70 as fully sailable and merely cannot hold it oar-free.
+  //
+  // The polar itself still COMPUTES TWA40 (harness/polar.js SWEEP_CI is
+  // unchanged) -- the rows are data the UI draws and a future round may want.
+  // Only the acceptance claim about them is withdrawn.
   check('polar peak lands on a reach (90-135deg near the global max)', maxIn90to135 >= 0.85 * globalMax,
     `max@90-135=${maxIn90to135.toFixed(2)} globalMax=${globalMax.toFixed(2)}`);
   const speed90 = bySpeed(90);
@@ -151,20 +167,28 @@ export function check_polar_helm(config, check, slow) {
         controls.rudder = headingHoldRudder(state, HEADING0, config);
         state = integrate(state, controls, config, config.dt);
       }
-      const headingBefore = state.heading;
-      const speedBefore = Math.hypot(state.u, state.v);
       controls.rudder = 0;
       controls.rudderUp = oarUp;
       controls.tackX = tackX;
       controls.crewPosX = crewPosX;
       controls.stays = stays;
-      for (let i = 0; i < Math.round(60 / config.dt); i++) state = integrate(state, controls, config, config.dt);
+      // K1 (docs/work-order-2026-08-09-kryterium-bez-wiosla.md): the release
+      // window itself is unchanged (60s, round 10d's own H1 window) -- only
+      // the predicate got narrower. holdsCourse() adds `converged` (the
+      // drift in the window's last third must be at most a third of the
+      // drift in its first) and `restoring` (the yaw moment at the settled
+      // state must push heading back, not further away) on top of the same
+      // excursion/speedRatio/capsized this function always returned.
+      const hold = holdsCourse(config, controls, state, { windowSeconds: 60 });
       return {
         twa: row.twa, tws: row.tws,
-        excursion: Math.abs(normalizeAngle(state.heading - headingBefore)) / DEG,
-        twaAfter: twaOf(state.heading),
-        speedRatio: speedBefore > 0 ? Math.hypot(state.u, state.v) / speedBefore : 0,
-        capsized: state.capsized,
+        excursion: hold.excursion,
+        twaAfter: twaOf(hold.finalState.heading),
+        speedRatio: hold.speedRatio,
+        capsized: hold.capsized,
+        converged: hold.converged,
+        restoring: hold.restoring,
+        slope: hold.slope,
       };
     };
 
@@ -176,11 +200,15 @@ export function check_polar_helm(config, check, slow) {
     // (a) Oar in the water but centered — the old H1 criterion.
     const deployed = grid.map((row) => helmRelease(row, false));
     const worstExcursion = Math.max(...deployed.map((d) => d.excursion));
-    const nWithin = deployed.filter((d) => d.excursion <= 15 && !d.capsized).length;
-    check('S1a: oar deployed, rudder released at the polar-optimal trim -- heading excursion <=15deg over 60s (round 10d H1 criterion, on a grid)',
+    // K1: added converged/restoring on top of the excursion band -- see
+    // holdsCourse's own comment. This check already fails everywhere, so the
+    // narrowing changes nothing about its pass/fail state; kept for a
+    // consistent predicate across S1a/S1c/S2.
+    const nWithin = deployed.filter((d) => d.excursion <= 15 && d.converged && d.restoring && !d.capsized).length;
+    check('S1a: oar deployed, rudder released at the polar-optimal trim -- heading excursion <=15deg over 60s, converging with a restoring moment (round 10d H1 criterion, on a grid)',
       nWithin === deployed.length,
-      `${nWithin}/${deployed.length} points within 15deg, worst=${worstExcursion.toFixed(1)}deg -- ` +
-      deployed.map((d) => `TWS${d.tws}/TWA${d.twa}:${d.excursion.toFixed(0)}deg`).join(' ') +
+      `${nWithin}/${deployed.length} points within 15deg+converged+restoring, worst=${worstExcursion.toFixed(1)}deg -- ` +
+      deployed.map((d) => `TWS${d.tws}/TWA${d.twa}:${d.excursion.toFixed(0)}deg${d.converged ? '' : ' NOT-CONVERGED'}${d.restoring ? '' : ' NOT-RESTORING'}`).join(' ') +
       ' -- FAILS EVERYWHERE at the neutral tack. The criterion hull.lead was calibrated against no longer holds: F9 gave the oar real inflow-driven force and F10 removed the artificial yaw damping, and between them the boat lost its own directional stability. NOT fixed by re-picking lead (2.7cm knife edge). Left failing deliberately rather than redefined: S2 gave the boat a tack control that DOES hold every one of these points rudder-free -- see the S2 course-hold check below -- and this line is what the boat does when that control is left at neutral',
       'STEERING');
 
@@ -190,12 +218,19 @@ export function check_polar_helm(config, check, slow) {
     // sail in at all: it rounds up into irons within seconds from every
     // course, and at TWS 10 it rounds up hard enough to capsize.
     const shipped = grid.map((row) => helmRelease(row, true));
-    const nSailing = shipped.filter((s) => s.twaAfter >= 45 && s.speedRatio >= 0.5 && !s.capsized).length;
+    // K1: adds `converged` only, not `restoring` -- unlike S1a/S1c/S2 this
+    // check holds no fixed target heading (it asks "does the boat stop
+    // rounding up", not "does it hold TWA X"), so a restoring-moment reading
+    // taken at whatever heading it happened to drift to is not the same
+    // claim. Convergence still applies: "does not round up" should mean the
+    // heading actually stops moving, not merely that it is under the
+    // threshold at the 60s mark while still rotating.
+    const nSailing = shipped.filter((s) => s.twaAfter >= 45 && s.speedRatio >= 0.5 && s.converged && !s.capsized).length;
     const nCapsized = shipped.filter((s) => s.capsized).length;
-    check('S1b: oar SHIPPED (its documented resting state), rudder released -- boat does not round up into irons and keeps >=50% of its speed',
+    check('S1b: oar SHIPPED (its documented resting state), rudder released -- boat does not round up into irons, keeps >=50% of its speed, and the heading has actually converged',
       nSailing === shipped.length,
       `${nSailing}/${shipped.length} points still sailing, ${nCapsized} capsized -- ` +
-      shipped.map((s) => `TWS${s.tws}/TWA${s.twa}:->TWA${s.twaAfter.toFixed(0)} v${(s.speedRatio * 100).toFixed(0)}%${s.capsized ? ' CAPSIZED' : ''}`).join(' ') +
+      shipped.map((s) => `TWS${s.tws}/TWA${s.twa}:->TWA${s.twaAfter.toFixed(0)} v${(s.speedRatio * 100).toFixed(0)}%${s.converged ? '' : ' NOT-CONVERGED'}${s.capsized ? ' CAPSIZED' : ''}`).join(' ') +
       ' -- measured with BOTH trim controls at neutral, which is what this line is for: it is the boat with the oar out of the water and nobody trimming it. What the trim controls can do about it is S1c below, which now holds 6/6 (T4, docs/work-order-2026-08-05-sterownosc.md) -- the claim this line used to carry, that no tack setting rescues any of them, was measured before the hull could weathercock and is false now. See docs/adr/0017',
       'STEERING');
 
@@ -241,19 +276,22 @@ export function check_polar_helm(config, check, slow) {
     // the same rule this file applies to S1a/S1b/S2.
     const shippedTrials = [];
     for (const t of [0, 0.5, 1]) for (const x of [0, -0.25, -0.5, -0.75, -1]) shippedTrials.push({ t, x });
+    // K1: `found` now also requires converged+restoring -- a real course
+    // hold, not just a trim that happens to be under the excursion band at
+    // the 60s mark (see this file's holdsCourse import and its own comment).
     const shippedHolders = grid.map((row) => {
       const found = shippedTrials
         .map(({ t, x }) => ({ t, x, ...helmRelease(row, true, t, x) }))
-        .filter((r) => r.excursion <= 15 && r.speedRatio >= 0.5 && !r.capsized)
+        .filter((r) => r.excursion <= 15 && r.speedRatio >= 0.5 && r.converged && r.restoring && !r.capsized)
         .sort((a, b) => a.excursion - b.excursion);
       return { twa: row.twa, tws: row.tws, found };
     });
     const nShippedHeld = shippedHolders.filter((h) => h.found.length > 0).length;
-    check('S1c: oar SHIPPED -- a course hold exists using the trim controls alone (tack + crew fore-aft), 15deg/60s',
+    check('S1c: oar SHIPPED -- a course hold exists using the trim controls alone (tack + crew fore-aft), 15deg/60s, converging with a restoring moment',
       nShippedHeld === shippedHolders.length,
       `${nShippedHeld}/${shippedHolders.length} points hold -- ` +
       shippedHolders.map((h) => `TWS${h.tws}/TWA${h.twa}:${h.found.length ? `tack=${h.found[0].t} crewX=${h.found[0].x} exc=${h.found[0].excursion.toFixed(1)}deg v=${(h.found[0].speedRatio * 100).toFixed(0)}%` : 'none'}`).join(' ') +
-      ' -- was 0/6 before the hull\'s side force was strip-integrated (docs/adr/0017), 3/6 after it, 6/6 since the ama gained its own lateral plane (T4), 4/6 since S8\'s heave-draft coupling changed the same hull hydrodynamics (docs/adr/0033). See this check\'s own comment',
+      ' -- was 0/6 before the hull\'s side force was strip-integrated (docs/adr/0017), 3/6 after it, 6/6 since the ama gained its own lateral plane (T4), 4/6 since S8\'s heave-draft coupling changed the same hull hydrodynamics (docs/adr/0033). K1 (docs/work-order-2026-08-09) additionally requires the hold to be converging with a restoring moment, not just under the excursion band at 60s -- see this check\'s own comment',
       'STEERING');
 
     // (c) S2's payoff, and the reason S1a is left failing rather than
@@ -285,12 +323,13 @@ export function check_polar_helm(config, check, slow) {
     // would be exactly the "re-pick the probe until it agrees" move this
     // project's own conventions forbid.
     const stayTrials = [-1, -0.5, 0, 0.5, 1];
+    // K1: `found` requires converged+restoring, same narrowing as S1c above.
     const holders = grid.map((row) => {
       const found = [];
       for (const t of tackTrials) {
         for (const st of stayTrials) {
           const r = { t, st, ...helmRelease(row, false, t, 0, st) };
-          if (r.excursion <= 15 && r.speedRatio >= 0.5 && !r.capsized) found.push(r);
+          if (r.excursion <= 15 && r.speedRatio >= 0.5 && r.converged && r.restoring && !r.capsized) found.push(r);
         }
       }
       const tackOnly = found.filter((r) => r.st === 0);
@@ -304,7 +343,10 @@ export function check_polar_helm(config, check, slow) {
     // estimated -- the boat has enough directional stability of its own for
     // the tack to trim against. TWA110, which had been the stubborn corner
     // through three separate attempts, holds at 0.2deg of excursion.
-    check('S2: with rig trim alone (tack + stays), a rudder-free course hold exists at every operating point (round 10d H1 ceiling, 15deg/60s)',
+    // K1 (docs/work-order-2026-08-09) re-measured this with the narrower
+    // converged+restoring predicate -- see the check's own detail line for
+    // whether it still passes.
+    check('S2: with rig trim alone (tack + stays), a rudder-free course hold exists at every operating point, converging with a restoring moment (round 10d H1 ceiling, 15deg/60s)',
       nHeld === holders.length,
       `${nHeld}/${holders.length} points -- ` +
       holders.map((h) => {

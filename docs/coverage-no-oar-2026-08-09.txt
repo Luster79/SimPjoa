@@ -1,0 +1,93 @@
+Coverage snapshot -- K2, docs/work-order-2026-08-09-kryterium-bez-wiosla.md
+node harness/coverage-no-oar.js  [+ --wide-search --static-screen]
+Date: 2026-08-09. Config: createConfig() default (PJOA FOLK). Reflects the
+package's final state after K1-K6, L1-L7 and M1-M3 (all three work-order
+blocks of this date).
+
+Grid: TWA 50-180 step 10 x TWS 4/6/10 (42 points). TWA < 50 is OUT OF SCOPE
+by owner decision -- deferred, not solved; see docs/README.md.
+
+COVERAGE: 38/42 points (90%) hold a course with the oar shipped, permanently
+(K1's converged+restoring predicate: excursion <=15deg AND speedRatio >=0.5
+AND converged AND restoring, over a 300s window).
+
+This is the UNION of two existence searches on the same physics, and the
+union is the honest number: both gate every HOLDS through the identical 300s
+predicate, so a point that holds in either genuinely holds.
+
+  narrow search (sheet/brail frozen at the polar's SPEED optimum,
+                 tackX x crewPosX x stays):                    21/42
+  wide search   (sheet in {35,55,75} x brail in {0,0.5,1},
+                 same tackX x crewPosX x stays, --static-screen): 31/42
+  UNION:                                                       38/42
+
+WHY THE TWO DISAGREE -- a defect in the wide search, found by inspecting an
+implausible result rather than accepting it. The wide run reported 0/9 across
+TWA50-130 at TWS6 while TWS4 and TWS10 held almost everything; a wind speed
+that fails between two that succeed is not a physical pattern. Cause:
+--wide-search REPLACED the polar-optimal sheet with the coarse grid instead
+of ADDING to it, so it was not a superset of the default search. At TWS6 the
+reaching courses hold at sheet 16-28deg (the default run finds them) and the
+coarse grid is {35,55,75} -- so the "wider" search was strictly narrower
+exactly where it mattered. FIXED in harness/coverage-no-oar.js (the polar
+optimum is now always included); this snapshot's union already corrects for
+it, and a re-run with the fix would likely find MORE, not fewer.
+
+REMAINING GAPS -- all four at TWS6, the one wind where the coarse sheet grid
+sits worst against the angles that actually work (its holds are at 16-36deg,
+the grid offers 35/55/75). These four are the least trustworthy NONEs in the
+table, not the most certain:
+  TWA50/TWS6, TWA60/TWS6, TWA70/TWS6, TWA130/TWS6
+
+WHAT THIS DOES AND DOES NOT SAY. It is a measurement of the trim space, not a
+statement that the boat sails these courses in practice: holdsCourse freezes
+the trim for 300s, while the source manual's chapter III describes CONTINUOUS
+active trimming and prefaces the whole chapter with "stosowac z umiarem" (use
+with moderation). See L3 in docs/work-order-2026-08-09-domkniecie-kryterium.md
+-- whether the criterion means frozen-trim or actively-trimmed is an open
+question for the owner, and the two are different properties.
+
+Per-point detail ([both] = found by both searches, [narrow only] / [wide only]
+= found by one; the trim shown is that search's own best):
+  TWA50/TWS4: HOLDS [wide only] tackX=-0.5 crewX=0 stays=1 sheet=55 brail=0 exc=0.0deg v=100%
+  TWA60/TWS4: HOLDS [wide only] tackX=0 crewX=0.5 stays=1 sheet=75 brail=0.5 exc=0.0deg v=100%
+  TWA70/TWS4: HOLDS [wide only] tackX=-0.5 crewX=0 stays=1 sheet=75 brail=0.5 exc=0.0deg v=100%
+  TWA80/TWS4: HOLDS [both] tackX=1 crewX=1 stays=1 sheet=12 brail=0 exc=12.7deg v=106%
+  TWA90/TWS4: HOLDS [both] tackX=0 crewX=-0.5 stays=1 sheet=16 brail=0 exc=11.9deg v=99%
+  TWA100/TWS4: HOLDS [both] tackX=1 crewX=0.5 stays=1 sheet=20 brail=0 exc=3.8deg v=103%
+  TWA110/TWS4: HOLDS [both] tackX=1 crewX=0 stays=1 sheet=28 brail=0 exc=1.3deg v=103%
+  TWA120/TWS4: HOLDS [both] tackX=1 crewX=-0.5 stays=1 sheet=32 brail=0 exc=3.3deg v=102%
+  TWA130/TWS4: HOLDS [narrow only] tackX=1 crewX=-1 stays=1 sheet=40 brail=0 exc=10.3deg v=105%
+  TWA140/TWS4: HOLDS [wide only] tackX=1 crewX=-0.5 stays=-1 sheet=35 brail=1 exc=0.8deg v=109%
+  TWA150/TWS4: HOLDS [wide only] tackX=1 crewX=-1 stays=0 sheet=35 brail=1 exc=0.2deg v=108%
+  TWA160/TWS4: HOLDS [wide only] tackX=1 crewX=-1 stays=1 sheet=55 brail=1 exc=0.0deg v=109%
+  TWA170/TWS4: HOLDS [both] tackX=-1 crewX=0.5 stays=-1 sheet=40 brail=0 exc=12.9deg v=59%
+  TWA180/TWS4: HOLDS [wide only] tackX=-0.5 crewX=0 stays=-1 sheet=75 brail=1 exc=0.6deg v=77%
+  TWA50/TWS6: NONE
+  TWA60/TWS6: NONE
+  TWA70/TWS6: NONE
+  TWA80/TWS6: HOLDS [narrow only] tackX=1 crewX=-0.5 stays=0 sheet=16 brail=0 exc=0.8deg v=103%
+  TWA90/TWS6: HOLDS [narrow only] tackX=1 crewX=-1 stays=0 sheet=20 brail=0 exc=0.3deg v=104%
+  TWA100/TWS6: HOLDS [narrow only] tackX=1 crewX=-0.5 stays=1 sheet=24 brail=0 exc=7.7deg v=100%
+  TWA110/TWS6: HOLDS [narrow only] tackX=1 crewX=-1 stays=1 sheet=28 brail=0 exc=12.5deg v=101%
+  TWA120/TWS6: HOLDS [narrow only] tackX=1 crewX=-0.5 stays=1 sheet=36 brail=0 exc=9.5deg v=104%
+  TWA130/TWS6: NONE
+  TWA140/TWS6: HOLDS [wide only] tackX=-0.5 crewX=-1 stays=1 sheet=35 brail=1 exc=0.2deg v=105%
+  TWA150/TWS6: HOLDS [wide only] tackX=0.5 crewX=-1 stays=1 sheet=35 brail=0.5 exc=0.1deg v=103%
+  TWA160/TWS6: HOLDS [wide only] tackX=1 crewX=-1 stays=1 sheet=55 brail=0.5 exc=0.5deg v=103%
+  TWA170/TWS6: HOLDS [both] tackX=-0.5 crewX=0.5 stays=0 sheet=40 brail=0 exc=11.4deg v=58%
+  TWA180/TWS6: HOLDS [both] tackX=-1 crewX=1 stays=-1 sheet=68 brail=0 exc=1.1deg v=67%
+  TWA50/TWS10: HOLDS [wide only] tackX=0 crewX=-1 stays=1 sheet=35 brail=0 exc=1.1deg v=93%
+  TWA60/TWS10: HOLDS [wide only] tackX=-0.5 crewX=0 stays=1 sheet=55 brail=0 exc=0.0deg v=100%
+  TWA70/TWS10: HOLDS [wide only] tackX=1 crewX=0.5 stays=1 sheet=75 brail=0.5 exc=0.0deg v=100%
+  TWA80/TWS10: HOLDS [both] tackX=1 crewX=-1 stays=-1 sheet=16 brail=0 exc=9.1deg v=113%
+  TWA90/TWS10: HOLDS [both] tackX=0 crewX=-1 stays=1 sheet=16 brail=0 exc=0.8deg v=107%
+  TWA100/TWS10: HOLDS [both] tackX=1 crewX=0 stays=1 sheet=20 brail=0 exc=0.5deg v=107%
+  TWA110/TWS10: HOLDS [narrow only] tackX=0.5 crewX=-1 stays=1 sheet=28 brail=0 exc=3.5deg v=107%
+  TWA120/TWS10: HOLDS [both] tackX=1 crewX=-0.5 stays=1 sheet=28 brail=0 exc=1.3deg v=108%
+  TWA130/TWS10: HOLDS [wide only] tackX=1 crewX=-1 stays=1 sheet=35 brail=0.5 exc=3.7deg v=129%
+  TWA140/TWS10: HOLDS [wide only] tackX=1 crewX=0 stays=0 sheet=35 brail=0.5 exc=0.1deg v=103%
+  TWA150/TWS10: HOLDS [wide only] tackX=1 crewX=-0.5 stays=1 sheet=35 brail=0 exc=0.6deg v=104%
+  TWA160/TWS10: HOLDS [wide only] tackX=1 crewX=-1 stays=1 sheet=55 brail=0.5 exc=1.8deg v=102%
+  TWA170/TWS10: HOLDS [both] tackX=-1 crewX=0 stays=0 sheet=40 brail=0 exc=13.6deg v=59%
+  TWA180/TWS10: HOLDS [both] tackX=0 crewX=0 stays=-1 sheet=64 brail=0 exc=1.5deg v=56%

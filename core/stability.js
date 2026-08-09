@@ -151,6 +151,38 @@ export function heaveDampingForce(w, config) {
   return -config.heave.dampingCoeff * w;
 }
 
+// --- Pitch, the 6th DOF (L5, docs/work-order-2026-08-09-domkniecie-
+// kryterium.md) -------------------------------------------------------------
+// crewPitchMoment(crewPosX, config) -> N*m, the one control-driven pitching
+// moment this model has -- the SAME structure crewRollMoment already uses
+// for the athwartship case (weight x lever, at the crew's own fore-aft
+// fraction of the half-length). Sign: crewPosX>0 is "toward the active bow"
+// (docs/adr/0011's own convention), and weight forward should pitch the bow
+// DOWN, so this is POSITIVE there -- theta's own sign convention (see
+// config.pitch and clrXPosition) is "bow-down pitch", matching crewPosX's
+// direct old relationship to clrXPosition's CLR shift with no extra sign
+// flip needed at the substitution site.
+export function crewPitchMoment(crewPosX, config) {
+  const { crew, hull, g } = config;
+  return crew.mass * g * crewPosX * (hull.length / 2);
+}
+
+// pitchRestoreMoment(theta, config) -> N*m, the hull's own hydrostatic
+// pitch stiffness -- a plain linear spring, like heaveRestoreForce, not
+// like rollRestoreMoment: pitch has no analogue to the ama's righting-arm
+// reversal, so there is no capsize-style nonlinearity to model here.
+export function pitchRestoreMoment(theta, config) {
+  return -config.pitch.stiffness * theta;
+}
+
+// pitchDampingMoment(q, config) -> N*m, linear damping opposing pitch rate.
+// Tuned as a pair with pitch.inertia against a target step response — same
+// discipline as heaveDampingForce/rollDampingMoment; not a measured
+// coefficient.
+export function pitchDampingMoment(q, config) {
+  return -config.pitch.dampingCoeff * q;
+}
+
 // computeAmaLoad(phi, config) -> amaLoad, derived from the roll angle:
 // 0 = upright, exactly 1.0 when the ama just leaves the water
 // (phi=phiLiftoffRad) or just fully submerges (phi=-phiSubmergeRad) —

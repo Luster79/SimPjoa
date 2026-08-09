@@ -1,7 +1,7 @@
 // harness/asserts-helpers.js — shared constants and probe helpers used
 // across the asserts-*.js check modules (R13, docs/work-order-2026-07-22.md:
 // split out of the former single-file harness/asserts.js).
-import { integrate } from '../core/integrator.js';
+import { integrate, computeForces } from '../core/integrator.js';
 import { headingHoldRudder } from './polar.js';
 
 const DEG = Math.PI / 180;
@@ -63,10 +63,61 @@ function steeringDrift(config, baseControls, applyChange, settleSeconds = 20, lo
   return { drift, capsized: state.capsized, amaLoadBefore, amaLoadAfter: state.amaLoad, finalState: state };
 }
 
+// holdsCourse(config, controls, state, { windowSeconds }) -> {
+//   excursion, speedRatio, capsized, converged, restoring, slope, finalState }
+//
+// K1 (docs/work-order-2026-08-09-kryterium-bez-wiosla.md): a heading
+// excursion under a fixed threshold over a fixed window is NOT the same
+// claim as "holds the course permanently" -- the work order's I.2 measured a
+// trim (TWA70, tack=0, crewX=-1) that passes a 60s/15deg excursion test and
+// keeps drifting for 600s anyway, with a genuinely DESTABILISING moment
+// (dM/dpsi > 0) at the point it was judged to have "held". This predicate
+// narrows the old excursion-only check with two structural additions rather
+// than replacing it:
+//   converged -- the heading drift ACCUMULATED WITHIN the window's last
+//     third must be at most a third of the drift accumulated within the
+//     first third. A course that is actually settling shows decaying,
+//     not constant or growing, per-segment drift.
+//   restoring -- the total yaw moment at the settled state, read directly
+//     from computeForces() (no further integration), must have a NEGATIVE
+//     slope with respect to heading: nudging the heading up must push M
+//     back down. This is the dN/dpsi < 0 criterion the work order names.
+// `windowSeconds` is deliberately the SAME window each caller already used
+// for its excursion check (60s for the reach-course helm-balance checks,
+// 120s for the deep-course release checks) -- the point is to make the
+// existing test stricter, not to change what it measures.
+function holdsCourse(config, controls, state, { windowSeconds = 60 } = {}) {
+  const dt = config.dt;
+  const headingBefore = state.heading;
+  const speedBefore = Math.hypot(state.u, state.v);
+  const thirdSteps = Math.max(1, Math.round(windowSeconds / 3 / dt));
+  let s = state;
+  for (let i = 0; i < thirdSteps; i++) s = integrate(s, controls, config, dt);
+  const headingAfterFirstThird = s.heading;
+  const driftFirstThird = Math.abs(normalizeAngle(headingAfterFirstThird - headingBefore)) / DEG;
+  for (let i = 0; i < thirdSteps; i++) s = integrate(s, controls, config, dt);
+  const headingBeforeLastThird = s.heading;
+  for (let i = 0; i < thirdSteps; i++) s = integrate(s, controls, config, dt);
+  const driftLastThird = Math.abs(normalizeAngle(s.heading - headingBeforeLastThird)) / DEG;
+  const excursion = Math.abs(normalizeAngle(s.heading - headingBefore)) / DEG;
+  const converged = driftLastThird <= driftFirstThird / 3;
+  const Mof = (dpsi) => computeForces({ ...s, heading: s.heading + dpsi * DEG }, controls, config).M;
+  const slope = (Mof(3) - Mof(-3)) / 6;
+  return {
+    excursion,
+    speedRatio: speedBefore > 0 ? Math.hypot(s.u, s.v) / speedBefore : 0,
+    capsized: s.capsized,
+    converged,
+    restoring: slope < 0,
+    slope,
+    finalState: s,
+  };
+}
+
 function finiteSeries(series) {
   return series.every((s) =>
     Number.isFinite(s.x) && Number.isFinite(s.y) && Number.isFinite(s.heading) &&
     Number.isFinite(s.u) && Number.isFinite(s.v) && Number.isFinite(s.r));
 }
 
-export { DEG, HEADING0, normalizeAngle, freshState, steeringOk, steeringDrift, finiteSeries };
+export { DEG, HEADING0, normalizeAngle, freshState, steeringOk, steeringDrift, holdsCourse, finiteSeries };

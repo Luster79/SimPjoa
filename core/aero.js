@@ -179,7 +179,7 @@ function brailRegimeBlend(b, trimRange, valAtZero, valAtTrim, valAtOne) {
 // since the CL/CD magnitude is symmetric about a full chord flip, while the
 // sign (below) still comes from alpha itself, so which way the resulting
 // force pushes is unaffected by this mirroring.
-export function sailCoefficients(alpha, controls, config) {
+export function sailCoefficients(alpha, controls, config, deltaDeg = null) {
   const { sail } = config;
   const rawAbsDeg = Math.abs(alpha) / DEG;
   const alphaAbsDeg = rawAbsDeg <= 90 ? rawAbsDeg : 180 - rawAbsDeg;
@@ -235,7 +235,31 @@ export function sailCoefficients(alpha, controls, config) {
   const furl = brailLee * brailWind;
   const areaFactor = areaWindFactor * areaLeeFactor;
 
-  const CLf = CLtable * camberCLf * (1 - furl);
+  // Mast shadow (L4, docs/work-order-2026-08-09-domkniecie-kryterium.md):
+  // sail.deltaMinDeg (ADR 0010) is the ROPE-REACH floor only -- whether the
+  // sheet can physically pull the yard's clew in that far. On the PJOA FOLK
+  // (8 m^2 sail, 5.0 m hull) that floor is exactly 0 (ADR 0021: "the spar no
+  // longer overhangs... the mechanism is unchanged and still correct — it
+  // simply has nothing to clamp here"), so a trimmed yard CAN now sit flush
+  // against the centreline. ADR 0010 considered a mast-shadow CL term and
+  // explicitly declined to add it: "a trimmed yard never sits in the narrow
+  // small-delta band such a term would act on... it would have no consumer."
+  // That premise no longer holds -- it now has one.
+  //   A trimmed yard within a few degrees of the mast is blanketed by it, the
+  // same phenomenon any rig with a mast ahead of the sail has near
+  // head-to-wind trim. The magnitude here is an EXPLICIT ESTIMATE, not a
+  // measurement (no wind-tunnel or field data on this rig's own mast-shadow
+  // loss exists) — same status as `deltaMinDeg`'s own ILL-CONDITIONED note:
+  // the CONSTRAINT (a mast blocks flow near delta=0) is a solid claim about
+  // any masted rig, the MAGNITUDE is a weak claim about this one. Not tuned
+  // to hit a coverage target — see docs/parameter-register.md.
+  const deltaAbsDeg = deltaDeg ?? 0;
+  const shadowWidth = sail.mastShadowWidthDeg ?? 0;
+  const shadowLoss = shadowWidth > 0 && deltaAbsDeg < shadowWidth
+    ? (sail.mastShadowCLFactor ?? 0) * (1 - deltaAbsDeg / shadowWidth)
+    : 0;
+
+  const CLf = CLtable * camberCLf * (1 - furl) * (1 - shadowLoss);
 
   // --- CD: parasitic + induced(WORKING CL) + separation --------------------
   //     CD = CD0 + k*CL^2 + CD90*sin^4(alpha) + parasitic-from-gathering
@@ -321,7 +345,7 @@ export function sailForces(state, controls, config) {
   const awChordYcw = aw.vx * cy - aw.vy * cx; // dot with the chord rotated -90deg
   const alpha = Math.atan2(awChordYcw, awChordX);
 
-  const { CL, CD, alphaSailor, areaFactor } = sailCoefficients(alpha, controls, config);
+  const { CL, CD, alphaSailor, areaFactor } = sailCoefficients(alpha, controls, config, delta / DEG);
 
   // Reference area is the EFFECTIVE (brail-reduced) area, not the full sail:
   // a brail gathers cloth, so the working area shrinks. areaFactor is 1 with

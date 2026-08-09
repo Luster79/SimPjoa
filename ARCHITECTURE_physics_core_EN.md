@@ -78,6 +78,12 @@ These are mandatory and are restated at the top of `core/state.js`.
   design waterline and its rate, positive `z` = riding higher (less draft than
   design). World-vertical, physical-frame quantities — like `phi`/`p`,
   unaffected by heading and left untouched at a shunt swap.
+- **Pitch (ADR 0038, the 6th DOF):** `theta` (rad) and `q` (rad/s), positive
+  `theta` = bow down. Same status as heave/roll — physical-frame, unaffected
+  by heading, left untouched at a shunt swap. Drives `hydro.js`'s
+  `clrXPosition()`, replacing the old direct `crewPosX`→CLR wire. Defaults
+  to 0 wherever read (`state.theta ?? 0`), so pre-existing state literals
+  that omit it are unaffected.
 - **A trap worth naming:** the boat frame's +x already points at the active
   bow, so a quantity referenced to the bow or the stern carries **no `end`
   factor**. This has caught the steering oar's lever arm (ADR 0016), the mast's
@@ -516,6 +522,38 @@ feedback path from heave into the rest of the dynamics; it does not reach
 
 ---
 
+## Pitch dynamics (ADR 0038, the 6th DOF)
+
+    config.pitch.inertia · dq/dt = Mpitch + Mprestore(theta) + Mpdamp(q)
+    Mpitch = crewPitchMoment(crewPosX, config)   -- the only driving term
+    Mprestore(theta) = -config.pitch.stiffness · theta
+    Mpdamp(q) = -config.pitch.dampingCoeff · q
+
+Same split as heave: the control-driven moment (crew weight) is gathered in
+`computeForces` (`Mpitch`, folded into `breakdown.pitch`), the hull's own
+structural response (restore/damping) is added beside the inertia it divides
+by, in `derivatives`. `config.pitch.stiffness` is a rigorous small-angle
+hydrostatic result (`rho_w·g·I_L`, `I_L` reusing `heave.waterplaneArea·L²/12`);
+`inertia` and `dampingCoeff` are tuned as a pair against a target step
+response, the same methodology heave's own pair uses. No capsize-style
+nonlinearity — pitch has no analogue to the ama's righting-arm reversal.
+
+`theta` feeds back into hydrodynamics through `hydro.js`'s `clrXPosition()`
+(replacing the old direct `crewPosX`→CLR wire) — the hull's centre of lateral
+resistance, and hence `hullSideForce`'s whole station taper, now migrates
+with the pitch DOF's own dynamic angle rather than with `crewPosX` directly.
+`hull.crewForeAftTrimCoeff` keeps its original meaning (fraction of
+half-length the CLR shifts at a full crew deflection) but is re-anchored onto
+`config.pitch.thetaAtFullCrew` (the DOF's rigorously-derived equilibrium
+angle at `crewPosX=±1`) instead of onto `crewPosX` directly.
+
+**What does not (yet) feed back:** `hullResistance` (wetted-length change with
+trim) and any sail/hull pitching-moment contribution — `theta` is driven
+entirely by crew weight this round. See ADR 0038's "What this does not
+settle".
+
+---
+
 ## Determinism contract
 
 Given the same `initialState`, `config` and ordered sequence of
@@ -579,14 +617,34 @@ the facade's private edge-detection itself.
 
 Stated so they are visible and measurable rather than silently missing.
 
-- **No pitch DOF.** Heave (`z`/`w`) is integrated and closes the vertical
-  balance (ADR 0033); pitch is not modelled. Fore-aft trim exists only as the
-  phenomenological CLR shift in `clrXPosition()`.
-- **Nothing underwater depends on heel.** `hullSideForce` does not take `phi`,
-  so the hull's lateral plane, its side-force coefficient and its heeled yaw
-  moment are all heel-independent. This is why `hull.yawHeelSign` is 0.
-- **The ama has no lateral plane** — `amaDrag` returns longitudinal force and
-  its yaw moment only. Roll damping is one lumped linear coefficient.
+- **Pitch (`theta`/`q`, ADR 0038) is integrated and drives the CLR, but only
+  from crew weight.** No `hullResistance` coupling (wetted-length change with
+  trim — a genuinely separate effect, touching Reynolds number and the
+  residuary hump's own Fr) and no sail/hull pitching-moment contribution —
+  `theta` cannot yet move on its own from sail or hull forces, only from
+  `crewPosX`.
+- **Heel-to-yaw coupling is built but held at zero.** `hullSideForce` takes
+  `phi` and can shift the hull's lateral-plane centroid with heel
+  (`hull.heelClrShiftCoeff`/`heelClrSign`, T3), mirroring `aero.js`'s rig-side
+  term (`yawHeelSign`, the CE swinging to leeward as `CEheight*sin(phi)`).
+  Both are real, measured mechanisms, and both stay at 0: T3 re-ran the full
+  acceptance matrix at every sign combination of the pair and found no
+  combination helps AC-4.2 (which needs a different mechanism entirely) while
+  several actively regress AC-1.1/1.2 — see `config.js`'s own comment at
+  `heelClrShiftCoeff` for the matrix. Heel-independent in practice, not by
+  omission.
+- **The ama's own lateral plane, near parity with the hull's.** `amaDrag`
+  computes a real `Fy` and yaw moment via strip integration on the float's own
+  length (T4, docs/work-order-2026-08-05-sterownosc.md), including the same
+  migrating-CLR mechanism D1 gave the hull (K5, docs/work-order-2026-08-09-
+  kryterium-bez-wiosla.md — the `csLin`/`csVtx` split and aft-ramped weighting,
+  reused verbatim at the ama's own length and its own flow direction). Two
+  terms are deliberately left out, not missing by oversight: the cross-flow
+  bluff-body term (`amaDrag`'s own `Fx` already carries a complete resistance
+  figure; adding a second, foil-derived one risks double-counting) and the
+  hull's low-speed linear damping (an absolute N-per-(m/s) figure calibrated to
+  the whole hull, not a per-area coefficient that would transfer to a much
+  smaller body). Roll damping is one lumped linear coefficient.
 - **Sail forces are faded, not computed, through a shunt.** `shuntForceFade`
   returns exactly 0 through 'transfer' and 'swap'. Windage is deliberately
   exempt so the boat is not force-free while lying beam-on.

@@ -15,6 +15,7 @@ import { check_sail_trim } from './asserts-sail-trim.js';
 import { check_capsize } from './asserts-capsize.js';
 import { check_hull_ama } from './asserts-hull-ama.js';
 import { check_deep_course } from './asserts-deep-course.js';
+import { check_course_change } from './asserts-course-change.js';
 
 // xfail (ROUND7_DECISION.md D-3/D-4): a known, diagnosed model limitation
 // that still RUNS every time (never silently skipped) but is expected to
@@ -43,6 +44,7 @@ export function runAsserts(config, { slow = true } = {}) {
   check_capsize(config, check);
   check_hull_ama(config, check, slow);
   check_deep_course(config, check, slow);
+  check_course_change(config, check, slow);
 
   return results;
 }

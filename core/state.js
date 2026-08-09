@@ -38,6 +38,14 @@
 //   waterline, positive = UP (riding higher, less draft than design); w =
 //   dz/dt. Like phi/p, this is a world-vertical, physical-frame quantity —
 //   unaffected by heading and left unchanged at a shunt swap.
+// - Pitch: `theta` (rad) and `q` (rad/s), the 6th DOF (L5, docs/work-order-
+//   2026-08-09-domkniecie-kryterium.md). theta is the pitch angle, positive
+//   = BOW DOWN (matches crewPosX>0's old direct relationship to the CLR
+//   shift it drives — see hydro.js's clrXPosition); q = dtheta/dt. Like
+//   phi/p and z/w, a physical-frame quantity, unaffected by heading and
+//   left unchanged at a shunt swap. core/integrator.js defaults both to 0
+//   wherever read (`state.theta ?? 0`), so state literals that predate this
+//   DOF do not need updating to keep working.
 // - Moments: positive = counterclockwise rotation (top-down view).
 // - Sail angle of attack and leeway angle are always computed via atan2,
 //   never asin/acos.
@@ -57,6 +65,8 @@ export function createInitialState(config) {
     p: 0,
     z: 0, // heave: vertical displacement from the design waterline [m], +up
     w: 0, // heave rate [m/s], dz/dt
+    theta: 0, // pitch angle [rad], +bow-down (L5)
+    q: 0, // pitch rate [rad/s], dtheta/dt
     delta: 0, // actual yard angle [rad], >=0 — see sheet-constraint comment above
     end: 1,
     amaLoad: 0,

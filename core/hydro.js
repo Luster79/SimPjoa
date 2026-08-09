@@ -103,25 +103,35 @@ function hullSideForceCoeff(lambdaDeg, hull) {
   return csV1AtBlendEnd;
 }
 
-// clrXPosition(crewPosX, config) -> x offset from CG (boat frame, +fwd).
+// clrXPosition(theta, config) -> x offset from CG (boat frame, +fwd).
 //
 // The model's ONE statement of where the centre of lateral resistance sits.
 // Shared by hullSideForce (via stationWeights) and by aero.js's sail CE
 // geometry: the CE-CLR "lead" concept only means anything if both sides of
 // it reference the same point.
 //
-// crewPosX (fore-aft crew position, -1..1) shifts it phenomenologically —
-// there is no pitch DOF. Weight forward moves the CLR forward, leaving the
-// CE effectively aft of it, which luffs the boat. config.hull.crewTrimSign
-// is a flip knob if a physical rig ever runs the other way.
-export function clrXPosition(crewPosX, config) {
-  const { hull } = config;
+// theta (pitch angle, rad -- L5, docs/work-order-2026-08-09-domkniecie-
+// kryterium.md, the 6th DOF, config.pitch) shifts it: a real dynamic angle
+// driven by crew fore-aft weight (stability.js's crewPitchMoment) against
+// the hull's own hydrostatic pitch stiffness, replacing the old direct
+// crewPosX->CLR wire this function used to be. hull.crewForeAftTrimCoeff
+// keeps its ORIGINAL meaning ("fraction of half-length the CLR shifts at a
+// full crew deflection") but is re-anchored here onto config.pitch.
+// thetaAtFullCrew (the DOF's own equilibrium angle at crewPosX=+-1) instead
+// of onto crewPosX directly, so the UI-editable coefficient still means the
+// same physical thing and old config patches still work unchanged.
+// config.hull.crewTrimSign is a flip knob if a physical rig ever runs the
+// other way.
+export function clrXPosition(theta, config) {
+  const { hull, pitch } = config;
   const crewTrimSign = hull.crewTrimSign ?? 1;
+  const thetaAtFullCrew = pitch?.thetaAtFullCrew || 1e-9;
+  const pitchClrCoeff = (hull.crewForeAftTrimCoeff ?? 0) / thetaAtFullCrew;
   return -(hull.clrXFraction ?? 0.1) * (hull.length / 2)
-    + crewTrimSign * (hull.crewForeAftTrimCoeff ?? 0) * crewPosX * (hull.length / 2);
+    + crewTrimSign * pitchClrCoeff * theta * (hull.length / 2);
 }
 
-// stationWeights(crewPosX, phi, config) -> per-strip lateral areas, bow-last.
+// stationWeights(theta, phi, config) -> per-strip lateral areas, bow-last.
 //
 // The lateral plane is NOT distributed uniformly along the length: its
 // centroid is the centre of lateral resistance, which sits aft of the CG
@@ -151,12 +161,12 @@ export function clrXPosition(crewPosX, config) {
 // the strips still sum to hull.lateralArea), centroid k*L^2/12, hence
 // k = 12*xc/L^2. Clamped to |k| <= 2/L, past which the taper would ask for
 // negative area at one end.
-function stationWeights(crewPosX, phi, config, draftRatio) {
+function stationWeights(theta, phi, config, draftRatio) {
   const { hull } = config;
   const L = hull.length;
   const heelClrSign = hull.heelClrSign ?? 1;
   const heelShift = heelClrSign * (hull.heelClrShiftCoeff ?? 0) * Math.sin(phi) * (L / 2);
-  const xc = clrXPosition(crewPosX, config) + heelShift;
+  const xc = clrXPosition(theta, config) + heelShift;
   const k = Math.max(-2 / L, Math.min(2 / L, (12 * xc) / (L * L)));
   // draftRatio (S8, heaveZ's effective-draft scaling — see hullResistance's
   // own comment for the derivation): the lateral plane shrinks/grows with it
@@ -175,7 +185,7 @@ function stationWeights(crewPosX, phi, config, draftRatio) {
   return out;
 }
 
-// hullSideForce(u, v, r, crewPosX, phi, config) -> { Fx, Fy, yawMoment }
+// hullSideForce(u, v, r, theta, phi, config) -> { Fx, Fy, yawMoment }
 //
 // THE HULL'S WHOLE LATERAL FORCE, BY STRIP INTEGRATION (docs/adr/0017).
 // The station at x sees its own transverse velocity v + r*x, not the boat's
@@ -204,12 +214,14 @@ function stationWeights(crewPosX, phi, config, draftRatio) {
 // heaveZ (S8, trailing and optional — see hullResistance's own comment for
 // why: isolated probes want the design-draft baseline, only core/
 // integrator.js's live path passes the real state.z).
-export function hullSideForce(u, v, r, crewPosX, phi, config, heaveZ = 0) {
+// theta (L5, the pitch DOF's own angle, rad): replaces the fore-aft crewPosX
+// this function used to receive directly -- see clrXPosition's own comment.
+export function hullSideForce(u, v, r, theta, phi, config, heaveZ = 0) {
   const { hull, rho_w } = config;
   const DEG = Math.PI / 180;
   const L = hull.length;
   const draftRatio = Math.max(0.1, (hull.draft - heaveZ) / hull.draft);
-  const stations = stationWeights(crewPosX, phi, config, draftRatio);
+  const stations = stationWeights(theta, phi, config, draftRatio);
   const effectiveLateralArea = (hull.lateralArea ?? 0) * draftRatio;
   // uDirection: smoothed sign of u, shared below by the migrating-CLR ramp
   // and by FxStrip's own direction term further down — one definition, one
@@ -498,6 +510,17 @@ export function amaDrag(u, v, r, phi, crewPos, end, config) {
   const yAmaSurge = r * yAma; // rigid-body surge correction at the ama's own fixed lateral offset
   const uAma = u - yAmaSurge;
   const dAama = amaLateralAreaFull / AMA_STATIONS;
+  // K5 (docs/work-order-2026-08-09-kryterium-bez-wiosla.md, = S11 from the
+  // 08-02 work order): the ama's own centre of lateral resistance migrates
+  // with drift angle by the SAME mechanism D1 gave the hull (ADR 0032,
+  // hullSideForce's own csLin/csVtx split above) -- T4 already made the
+  // ama's side force a strip integration, but with a flat CS(leeway) at
+  // every station, so its own CLR stayed fixed at the geometric centroid the
+  // way the hull's did before D1. Reused verbatim, at the ama's own length
+  // and its own uDirection (uAma, not the hull's u -- the ama sees the
+  // rigid-body surge correction above, and after a shunt or near u=0 the two
+  // can disagree).
+  const uDirectionAma = uAma / Math.sqrt(uAma * uAma + U_SMOOTH * U_SMOOTH);
   let FySide = 0, yawMomentSide = 0;
   for (let i = 0; i < AMA_STATIONS; i++) {
     const x = -ama.length / 2 + (i + 0.5) * (ama.length / AMA_STATIONS);
@@ -505,8 +528,12 @@ export function amaDrag(u, v, r, phi, crewPos, end, config) {
     const leewayRaw = Math.atan2(vLocal, uAma);
     const leewayAbsDeg = (Math.abs(leewayRaw) <= Math.PI / 2 ? Math.abs(leewayRaw) : Math.PI - Math.abs(leewayRaw)) / DEG;
     const CS = hullSideForceCoeff(leewayAbsDeg, hull);
+    const csLin = Math.min(CS, hull.csV2A * leewayAbsDeg);
+    const csVtx = CS - csLin;
+    const rampWeight = 1 - uDirectionAma * (2 * x / ama.length);
+    const dAamaRamp = dAama * rampWeight;
     const V2 = uAma * uAma + vLocal * vLocal;
-    const FyStrip = -Math.sign(vLocal) * CS * 0.5 * rho_w * dAama * V2;
+    const FyStrip = -Math.sign(vLocal) * 0.5 * rho_w * V2 * (csLin * dAama + csVtx * dAamaRamp);
     FySide += FyStrip;
     yawMomentSide += x * FyStrip;
   }

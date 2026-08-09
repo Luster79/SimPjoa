@@ -326,6 +326,55 @@ function buildDefaultConfig(boat = 'default') {
   const addedSwayPerLength = 1025 * Math.PI * draft * draft / 4;
   const dryMass = p.displacement_kg + p.ama_mass_kg;
 
+  // heaveResult: computed as a named local (not an inline IIFE in the
+  // returned object, as it originally was) so pitch's own stiffness
+  // derivation below can reuse heaveResult.waterplaneArea instead of a
+  // second, drifting copy of the same Cwp/waterlineBeam estimate.
+  const heaveResult = (() => {
+    // waterlineBeam/waterplaneArea reuse ADR 0022's own V-section derivation
+    // (35deg half-angle, the Flay V2 hull form) rather than a second,
+    // independently-guessed hull-form number: waterlineBeam = 2*draft*
+    // tan(35deg) is the SAME formula that section's own math already
+    // states in its comment, just evaluated here instead of by hand.
+    // Cwp (waterplane coefficient) is NOT separately estimated -- reusing
+    // Cp=0.58 (ADR 0022's own prismatic coefficient, the middle of its
+    // 0.55-0.62 span) as a stand-in is an approximation ON TOP OF an
+    // approximation, flagged as such rather than inventing a second,
+    // unsourced "Cwp = Cp + 0.15"-style correction this project has no
+    // basis for.
+    const waterlineBeam = 2 * draft * Math.tan(35 * Math.PI / 180);
+    const Cwp = 0.58;
+    const waterplaneArea = Cwp * p.boat_length_m * waterlineBeam;
+    const stiffness = 1025 * 9.81 * waterplaneArea; // rho_w*g*Awp — N/m, rigorous
+    // addedMassFraction: heave added mass for a surface-piercing hull is
+    // NOT the surge case's small few-percent (pushing water aside
+    // lengthwise) — it is comparable in order of magnitude to the
+    // displaced mass itself (radiating waves up and down disturbs a lot
+    // more water than sliding forward does). 0.5 is a round, explicitly
+    // coarse mid-estimate: it sets the heave DOF's response SPEED, not
+    // its equilibrium (which the stiffness above alone fixes, independent
+    // of mass) — see the step-response measurement this constant is
+    // tuned against, docs/adr's own S8 record.
+    const addedMassFraction = 0.5;
+    // dryMass, not dryMass+CREW_MASS_KG: p.displacement_kg (which dryMass
+    // is built from) is ITSELF "rigged hull + one 90kg crew" per the CSV's
+    // own note (docs/adr/0021) -- the same dryMass massSurge/massSway/
+    // yawInertia already use alone, with no separate crew term added.
+    const mass = dryMass * (1 + addedMassFraction);
+    // dampingCoeff: tuned alongside `mass` for a target step response —
+    // critically-adjacent (zeta~0.6), settling within about two damped
+    // periods rather than ringing, the same "reasonably damped, not
+    // undamped or overdamped" target roll's own I_roll/rollDampingCoeff
+    // pair was chosen against. c = 2*zeta*sqrt(k*m).
+    const zeta = 0.6;
+    const dampingCoeff = 2 * zeta * Math.sqrt(stiffness * mass);
+    return { waterplaneArea, stiffness, mass, dampingCoeff };
+  })();
+
+  // CREW_MASS_KG: shared by crew.mass below and by pitch's own crewPitchMoment
+  // equilibrium derivation (L5) -- one definition, not two drifting copies.
+  const CREW_MASS_KG = 90;
+
   return {
     configVersion: CONFIG_VERSION,
     dt: 1 / 240, // physics integration step [s]; simulator.js substeps to the frame dt
@@ -453,13 +502,19 @@ function buildDefaultConfig(boat = 'default') {
       // length implies the mean draft, and the centroid of that plane sits
       // near mid-draft.
       clrDepth: 0.30,                     // m — tracks the lateral plane it is the centroid depth of; follows the derived 0.282 m draft (ADR 0022)
-      // crewForeAftTrimCoeff ("k_trim"): fraction of half-length the CLR shifts
-      // per unit crewPosX. A tunable estimate — there is no pitch DOF behind
-      // it, so this is the model's whole statement of fore-aft crew trim. At
+      // crewForeAftTrimCoeff ("k_trim"): fraction of half-length the CLR
+      // shifts at a FULL crewPosX=+-1 deflection. A tunable estimate — at
       // 0.25 a full aft trim moves the CLR 0.625 m, i.e. an eighth of the
       // waterline, which is the upper end of what a crew shifting weight in a
-      // 5 m canoe can plausibly do to the immersed lateral plane. Do not raise
-      // it further without a real pitch model to justify it.
+      // 5 m canoe can plausibly do to the immersed lateral plane.
+      //   L5 (docs/work-order-2026-08-09-domkniecie-kryterium.md) gave the
+      // boat the real pitch DOF this comment used to say did not exist —
+      // this value is now re-anchored onto that DOF's own equilibrium angle
+      // (config.pitch.thetaAtFullCrew) inside hydro.js's clrXPosition(),
+      // rather than wired directly to crewPosX. Its MEANING is unchanged
+      // ("how far a full crew deflection can plausibly move the CLR"); only
+      // the mechanism carrying it is a real dynamic angle now, one the
+      // sail/hull can also perturb, not a straight wire from the control.
       crewForeAftTrimCoeff: 0.25,
       crewTrimSign: 1,                     // +-1 — flips the crewPosX->CLR-shift direction; verified empirically (forward crew -> luff)
       // heelClrShiftCoeff / heelClrSign (T3, docs/work-order-2026-08-05-
@@ -703,6 +758,17 @@ function buildDefaultConfig(boat = 'default') {
         if (sparLength <= p.boat_length_m) return 0;
         return Math.acos(p.boat_length_m / sparLength) * 180 / Math.PI;
       })(),
+      // mastShadowWidthDeg / mastShadowCLFactor (L4, docs/work-order-2026-08-
+      // 09-domkniecie-kryterium.md): see aero.js's sailCoefficients for the
+      // mechanism and why ADR 0010 declined to add this term at the time
+      // (this boat's deltaMinDeg=0 gives it a consumer that did not exist
+      // then). EXPLICIT ESTIMATES, not measured — no wind-tunnel or field
+      // data on this rig's own mast-blanketing loss exists. Kept modest and
+      // narrow (a few degrees, a fraction of CL) rather than fit to any
+      // coverage target — see docs/parameter-register.md's own discipline
+      // for this class of constant. Zero these to recover the pre-L4 model.
+      mastShadowWidthDeg: 8,
+      mastShadowCLFactor: 0.15,
       // camber: a DELTA beyond the active table's own built-in camber
       // (aeroV2BuiltinCamber for v2, 0 for v1 — a genuinely flat theoretical
       // table), not an absolute ratio applied on top of a flat plate. See
@@ -859,7 +925,6 @@ function buildDefaultConfig(boat = 'default') {
     },
 
     crew: (() => {
-      const CREW_MASS_KG = 90;
       return {
         mass: CREW_MASS_KG,
         posMin: -0.3,
@@ -891,45 +956,66 @@ function buildDefaultConfig(boat = 'default') {
     // response, the same discipline stability.rollDampingCoeff's own comment
     // documents for roll — not derived from a rigorous 2D heave-added-mass
     // calculation this project has no source for.
-    heave: (() => {
-      // waterlineBeam/waterplaneArea reuse ADR 0022's own V-section derivation
-      // (35deg half-angle, the Flay V2 hull form) rather than a second,
-      // independently-guessed hull-form number: waterlineBeam = 2*draft*
-      // tan(35deg) is the SAME formula that section's own math already
-      // states in its comment, just evaluated here instead of by hand.
-      // Cwp (waterplane coefficient) is NOT separately estimated -- reusing
-      // Cp=0.58 (ADR 0022's own prismatic coefficient, the middle of its
-      // 0.55-0.62 span) as a stand-in is an approximation ON TOP OF an
-      // approximation, flagged as such rather than inventing a second,
-      // unsourced "Cwp = Cp + 0.15"-style correction this project has no
-      // basis for.
-      const waterlineBeam = 2 * draft * Math.tan(35 * Math.PI / 180);
-      const Cwp = 0.58;
-      const waterplaneArea = Cwp * p.boat_length_m * waterlineBeam;
-      const stiffness = 1025 * 9.81 * waterplaneArea; // rho_w*g*Awp — N/m, rigorous
-      // addedMassFraction: heave added mass for a surface-piercing hull is
-      // NOT the surge case's small few-percent (pushing water aside
-      // lengthwise) — it is comparable in order of magnitude to the
-      // displaced mass itself (radiating waves up and down disturbs a lot
-      // more water than sliding forward does). 0.5 is a round, explicitly
-      // coarse mid-estimate: it sets the heave DOF's response SPEED, not
-      // its equilibrium (which the stiffness above alone fixes, independent
-      // of mass) — see the step-response measurement this constant is
-      // tuned against, docs/adr's own S8 record.
-      const addedMassFraction = 0.5;
-      // dryMass, not dryMass+CREW_MASS_KG: p.displacement_kg (which dryMass
-      // is built from) is ITSELF "rigged hull + one 90kg crew" per the CSV's
-      // own note (docs/adr/0021) -- the same dryMass massSurge/massSway/
-      // yawInertia already use alone, with no separate crew term added.
-      const mass = dryMass * (1 + addedMassFraction);
-      // dampingCoeff: tuned alongside `mass` for a target step response —
-      // critically-adjacent (zeta~0.6), settling within about two damped
-      // periods rather than ringing, the same "reasonably damped, not
-      // undamped or overdamped" target roll's own I_roll/rollDampingCoeff
-      // pair was chosen against. c = 2*zeta*sqrt(k*m).
-      const zeta = 0.6;
-      const dampingCoeff = 2 * zeta * Math.sqrt(stiffness * mass);
-      return { waterplaneArea, stiffness, mass, dampingCoeff };
+    heave: heaveResult,
+
+    // --- Pitch, the 6th DOF (L5, docs/work-order-2026-08-09-domkniecie-
+    // kryterium.md) --------------------------------------------------------
+    // Fore-aft trim (crewPosX) has existed since the start only as a
+    // phenomenological CLR shift in hydro.js's clrXPosition() -- hull.
+    // crewForeAftTrimCoeff's own comment says outright "there is no pitch
+    // DOF behind it... do not raise it further without a real pitch model
+    // to justify it." L2 (docs/work-order-2026-08-09-domkniecie-kryterium.md)
+    // found TWA140-160 is a genuine STIFFNESS deficit dominated by the
+    // sail's own yaw moment, not an authority one -- exactly the kind of gap
+    // a real trim DOF (changing wetted length / lateral-plane distribution
+    // with fore-aft attitude, not just a hand-tuned CLR nudge) can close.
+    //
+    // Same method as heave (S8): a RIGOROUS small-angle hydrostatic
+    // stiffness (rho*g*I_L, the standard longitudinal metacentric result),
+    // an inertia/damping pair TUNED against a target step response (the
+    // same discipline I_roll/rollDampingCoeff and heave.mass/dampingCoeff
+    // already use), no capsize-style nonlinearity (pitch has no analogue to
+    // the ama's righting-arm reversal -- it is a plain spring-damper, like
+    // heave, not like roll).
+    pitch: (() => {
+      // I_L: longitudinal second moment of the waterplane about its own
+      // centroid. Standard naval-architecture rectangle/prism approximation
+      // (the same class of estimate heave.waterplaneArea already is):
+      // I_L = Awp * L^2 / 12 -- exact for a rectangle, the customary order-
+      // of-magnitude stand-in for a real prismatic waterplane when the
+      // waterplane's own shape coefficient is not independently known
+      // (heave.waterplaneArea already carries the ONE waterplane-shape
+      // estimate this project has, Cwp=0.58 -- not re-estimated a second
+      // time here).
+      const I_L = heaveResult.waterplaneArea * p.boat_length_m * p.boat_length_m / 12;
+      const stiffness = 1025 * 9.81 * I_L; // N*m/rad, rho_w*g*I_L, rigorous small-angle result
+      // addedInertiaFraction: pitch added inertia for a surface-piercing
+      // hull is dominated by the same vertical-radiation mechanism heave's
+      // own addedMassFraction describes, applied about a transverse axis
+      // instead of translated -- same coarse, explicitly-labelled estimate,
+      // not a second independently-guessed number.
+      const addedInertiaFraction = 0.5;
+      // Rod-term mass moment of inertia about a transverse (pitch) axis
+      // through the CG -- the SAME dryMass*L^2/12 rod term hull.yawInertia
+      // already computes for the vertical axis; a slender hull's pitch and
+      // yaw rod inertias are the same order (both are "mass distributed
+      // along the one long axis"), so this reuses the existing derivation
+      // rather than inventing a second one.
+      const inertia = (dryMass * p.boat_length_m * p.boat_length_m / 12) * (1 + addedInertiaFraction);
+      const zeta = 0.6; // same target damping ratio as heave/roll -- see their own comments
+      const dampingCoeff = 2 * zeta * Math.sqrt(stiffness * inertia);
+      // thetaAtFullCrew: the EQUILIBRIUM pitch angle (rigorous, given the
+      // stiffness above and the crew-weight moment stability.js's
+      // crewPitchMoment computes) at a full crewPosX=+-1 deflection.
+      // hydro.js's clrXPosition uses this to re-anchor hull.crewForeAftTrimCoeff
+      // (the UI-editable calibration knob, unchanged in meaning: "fraction of
+      // half-length the CLR shifts at full crew deflection") onto the pitch
+      // DOF's own angle instead of directly onto crewPosX -- so the config
+      // patch path (createConfig({hull:{crewForeAftTrimCoeff:...}})) still
+      // works exactly as before, and only the MECHANISM changed (a real
+      // dynamic angle the sail/hull can also perturb, not a direct wire).
+      const thetaAtFullCrew = (CREW_MASS_KG * 9.81 * 1 * (p.boat_length_m / 2)) / stiffness;
+      return { stiffness, inertia, dampingCoeff, thetaAtFullCrew };
     })(),
 
     stability: {

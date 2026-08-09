@@ -74,6 +74,13 @@ source-then-`dist/` commit order, and what `xfail` means here).
 Consult both before modifying anything under `/core` or `/harness`, or before changing the
 shunt/roll state machines in the UI — those all depend on the conventions they document.
 
+**The project's success criterion** — the most physically realistic proa simulation
+achievable, with *any course obtainable and permanently holdable without the oar*, on
+physical characteristics that may be manipulated only within a limited range and mainly
+where they are unknown — is stated in full at the top of `docs/README.md`, together with
+its current scope (TWA < 50 excluded since 2026-08-09 — deferred, not solved). Judge
+physics work by how much oar-shipped course coverage it buys.
+
 ## 6. Documentation Layering and Maintenance
 
 **Documentation is layered. Load minimum, fetch deeper docs only when needed. Keep it in sync.**

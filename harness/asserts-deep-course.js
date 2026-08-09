@@ -7,7 +7,7 @@ import { computePolar, headingHoldRudder } from './polar.js';
 import { createSimulator } from '../core/simulator.js';
 import { scenarioSquall } from './scenarios.js';
 import { hashState } from './checksum.js';
-import { DEG, HEADING0, normalizeAngle, freshState } from './asserts-helpers.js';
+import { DEG, HEADING0, normalizeAngle, freshState, holdsCourse } from './asserts-helpers.js';
 
 export function check_deep_course(config, check, slow) {
   // --- C (Round 10c, ROUND10c_carrot_two_regime.md, C2): two-regime
@@ -186,17 +186,22 @@ export function check_deep_course(config, check, slow) {
       }
       const twaStart = Math.abs(normalizeAngle(windDirFrom - state.heading)) / DEG;
       const releaseSeconds = 120;
-      for (let i = 0; i < Math.round(releaseSeconds / dt); i++) {
-        state = integrate(state, { windDirFrom, windSpeed: tws, sheet: sheetDeg * DEG,
-          rudder: 0, rudderUp: true, ...trim }, config, dt);
-      }
+      const releaseControls = { windDirFrom, windSpeed: tws, sheet: sheetDeg * DEG,
+        rudder: 0, rudderUp: true, ...trim };
+      // K1 (docs/work-order-2026-08-09-kryterium-bez-wiosla.md): holdsCourse
+      // replaces the plain integration loop so this check gets the same
+      // converged+restoring narrowing as S1a/S1c/S2 -- an average rate under
+      // 15deg/min over the window is not the same claim as "the course is
+      // actually settling", see that helper's own comment.
+      const hold = holdsCourse(config, releaseControls, state, { windowSeconds: releaseSeconds });
+      state = hold.finalState;
       const twaEnd = Math.abs(normalizeAngle(windDirFrom - state.heading)) / DEG;
       const rate = (twaStart - twaEnd) / (releaseSeconds / 60);
-      if (rate < 15 && !state.capsized) nHeld++;
+      if (rate < 15 && hold.converged && hold.restoring && !state.capsized) nHeld++;
       worstRate = Math.max(worstRate, rate);
-      rows.push(`TWA${twaDeg}: ${twaStart.toFixed(0)}->${twaEnd.toFixed(0)}deg ${rate.toFixed(1)}deg/min`);
+      rows.push(`TWA${twaDeg}: ${twaStart.toFixed(0)}->${twaEnd.toFixed(0)}deg ${rate.toFixed(1)}deg/min${hold.converged ? '' : ' NOT-CONVERGED'}${hold.restoring ? '' : ' NOT-RESTORING'}`);
     }
-    check('C-B: paddle SHIPPED, every bear-away trim set (tack fwd + crew aft + carrot) -- deep courses hold within 15deg/min',
+    check('C-B: paddle SHIPPED, every bear-away trim set (tack fwd + crew aft + carrot) -- deep courses hold within 15deg/min, converging with a restoring moment',
       nHeld === 2,
       `${nHeld}/2 points hold -- ${rows.join(' | ')} -- worst ${worstRate.toFixed(1)}deg/min against the 15 ceiling. Rig trim is not the binding constraint: see this block's own comment for the measured moment budget (sail +6 N*m vs hull -116 N*m) and why enlarging the fore-aft arms does not move it. C-C below measures the manual's OWN recipe, which does better`,
       'STEERING');
@@ -264,20 +269,24 @@ export function check_deep_course(config, check, slow) {
       const twaStart = Math.abs(normalizeAngle(windDirFrom - state.heading)) / DEG;
       const speedStart = Math.hypot(state.u, state.v);
       const releaseSeconds = 120;
-      for (let i = 0; i < Math.round(releaseSeconds / dt); i++) {
-        state = integrate(state, { windDirFrom, windSpeed: tws, sheet: sheetDeg * DEG,
-          rudder: 0, rudderUp: true, ...trim }, config, dt);
-      }
+      const releaseControls = { windDirFrom, windSpeed: tws, sheet: sheetDeg * DEG,
+        rudder: 0, rudderUp: true, ...trim };
+      // K1: same holdsCourse narrowing as C-B above.
+      const hold = holdsCourse(config, releaseControls, state, { windowSeconds: releaseSeconds });
+      state = hold.finalState;
       const twaEnd = Math.abs(normalizeAngle(windDirFrom - state.heading)) / DEG;
       const rate = (twaStart - twaEnd) / (releaseSeconds / 60);
       // Symmetric: the recipe can overshoot PAST a stable equilibrium into
       // bearing away further (measured at TWA140), so a one-sided "rounds up"
       // bound would silently accept a large drift the other way, which is not
-      // "holding the course" either.
-      if (Math.abs(rate) < 15 && !state.capsized) nHeld++;
-      rows.push(`TWA${twaDeg}: ${twaStart.toFixed(0)}->${twaEnd.toFixed(0)}deg ${rate.toFixed(1)}deg/min (v ${speedStart.toFixed(2)}->${Math.hypot(state.u, state.v).toFixed(2)})`);
+      // "holding the course" either. holdsCourse's own convergence/restoring
+      // checks are direction-agnostic (they read |drift| and the moment's
+      // sign relative to whichever way it perturbs), so they compose with
+      // this symmetric rate check unchanged.
+      if (Math.abs(rate) < 15 && hold.converged && hold.restoring && !state.capsized) nHeld++;
+      rows.push(`TWA${twaDeg}: ${twaStart.toFixed(0)}->${twaEnd.toFixed(0)}deg ${rate.toFixed(1)}deg/min${hold.converged ? '' : ' NOT-CONVERGED'}${hold.restoring ? '' : ' NOT-RESTORING'} (v ${speedStart.toFixed(2)}->${Math.hypot(state.u, state.v).toFixed(2)})`);
     }
-    check("C-C: the manual's own recipe (carrot + crew off the ama + mast toward vertical) holds a deep course rudder-free within 15deg/min",
+    check("C-C: the manual's own recipe (carrot + crew off the ama + mast toward vertical) holds a deep course rudder-free within 15deg/min, converging with a restoring moment",
       nHeld === 2,
       `${nHeld}/2 points hold -- ${rows.join(' | ')} -- TWA160 does not hold at THIS fixed recipe, and not for want of authority: see this block's own comment. docs/adr/0030 found a different trim that does hold it rudder-free, so this line measures the manual's recipe, not the boat's limit`,
       'STEERING');
