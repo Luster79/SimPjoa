@@ -151,27 +151,50 @@ export function check_polar_helm(config, check, slow) {
   // steering a real proa actually uses (Proafile: traditional proas steer on
   // all reaching and windward courses with no rudder or oar at all).
   {
+    // settledFor(row, crewPos, end) -> { state, windDirFrom }
+    // The 45s autopilot settle every release test starts from. It runs at
+    // NEUTRAL tack/crew-fore-aft/stays, so it depends only on the row, the
+    // crew's lateral position and the end -- never on the trim under test.
+    // helmRelease used to do it inside every call, so S1c's 15 trials per row
+    // paid for 15 identical settles; memoised, they pay for one. This is a
+    // pure speed change: same settle, same starting state, same numbers.
+    //   end-aware for S3 below. `heading` is relative to the ACTIVE bow, and
+    // the ama does not relocate at a shunt -- it sits at +y on end=+1 and -y
+    // on end=-1 (core/state.js Conventions) and must stay to WINDWARD on
+    // both. So the same physical situation is TWA=+twa on one end and -twa on
+    // the other: windDirFrom = heading0 + end*twa. Flipping the heading alone
+    // and leaving the wind put is exactly the defect ADR 0039 found in K3.
+    const settleCache = new Map();
+    const settledFor = (row, crewPos, end = 1, sheetDeg = row.bestSheetAngle, brailWind = row.bestBrailWind) => {
+      const key = `${row.twa}/${row.tws}/${crewPos}/${end}/${sheetDeg}/${brailWind}`;
+      const hit = settleCache.get(key);
+      if (hit) return hit;
+      const heading0 = end === 1 ? HEADING0 : HEADING0 + Math.PI;
+      const windDirFrom = heading0 + end * row.twa * DEG;
+      let state = { t: 0, x: 0, y: 0, heading: heading0, u: 1.0, v: 0, r: 0, phi: 0, p: 0, z: 0, w: 0,
+        delta: sheetDeg * DEG, end, amaLoad: 0, abackTimer: 0, capsized: false,
+        shunt: { phase: 'none', progress: 0 } };
+      const controls = { windDirFrom, windSpeed: row.tws, sheet: sheetDeg * DEG, rudder: 0,
+        rudderUp: false, brailLee: 0, brailWind, crewPos,
+        crewPosX: 0, tackX: 0, stays: 0, shuntRequest: false };
+      for (let i = 0; i < Math.round(45 / config.dt); i++) {
+        controls.rudder = headingHoldRudder(state, heading0, config);
+        state = integrate(state, controls, config, config.dt);
+      }
+      const settled = { state, windDirFrom };
+      settleCache.set(key, settled);
+      return settled;
+    };
+
     const helmRelease = (row, oarUp, tackX = 0, crewPosX = 0, stays = 0) => {
-      const windDirFrom = HEADING0 + row.twa * DEG;
+      const { state, windDirFrom } = settledFor(row, row.bestCrewPos, 1);
       const twaOf = (heading) => {
         const a = (((windDirFrom - heading) / DEG) % 360 + 360) % 360;
         return a > 180 ? 360 - a : a;
       };
-      let state = { t: 0, x: 0, y: 0, heading: HEADING0, u: 1.0, v: 0, r: 0, phi: 0, p: 0, z: 0, w: 0,
-        delta: row.bestSheetAngle * DEG, end: 1, amaLoad: 0, abackTimer: 0, capsized: false,
-        shunt: { phase: 'none', progress: 0 } };
       const controls = { windDirFrom, windSpeed: row.tws, sheet: row.bestSheetAngle * DEG, rudder: 0,
-        rudderUp: false, brailLee: 0, brailWind: row.bestBrailWind, crewPos: row.bestCrewPos,
-        crewPosX: 0, tackX: 0, shuntRequest: false };
-      for (let i = 0; i < Math.round(45 / config.dt); i++) {
-        controls.rudder = headingHoldRudder(state, HEADING0, config);
-        state = integrate(state, controls, config, config.dt);
-      }
-      controls.rudder = 0;
-      controls.rudderUp = oarUp;
-      controls.tackX = tackX;
-      controls.crewPosX = crewPosX;
-      controls.stays = stays;
+        rudderUp: oarUp, brailLee: 0, brailWind: row.bestBrailWind, crewPos: row.bestCrewPos,
+        crewPosX, tackX, stays, shuntRequest: false };
       // K1 (docs/work-order-2026-08-09-kryterium-bez-wiosla.md): the release
       // window itself is unchanged (60s, round 10d's own H1 window) -- only
       // the predicate got narrower. holdsCourse() adds `converged` (the
@@ -355,6 +378,87 @@ export function check_polar_helm(config, check, slow) {
       }).join(' ') +
       ` -- with the TACK ALONE it is ${nHeldTackOnly}/${holders.length}. DEMOTED TO xfail on the real PJOA FOLK (docs/adr/0021): close-hauled in fresh wind (TWS10/TWA70) the boat can no longer be balanced by rig trim at all, with or without the stays. It held 6/6 on the Dierking-estimate boat, which carried 50% more sail; the real one is slower for its wind there, so it makes more leeway and the Munk moment it has to trim out grows faster than the rig authority available to do it. Left failing with its number rather than widened a third time to include the crew -- that dimension is what S1c measures`,
       'STEERING');
+
+    // --- S3: the existence claim the CRITERION makes -------------------
+    // (measurement audit, 2026-08-10; see docs/adr/0039)
+    //
+    // S1a/S1b/S1c/S2 above are each scoped to a named control subset ON
+    // PURPOSE -- S1a/S1b are neutral-trim diagnostics, S1c is "tack + crew
+    // fore-aft", S2 is "rig trim alone", and S2's own detail line records the
+    // deliberate decision not to widen it a third time. All four stay as they
+    // are. What none of them makes is the criterion's OWN claim: does a
+    // rudder-free hold exist using the controls a sailor actually has? An
+    // audit of the harness found three axes missing from every one of them,
+    // and from harness/coverage-no-oar.js too:
+    //   crewPos -- the crew's LATERAL position, frozen everywhere at the
+    //     polar's SPEED-optimal value. Adding it alone takes S1c's own grid
+    //     from 4/6 to 6/6 (measured). TWA110/TWS6 needs the crew fully
+    //     INBOARD where the speed optimum puts them fully out -- which is
+    //     precisely M2's heel-runaway mechanism, the crew's weight sinking
+    //     the ama as speed bleeds off.
+    //   stays -- absent from S1c entirely (it defaults to 0). All six trims
+    //     that closed that 4/6 -> 6/6 used stays=+1.
+    //   end -- NOTHING in this file, asserts-deep-course.js or
+    //     coverage-no-oar.js has ever run end=-1. docs/adr/0016 and 0023 both
+    //     record defects that survived rounds of review because they were
+    //     visible only on the un-exercised end, and ADR 0039 found a third
+    //     (K3's wind mirror) the day this check was written. On a boat that
+    //     shunts, half the operating envelope was going unmeasured.
+    //
+    // Scope: TWS6 across the reach AND deep bands, both ends. TWS6 is where
+    // the project's hardest cases live -- the three coverage gaps that stood
+    // until ADR 0039, and both of C-B/C-C's points. Two-stage like
+    // coverage-no-oar.js (60s screen, then the full 300s window), and it
+    // stops at the first holder, because this is an existence question.
+    // The SHEET is an axis too, and leaving it out was this check's own first
+    // draft getting the audit's lesson wrong one more time: frozen at the
+    // polar's speed optimum it reported TWA140/160 as NONE on both ends,
+    // while harness/coverage-no-oar.js holds both at sheet=35 -- which is
+    // exactly ADR 0030's finding ("a rudder-free holding trim need not be the
+    // fast one": TWA160/TWS6 holds at 55 against an optimum near 84). Ordered
+    // with the polar optimum first, then the sheet angles that have actually
+    // won before, so the early exit pays off on the points that hold.
+    const S3_CREWPOS = [0, 0.3, 0.6, 1.0];
+    const S3_TACK = [1, 0.5, -0.5, 0, -1];
+    const S3_CREWX = [-1, -0.5, 0, 0.5, 1];
+    const S3_STAYS = [1, -1, 0];
+    const uniq = (xs) => [...new Set(xs)];
+    const s3Rows = [70, 90, 110, 140, 160]
+      .map((twa) => polar.find((r) => r.twa === twa))
+      .filter((r) => r && r.bestSpeed > 0.3);
+    const s3 = [];
+    for (const row of s3Rows) {
+      const sheets = uniq([row.bestSheetAngle, 35, 20, 12, 55]);
+      const brails = uniq([row.bestBrailWind, 0, 0.5]);
+      for (const end of [1, -1]) {
+        let found = null;
+        search:
+        for (const sheetDeg of sheets) for (const brailWind of brails) for (const crewPos of S3_CREWPOS) {
+          const { state, windDirFrom } = settledFor(row, crewPos, end, sheetDeg, brailWind);
+          for (const tackX of S3_TACK) for (const crewPosX of S3_CREWX) for (const stays of S3_STAYS) {
+            const controls = { windDirFrom, windSpeed: row.tws, sheet: sheetDeg * DEG,
+              rudder: 0, rudderUp: true, brailLee: 0, brailWind, crewPos,
+              crewPosX, tackX, stays, shuntRequest: false };
+            const screen = holdsCourse(config, controls, state, { windowSeconds: 60 });
+            if (!(screen.excursion <= 15 && screen.speedRatio >= 0.5 && !screen.capsized)) continue;
+            const full = holdsCourse(config, controls, state, { windowSeconds: 300 });
+            if (full.excursion <= 15 && full.speedRatio >= 0.5 && full.converged && full.restoring && !full.capsized) {
+              found = { crewPos, tackX, crewPosX, stays, sheetDeg, brailWind, full };
+              break search;
+            }
+          }
+        }
+        s3.push({ twa: row.twa, end, found });
+      }
+    }
+    const nS3 = s3.filter((r) => r.found).length;
+    check('S3: oar SHIPPED -- a rudder-free course hold exists using the FULL trim set (crew lateral + fore-aft, tack, stays), on BOTH ends, held for 300s',
+      nS3 === s3.length,
+      `${nS3}/${s3.length} point-ends hold (TWS6) -- ` +
+      s3.map((r) => r.found
+        ? `TWA${r.twa}/end${r.end > 0 ? '+' : '-'}1:crewPos=${r.found.crewPos} tack=${r.found.tackX} crewX=${r.found.crewPosX} stays=${r.found.stays} sheet=${r.found.sheetDeg} brail=${r.found.brailWind} exc=${r.found.full.excursion.toFixed(1)}deg v=${(r.found.full.speedRatio * 100).toFixed(0)}%`
+        : `TWA${r.twa}/end${r.end > 0 ? '+' : '-'}1:NONE`).join(' ') +
+      ' -- the three axes S1a/S1b/S1c/S2 all lacked (crew lateral position, stays, and the second end); see this check\'s own comment and docs/adr/0039');
   }
 
   // Smoothness: an isolated >20% drop between adjacent TWA rows in 60-170
