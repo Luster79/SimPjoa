@@ -57,7 +57,18 @@ const WIDE_SEARCH = process.argv.includes('--wide-search');
 // o istnienie, nie o optimum") -- each added pair multiplies the trial count
 // by TACKX*CREWX*STAYS (75), and this is meant to run on a handful of
 // zero-coverage points (--twa=140,150,160), not the full 42-point grid.
-const SHEET_TRIALS = [35, 55, 75];
+//
+// --dense-sheet (N2, docs/work-order-2026-08-10-blok-B.md): the coarse
+// {35,55,75} grid is what caused --wide-search's own superset defect (see
+// the comment at sheetBrailPairs below) -- it missed the 16-36deg sheets
+// TWS6's reaching courses actually hold at. The four points still NONE after
+// the union (TWA 50/60/70/130, all TWS6) sit at exactly that wind, so before
+// treating them as a property of the boat, widen the resolution that is the
+// known weak point: every 10deg from 15 to 85, not three values.
+const DENSE_SHEET = process.argv.includes('--dense-sheet');
+const SHEET_TRIALS = DENSE_SHEET
+  ? Array.from({ length: 8 }, (_, i) => 15 + i * 10)  // 15,25,...,85
+  : [35, 55, 75];
 const BRAIL_TRIALS = [0, 0.5, 1.0];
 const twaArg = process.argv.find((a) => a.startsWith('--twa='));
 const TWA_LIST = twaArg ? twaArg.slice('--twa='.length).split(',').map(Number) : DEFAULT_TWA_LIST;
@@ -81,6 +92,14 @@ const TWS_LIST = twsArg ? twsArg.slice('--tws='.length).split(',').map(Number) :
 // coverage number outright. Hence a window much wider than the 15deg
 // criterion, and hence --validate-screen, which measures the false-rejection
 // rate directly rather than arguing it.
+// KNOWN UNSAFE as of N1 (docs/work-order-2026-08-10-blok-B.md): the
+// --validate-screen sample that cleared this (3 points: TWA70/110/160 @
+// TWS6) did not cover the whole grid, and a direct re-check at TWA80/TWS6
+// found a false rejection -- the polar-optimum trial (tackX=1, crewX=-0.5,
+// sheet=16, brail=0) has no equilibrium within +-25deg of the settled
+// heading yet holds course cleanly when actually integrated (exc=0.7-0.8deg,
+// converged, restoring). Do not use --static-screen for numbers that will be
+// reported; it is kept here only for further screen-design work.
 const STATIC_SCREEN = process.argv.includes('--static-screen');
 const VALIDATE_SCREEN = process.argv.includes('--validate-screen');
 const STATIC_WINDOW_DEG = 25;   // vs holdsCourse's own 15deg excursion band
@@ -118,8 +137,15 @@ function settledState(config, twa, tws, sheetDeg, brailWind, crewPos) {
   return { state, windDirFrom };
 }
 
+// --no-mast-shadow (N1, docs/work-order-2026-08-10-blok-B.md): re-score
+// coverage with L4 (ADR 0037) disabled, to separate its actual effect on
+// the criterion from the union-search fix's own effect -- both landed the
+// same day, and ADR 0037's "Measured" section was written against the
+// pre-fix, loss-making search.
+const NO_MAST_SHADOW = process.argv.includes('--no-mast-shadow');
+
 function main() {
-  const config = createConfig();
+  const config = createConfig(NO_MAST_SHADOW ? { sail: { mastShadowCLFactor: 0 } } : undefined);
   const rows = [];
   let held = 0, total = 0;
   const t0 = Date.now();
@@ -235,7 +261,7 @@ function main() {
     }
   }
 
-  console.log(`\nCOVERAGE: ${held}/${total} points hold a course with the oar shipped, permanently (K1's converged+restoring predicate).${WIDE_SEARCH ? ' [--wide-search: sheet+brail included]' : ''}${STATIC_SCREEN ? ` [--static-screen: ${nStaticRejected} trials rejected without integrating]` : ''}`);
+  console.log(`\nCOVERAGE: ${held}/${total} points hold a course with the oar shipped, permanently (K1's converged+restoring predicate).${WIDE_SEARCH ? ' [--wide-search: sheet+brail included]' : ''}${DENSE_SHEET ? ' [--dense-sheet: 15-85deg step 10]' : ''}${STATIC_SCREEN ? ` [--static-screen: ${nStaticRejected} trials rejected without integrating]` : ''}`);
   if (VALIDATE_SCREEN) {
     console.log(`\nSTATIC SCREEN VALIDATION: ${nValidateChecked} trials the screen would reject were run in full; ` +
       `${nValidateFalseReject} of them would have PASSED (false rejections).`);

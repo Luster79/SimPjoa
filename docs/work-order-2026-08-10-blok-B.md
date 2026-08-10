@@ -1,6 +1,6 @@
 # Lista poprawek — blok B: dług pomiarowy, cztery luki i pytanie o kryterium
 
-*Last reviewed: 2026-08-09*
+*Last reviewed: 2026-08-10*
 *Wejście: wykonanie bloku A (M1-M3, Część VI
 `docs/work-order-2026-08-09-domkniecie-kryterium.md`), snapshot
 `docs/coverage-no-oar-2026-08-09.txt` (38/42), ADR 0034-0038. Stan repo na
@@ -219,3 +219,212 @@ podjąć na liczbach niż jej uniknąć.
 *Reprodukcja: `harness/coverage-no-oar.js` z flagami podanymi przy pozycjach;
 skrypty pomiarowe bloku A w `scratch/` (`m2_*`, `m3_*`, `l*`), scommitowane
 razem z tym dokumentem.*
+
+---
+
+## Część V. Wykonanie (2026-08-09/10)
+
+### N2 — cztery luki przy TWS 6. Wykonane, częściowo.
+
+`--wide-search --dense-sheet --static-screen --twa=50,60,70,130 --tws=6`
+(siatka szotu co 10° w 15-85°, 8 wartości × 3 brasy = 24 pary):
+
+| punkt | wynik |
+|---|---|
+| TWA130/TWS6 | **HOLDS** (`sheet=15°, tackX=0, crewX=-0,5, stays=1`) |
+| TWA50/TWS6 | NONE |
+| TWA60/TWS6 | NONE |
+| TWA70/TWS6 | NONE |
+
+**Jedna luka domknięta.** Pozostałe trzy **opierają się nawet gęstej siatce
+szotu** — to jest pierwszy w całym bloku A/B wynik, który NIE zmienia się
+pod poszerzeniem przeszukiwania, i wzmacnia to diagnozę M2 (mechanizm jest
+przechyłowy — ucieczka `phi`, nie brak odpowiedniego kąta szotu). Trzy
+pozostałe NONE zaczynają wyglądać jak twierdzenie o łodzi, nie o metodzie.
+
+*Blok `repro`: flaga `--dense-sheet` dodana do `harness/coverage-no-oar.js`.*
+
+### N4 — rozpędzenie z martwego stanu. Wykonane; shunt bez wiosła przechodzi w pełni.
+
+Zdiagnozowane bezpośrednio (`scratch/n4_deadstop_diag.mjs`): rampa 30 s
+(ta sama, użyta do zwolnienia) **nie wywraca łódki podczas samej rampy**,
+ale **wywraca ~10 s w fazę utrzymania kursu po niej** — dokładnie w chwili,
+gdy łódka nabiera dość prędkości, żeby moment przechylający żagla
+przegonił wciąż budujący się moment prostujący od załogi.
+
+Zmierzony próg: rampa 30 s wywraca, 40 s przechodzi (wychylenie 0,6°),
+50 s osiada w pełni (0,2°). **To jest kwestia jakości procedury, nie
+granica fizyczna** — dokładnie ten sam mechanizm co przy hamowaniu w M3
+(moment żagla i ciężar załogi jako przeciwwaga dla siebie), tylko jako
+asymetria tempa zamiast kolejności: oddawanie mocy usuwa moment
+destabilizujący (łódka jest coraz bezpieczniejsza), budowanie mocy go
+dodaje (łódka jest coraz **mniej** bezpieczna, aż nabierze dość prędkości,
+by własna siła boczna kadłuba nadgoniła).
+
+**Naprawa:** osobna stała `REPOWER_RAMP_SECONDS = 45` (margines ponad
+zmierzony próg 40 s) w `harness/asserts-course-change.js`, zamiast
+współdzielenia jednej stałej z rampą hamowania.
+
+**Odbiór: K3 „shunt z wiosłem wyjętym" przechodzi w pełni na obu końcach.**
+Wychylenie po shuncie 0,4°, prędkość 99%, `xfail` zdjęty. **To jest pierwszy
+w całej historii projektu kompletny cykl shuntu — zwolnienie, shunt,
+ponowne rozpędzenie, utrzymanie kursu — z wiosłem wyjętym od pierwszego
+kroku do ostatniego.**
+
+*Zmiana w `harness/asserts-course-change.js`.*
+
+### N5 — deficyt napędu ostro. Zdiagnozowane; celowo nie naprawione.
+
+`scratch/n5_drive_deficit.mjs`: rozkład szczytowej siły napędowej (ta sama
+wielkość, którą liczy `S4b`) na CL, CD, kąt natarcia i kąt szotowania w
+punkcie szczytu, dla całego zakresu θ.
+
+**Cień masztu (L4) nie jest przyczyną.** Piki dla θ=55/60 wypadają przy
+`delta=15°/18°` — poza pasmem cienia (0-8°). To wyklucza najbardziej
+oczywistego podejrzanego.
+
+**Znalezisko głębsze, niż się spodziewałem, i nierozstrzygnięte:** przy θ=55
+model wybiera punkt pracy `alphaSailor=40°, CL=1,276, L/D=2,24` — mimo że
+sam profil 2D ma **zwalidowane** L/Dmax=5,40 (niemal identyczne ze źródłem,
+patrz Część II.1 work orderu 08-02). Poszukiwanie szczytu siły napędowej
+świadomie NIE maksymalizuje L/D — maksymalizuje `Fx` po rozłożeniu siły na
+układ łodzi, co przy kursach ostrych może uzasadnione wybierać wyższe CL
+kosztem L/D. To nie jest oczywisty błąd.
+
+**Nie podjąłem próby naprawy.** Rozstrzygnięcie wymaga odpowiedzi na
+pytanie, którego nie mam czym rozstrzygnąć w tej rundzie: **czy metoda
+szukania szczytu w modelu (przeszukanie `delta` przy ustalonym θ,
+maksymalizacja `Fx`) odpowiada temu, jak Di Piazza faktycznie wyznaczył
+punkty Fig 4** — czy to ta sama procedura, czy inna (np. punkt przy stałym
+trymie, nie przeszukiwanie). Część II.1 tamtego work ordera już zostawiła
+otwarte dokładnie to pytanie o Fig 4 („czy `θ` to kąt wiatru pozornego i czy
+`CR` jest siłą napędową czy wypadkową") i nie rozstrzygnęła go — próba
+naprawy fizyki bez tej odpowiedzi byłaby dokładnie tym, przed czym ostrzega
+własna reguła projektu: nie kalibrować pod niezweryfikowane źródło.
+
+**Odbiór:** `S4b` pozostaje `xfail:CALIBRATION` z liczbami, teraz z dodanym
+rozkładem CL/CD/L/D w punkcie szczytu jako materiał dla kogoś, kto rozstrzygnie
+pytanie o Fig 4. Nie strojone.
+
+*Nakład: mały (diagnoza). Naprawa: nie wykonana, wymaga rozstrzygnięcia
+źródła jako warunku wstępnego.*
+
+### N1 — dług pomiarowy: unia dwóch przeszukiwań w dwóch konfiguracjach. Wykonane.
+
+**Odkryty po drodze, poważniejszy defekt niż to, co N1 miało zmierzyć:**
+pierwszy przebieg (siatka 42 punktów z `--static-screen`, uruchomiony
+równolegle dla szybkości) dał 6 punktów `NONE` tam, gdzie stary,
+wąski-only snapshot (`docs/coverage-no-oar-2026-08-09.txt`) miał `HOLDS`
+(TWA130/TWS4, TWA80/90/100/120/TWS6, TWA110/TWS10). To było logicznie
+niemożliwe — poprawiony `--wide-search` zawsze zawiera optimum polary jako
+pierwszą parę, więc jest nadzbiorem wąskiego przeszukiwania; nie może
+znaleźć **mniej** trzymających punktów. Zgodnie z regułą „nie przyjmować
+wyniku fizycznie niewiarygodnego" (Część III), zdiagnozowane bezpośrednio:
+bezpośredni test starego dobrego triku dla TWA80/TWS6 (`tackX=1, crewX=-0,5,
+sheet=16°, brail=0` — dokładnie optimum polary w tym punkcie) **trzyma
+kurs** (`exc=0,8°, converged, restoring`), ale `staticScreenKeeps()` go
+odrzuca. Własna walidacja tego ekranu z bloku A (`--validate-screen`, 3
+punkty: TWA70/110/160) nie objęła punktu, który akurat zawiódł — próbka
+była za mała, nie ekran bezpieczny. **`--static-screen` jest niebezpieczny
+i nie wolno go używać do liczb, które się raportuje** (kod oznaczony
+komentarzem w `harness/coverage-no-oar.js`; zostaje w pliku wyłącznie jako
+materiał do dalszej pracy nad projektem ekranu).
+
+Pełna siatka 42 punktów przeliczona ponownie **bez** `--static-screen`
+(14 równoległych workerów po `(TWA-para) × config`, `--tws=4,6,10` jawnie
+podany każdemu, bo poprzednia runda parallelizacji (blok B, sesja
+poprzedzająca) nauczyła, że domyślna lista TWS bez jawnego `--tws=` daje
+nierówny podział):
+
+| konfiguracja | pokrycie |
+|---|---|
+| (a) obecna (`ce4f3fa`+, L4+L5 aktywne) | **39/42 (93 %)** |
+| (b) `--no-mast-shadow` (L4 wyłączone; L5 ma dowiedziony zerowy wpływ — patrz N1c niżej, więc (b) reprezentuje też „L4+L5 wyłączone") | **40/42 (95 %)** |
+
+**Delta per pasmo** (żeby handel nie zniknął w liczbie zbiorczej, tak jak
+przy K5):
+
+| pasmo | (a) obecna | (b) bez cienia masztu |
+|---|---|---|
+| 50-70 (bejdewind) | 6/9 | 7/9 |
+| 80-130 | 18/18 | 18/18 |
+| 140-160 | 9/9 | 9/9 |
+| 170-180 | 6/6 | 6/6 |
+
+**Cały efekt L4 na kryterium siedzi w jednym punkcie: TWA50/TWS6.** Z
+cieniem masztu ten punkt jest `NONE`, bez niego — `HOLDS`
+(`tackX=-0,5, crewX=0, stays=1, sheet=55°, brail=0, exc=0,0°, v=100 %`).
+Poza tym jednym punktem obie konfiguracje są identyczne co do zera
+(wszystkie pozostałe 41 punktów zgodne HOLDS/NONE między (a) i (b), łącznie
+z trzema pozostałymi z N2: TWA50/60/70/TWS6 — patrz niżej).
+
+**N1c (pitch, L5) — zredukowane, nie wykonane jako osobny przebieg.**
+Zamiast trzeciej, drogiej konfiguracji „przed L4 i L5" zmierzono
+analitycznie i empirycznie (`scratch/n1c_pitch_settling.mjs`), że pitch
+osiada w ~0,4 s wobec najkrótszego istotnego okna testowego (10-45 s) —
+przy stanie ustalonym `pitchClrCoeff·theta ≡ crewForeAftTrimCoeff·crewPosX`
+dokładnie, więc L5 **z definicji** nie może zmienić wyniku żadnej metryki
+opartej na `holdsCourse` (albo `holdsCourseActiveTrim`). To czyni
+konfigurację (c) zbędną wobec (b) — dowód analityczny, nie pominięcie.
+
+**Trzy pozostałe `NONE` (TWA50/60/70/TWS6) potwierdzone w obu
+konfiguracjach jako te same punkty co po N2** — gęstsza siatka szotu (N2)
+i pełne przeszukanie wide-search dają identyczny wynik na tych trzech.
+To jest teraz **trzeci niezależny przebieg** (N2 gęsty szot, N1 pełna unia
+×2 konfiguracje), który nie zamyka tych trzech punktów — najsilniejszy
+dotąd sygnał, że to własność łodzi (mechanizm z M2: przechył, nie brak
+odpowiedniego kąta szotu), nie defekt metody.
+
+**Odbiór: trzy liczby (a, b — c uznane za zbędne z dowodem) i delta per
+pasmo, obie dostarczone.** ADR 0037 i 0038 skorygowane niżej.
+
+*Kod: komentarz-ostrzeżenie o `--static-screen` w
+`harness/coverage-no-oar.js`. Skrypty: `scratch/verify_regression.mjs`,
+`scratch/verify_regression2.mjs` (izolacja fałszywego odrzucenia),
+`scratch/n1c_pitch_settling.mjs`.*
+
+### N3 — wariant predykatu z trymem ciągłym. Wykonane; wynik niejednoznaczny, zaraportowany bez upiększeń.
+
+`holdsCourseActiveTrim()` w `harness/asserts-helpers.js` — drugi predykat
+obok `holdsCourse()`, korekta co 10 s, krok ≤0,1, `tackX` proporcjonalnie do
+błędu kursu, `crewPos` proporcjonalnie do przechyłu (mechanizm z M2).
+
+**Test punktowy (TWA70/TWS6) wyglądał obiecująco:** zamrożony trym wywraca
+łódkę (`restoring=false, capsized=true`), aktywny — nie (`restoring=true,
+capsized=false`). Strojenie interwału/kroku (`scratch/n3_tune.mjs`, 6
+kombinacji) dało **zawsze ten sam wynik niezależnie od agresywności
+korekty** — `tackX` osiada na granicy −1, wychylenie stabilizuje się na
+~54°. To nie jest kwestia słabego strojenia: korekta wyczerpuje dostępny
+zakres sterowania i osiada w nowej, prawdziwej (zbieżnej, przywracającej)
+równowadze, która po prostu leży ~54° od celu.
+
+**Pełne porównanie na wszystkich 9 punktach bejdewindu**
+(`scratch/n3_beat_comparison.mjs`, trym startowy `tackX=0` — ten sam, którego
+użył M2, nie wynik przeszukiwania):
+
+| | zamrożony (`holdsCourse`) | aktywny (`holdsCourseActiveTrim`) |
+|---|---|---|
+| trzyma się (≤15°, ≥50% prędkości, zbieżny, przywracający) | **0/9** | **0/9** |
+| wywrotki | 3/9 (wszystkie TWS 6) | **0/9** |
+| prędkość przy TWS 6 (uśredniona) | 0% | 26-33% |
+| wychylenie końcowe | 4,8-53,2° | 37,5-54,8° (**gorsze na 8/9 punktów**) |
+
+**Uczciwy wniosek, inny niż sugerował pojedynczy test:** aktywna korekta
+**konsekwentnie zapobiega wywrotce** i **konsekwentnie poprawia zachowanie
+prędkości** — to potwierdza przyczynowo mechanizm z M2 (przesunięcie
+załogi z amy do środka realnie chroni pływak). Ale **nie zamyka kursu w
+paśmie 15° na żadnym z 9 punktów** przy tym prostym prawie proporcjonalnym
+i tym punkcie startowym — `tackX` osiada na granicy na 9/9 punktów, co
+sugeruje, że prawo korekty albo start z `tackX=0` (a nie z trymu, który K2
+już znalazł jako trzymający) są złym testem dla „czy trym ciągły ratuje
+bejdewind", nie dowodem, że nie ratuje.
+
+**Dwie liczby, obie zmierzone, żadna nie jest zwycięska:** 0/9 vs 0/9 na
+kryterium przejścia, ale jakościowo różne porażki (wywrotka vs bezpieczne,
+lecz szerokie zejście z kursu). **Decyzja, czy i jak zdefiniować kryterium
+kursu ciągłego, pozostaje przy właścicielu** — zgodnie z własnym zapisem
+odbioru tej pozycji. Nie rozstrzygam jej implementacją ani nie tuningu
+dalej, żeby wymusić przejście.
+
+*Nakład: średni. Kod: `harness/asserts-helpers.js` (`holdsCourseActiveTrim`,
+nowa funkcja, nie zastępuje `holdsCourse`).*

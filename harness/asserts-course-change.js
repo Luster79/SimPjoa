@@ -164,8 +164,29 @@ export function check_course_change(config, check, slow) {
   // moment and the crew's weight are each other's counterweight, so removing
   // either one first is what capsizes the boat, not either step itself. A
   // crew does not do these as two separate moves, and neither does this
-  // check: everything ramps together over SHUNT_RAMP_SECONDS.
+  // check: everything ramps together over SHUNT_RAMP_SECONDS (depower) and
+  // REPOWER_RAMP_SECONDS (the symmetric ramp back afterward).
+  //
+  // N4 (docs/work-order-2026-08-10-blok-B.md): the two ramps are NOT
+  // interchangeable durations, and finding that out is what this item was
+  // for. The 30s depower ramp never capsizes; a 30s REPOWER ramp does --
+  // not during the ramp itself, but ~10s into the following hold, once the
+  // boat has picked up just enough speed for the sail's heeling moment to
+  // overtake the crew's still-building righting moment. Measured
+  // (scratch/n4_deadstop_diag.mjs): 30s capsizes, 40s survives with margin
+  // (0.6deg excursion), 50s settles fully (0.2deg). REPOWER_RAMP_SECONDS is
+  // set with headroom above the measured 30/40 threshold, not AT it -- the
+  // same discipline the project applies to every band it sets from a
+  // measurement (docs/README.md's own conventions).
+  //   This is a genuine asymmetry, not a copy-paste oversight: shedding
+  // power removes a destabilising moment (the boat gets safer as the ramp
+  // proceeds), while building power adds one (the boat gets LESS safe as
+  // the ramp proceeds, until enough speed arrives for the hull's own side
+  // force to catch up) -- the same "sail heel moment vs crew weight, same
+  // balance from opposite sides" mechanism M3 found for the depower half,
+  // now showing up as a rate asymmetry rather than an ordering one.
   const SHUNT_RAMP_SECONDS = 30;
+  const REPOWER_RAMP_SECONDS = 45;
   for (const end of [1, -1]) {
     const from = heldState(90, end);
     const row = polarTrim(90);
@@ -221,8 +242,9 @@ export function check_course_change(config, check, slow) {
     // it.
     let capsizedRepower = false;
     if (completed && !state.capsized) {
-      for (let i = 0; i < rampSteps; i++) {
-        const f = (i + 1) / rampSteps;
+      const repowerSteps = Math.round(REPOWER_RAMP_SECONDS / dt);
+      for (let i = 0; i < repowerSteps; i++) {
+        const f = (i + 1) / repowerSteps;
         state = integrate(state, { ...idle,
           sheet: (88 + (sheet0 - 88) * f) * DEG,
           brailWind: brail0 * f,
@@ -237,7 +259,7 @@ export function check_course_change(config, check, slow) {
     check(`K3: shunt with the oar shipped completes and the new course holds (from TWA90, end=${end})`,
       from.confirmed && slowed && completed && endFlipped && !capsizedRepower &&
       post.excursion <= 15 && post.speedRatio >= 0.5 && post.converged && post.restoring && !post.capsized,
-      `startHoldConfirmed=${from.confirmed} capsizedDuringDepowerRamp=${capsizedRamp} slowedBelowLockout=${slowed} shuntCompleted=${completed} endAfter=${state.end} (expected ${-end}) capsizedDuringRepower=${capsizedRepower} postExcursion=${post.excursion.toFixed(1)}deg converged=${post.converged} restoring=${post.restoring} speedRatio=${(post.speedRatio * 100).toFixed(0)}% capsized=${post.capsized} -- the SHUNT ITSELF now completes with the oar shipped (M3); what still fails is re-powering from the near-dead-stop the manual's own depower leaves the boat in`,
-      'STEERING');
+      `startHoldConfirmed=${from.confirmed} capsizedDuringDepowerRamp=${capsizedRamp} slowedBelowLockout=${slowed} shuntCompleted=${completed} endAfter=${state.end} (expected ${-end}) capsizedDuringRepower=${capsizedRepower} postExcursion=${post.excursion.toFixed(1)}deg converged=${post.converged} restoring=${post.restoring} speedRatio=${(post.speedRatio * 100).toFixed(0)}% capsized=${post.capsized} -- N4 (docs/work-order-2026-08-10-blok-B.md): a 30s repower ramp capsized ~10s into the following hold, once the boat had picked up just enough speed for the sail's heeling moment to overtake the crew's still-building righting moment -- measured (scratch/n4_deadstop_diag.mjs) 30s fails, 40s survives, REPOWER_RAMP_SECONDS=45 for headroom. A genuine oar-free shunt: depower, shunt, repower, hold, all with rudderUp=true from the first step`,
+      null);
   }
 }

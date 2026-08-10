@@ -114,10 +114,99 @@ function holdsCourse(config, controls, state, { windowSeconds = 60 } = {}) {
   };
 }
 
+// holdsCourseActiveTrim(config, controls, state, { windowSeconds,
+//   correctionIntervalSeconds, maxStep }) -> same shape as holdsCourse
+//
+// N3 (docs/work-order-2026-08-10-blok-B.md): a SECOND predicate, not a
+// replacement for holdsCourse. Two independent findings point at the same
+// question. L3: the source manual's chapter III is written in verbs of
+// continuous motion ("przesuwamy sie", "przyciagamy i luzujemy zagiel") and
+// prefaces the whole chapter with "stosowac z umiarem" (use with moderation)
+// -- it describes ACTIVE, ongoing trimming, not a trim frozen for 300s. M2:
+// the beat's own failure mechanism (speed drops -> sail heel moment drops ->
+// the crew's weight, still out on the ama, presses it under -> capsize) is
+// exactly the kind of drift a real crew corrects reflexively, by shifting
+// inboard as the boat slows -- not something they set once and leave.
+//
+// Every correctionIntervalSeconds, nudges by at most maxStep (clamped to
+// each control's own physical range): tackX toward closing the heading
+// error (the manual's own steering control, ADR 0011), crewPos toward
+// relieving heel (M2's own finding -- crewPos, not crewPosX, is what
+// governs ama immersion). This is a coarse, explicitly-simple proportional
+// law, not a controller design exercise: the point is to measure whether
+// ANY bounded, periodic correction changes the coverage picture, not to
+// find the best one.
+//
+// excursion/converged/restoring keep EXACTLY holdsCourse's own definitions
+// (same thirds-of-window drift comparison, same dM/dpsi slope at the final
+// state), so the two numbers are directly comparable -- this is the same
+// physical run, just with the trim allowed to move.
+function holdsCourseActiveTrim(config, controls, state, { windowSeconds = 300, correctionIntervalSeconds = 10, maxStep = 0.1 } = {}) {
+  const dt = config.dt;
+  const headingBefore = state.heading;
+  const speedBefore = Math.hypot(state.u, state.v);
+  const thirdSteps = Math.max(1, Math.round(windowSeconds / 3 / dt));
+  const correctionSteps = Math.max(1, Math.round(correctionIntervalSeconds / dt));
+  const crewPosMin = config.crew?.posMin ?? -0.3;
+  const crewPosMax = config.crew?.posMax ?? 1;
+
+  let s = state;
+  let c = { ...controls, tackX: controls.tackX ?? 0, crewPos: controls.crewPos ?? 0 };
+  let stepCount = 0;
+
+  const runSegment = (steps) => {
+    for (let i = 0; i < steps; i++) {
+      s = integrate(s, c, config, dt);
+      stepCount++;
+      if (stepCount % correctionSteps === 0) {
+        // headingErrDeg: positive = heading has swung TOWARD the wind
+        // relative to the target (windDirFrom - heading = TWA, so an
+        // INCREASED heading is a DECREASED TWA, i.e. pointing up).
+        const headingErrDeg = normalizeAngle(s.heading - headingBefore) / DEG;
+        const phiDeg = s.phi / DEG;
+        // tackX correction: steer the helm lever back toward the target
+        // heading. Sign verified empirically against S2's own known
+        // direction (aft/positive tackX points up), not asserted a priori.
+        const dTack = Math.max(-maxStep, Math.min(maxStep, -0.02 * headingErrDeg));
+        // crewPos correction: phi<0 is the ama being pressed (M2's danger
+        // direction) -- ease crewPos (move the crew off the ama) as phi
+        // goes negative.
+        const dCrew = Math.max(-maxStep, Math.min(maxStep, 0.02 * phiDeg));
+        c = { ...c,
+          tackX: Math.max(-1, Math.min(1, c.tackX + dTack)),
+          crewPos: Math.max(crewPosMin, Math.min(crewPosMax, c.crewPos + dCrew)),
+        };
+      }
+    }
+  };
+
+  runSegment(thirdSteps);
+  const headingAfterFirstThird = s.heading;
+  const driftFirstThird = Math.abs(normalizeAngle(headingAfterFirstThird - headingBefore)) / DEG;
+  runSegment(thirdSteps);
+  const headingBeforeLastThird = s.heading;
+  runSegment(thirdSteps);
+  const driftLastThird = Math.abs(normalizeAngle(s.heading - headingBeforeLastThird)) / DEG;
+  const excursion = Math.abs(normalizeAngle(s.heading - headingBefore)) / DEG;
+  const converged = driftLastThird <= driftFirstThird / 3;
+  const Mof = (dpsi) => computeForces({ ...s, heading: s.heading + dpsi * DEG }, c, config).M;
+  const slope = (Mof(3) - Mof(-3)) / 6;
+  return {
+    excursion,
+    speedRatio: speedBefore > 0 ? Math.hypot(s.u, s.v) / speedBefore : 0,
+    capsized: s.capsized,
+    converged,
+    restoring: slope < 0,
+    slope,
+    finalState: s,
+    finalControls: c,
+  };
+}
+
 function finiteSeries(series) {
   return series.every((s) =>
     Number.isFinite(s.x) && Number.isFinite(s.y) && Number.isFinite(s.heading) &&
     Number.isFinite(s.u) && Number.isFinite(s.v) && Number.isFinite(s.r));
 }
 
-export { DEG, HEADING0, normalizeAngle, freshState, steeringOk, steeringDrift, holdsCourse, finiteSeries };
+export { DEG, HEADING0, normalizeAngle, freshState, steeringOk, steeringDrift, holdsCourse, holdsCourseActiveTrim, finiteSeries };

@@ -1,0 +1,96 @@
+Coverage snapshot -- K2/N1, docs/work-order-2026-08-10-blok-B.md
+node harness/coverage-no-oar.js --wide-search  [--no-mast-shadow for config (b)]
+Date: 2026-08-10. Reflects the package's final state after K1-K6, L1-L7,
+M1-M3 and N1-N5 (blocks A and B of this date).
+
+Grid: TWA 50-180 step 10 x TWS 4/6/10 (42 points). TWA < 50 is OUT OF SCOPE
+by owner decision -- deferred, not solved; see docs/README.md.
+
+This snapshot SUPERSEDES docs/coverage-no-oar-2026-08-09.txt. That file's
+90% (38/42) undercounted, because --wide-search at the time REPLACED the
+polar-optimal sheet/brail with a coarse grid instead of adding to it
+(fixed) and because --static-screen (used to speed up that run) has since
+been found to produce false rejections outside the 3-point sample that
+validated it (see N1 in docs/work-order-2026-08-10-blok-B.md). Every
+number below is a single-pass --wide-search run WITHOUT --static-screen --
+no union-of-searches trick needed this time, since the fixed wide search is
+already a superset of the narrow one.
+
+COVERAGE:
+  (a) current config (L4 mast shadow + L5 pitch active): 39/42 (93%)
+  (b) --no-mast-shadow (L4 off; L5 proven zero-effect on this metric, so
+      (b) also represents "L4+L5 off" -- see ADR 0038 erratum):  40/42 (95%)
+
+Per-band delta (a) vs (b):
+  50-70   (beat):        6/9  vs 7/9
+  80-130:                18/18 vs 18/18
+  140-160:                9/9  vs 9/9
+  170-180:                6/6  vs 6/6
+
+The entire effect of L4 on the criterion is ONE point: TWA50/TWS6 (NONE
+with mast shadow on, HOLDS with it off). Every other of the 41 remaining
+points agrees between (a) and (b). This is the same tradeoff ADR 0037
+already measured on the speed side (-1.8% at TWA40/TWS6): the realism gain
+costs one coverage point at the closest-to-wind reaching course in scope.
+Whether to keep L4 for that trade is the owner's call (see work order,
+Część II "Ryzyko").
+
+REMAINING GAPS (config a, current): TWA50/TWS6, TWA60/TWS6, TWA70/TWS6 --
+all three also NONE under N2's dense-sheet grid (15-85deg step 10) and
+under this full wide-search. Three independent, increasingly thorough
+searches now agree: this is the strongest signal yet that these are a
+property of the boat (M2's diagnosed mechanism: heel eats the ama's
+righting arm as speed bleeds off, not a missing sheet angle or trim
+authority), not a search artifact.
+
+Per-point detail, config (a) current:
+  TWA50/TWS4: HOLDS tackX=-0.5 crewX=0 stays=1 sheet=55 brail=0 exc=0.0deg v=100%
+  TWA60/TWS4: HOLDS tackX=0 crewX=0.5 stays=1 sheet=75 brail=0.5 exc=0.0deg v=100%
+  TWA70/TWS4: HOLDS tackX=-0.5 crewX=0 stays=1 sheet=75 brail=0.5 exc=0.0deg v=100%
+  TWA80/TWS4: HOLDS tackX=0.5 crewX=-0.5 stays=-1 sheet=75 brail=0.5 exc=0.0deg v=102%
+  TWA90/TWS4: HOLDS tackX=1 crewX=-1 stays=1 sheet=75 brail=0 exc=0.0deg v=101%
+  TWA100/TWS4: HOLDS tackX=0.5 crewX=-1 stays=1 sheet=75 brail=1 exc=1.2deg v=101%
+  TWA110/TWS4: HOLDS tackX=0.5 crewX=-0.5 stays=1 sheet=35 brail=0.5 exc=0.4deg v=104%
+  TWA120/TWS4: HOLDS tackX=1 crewX=-1 stays=1 sheet=55 brail=1 exc=1.1deg v=107%
+  TWA130/TWS4: HOLDS tackX=1 crewX=-1 stays=1 sheet=35 brail=0 exc=4.9deg v=100%
+  TWA140/TWS4: HOLDS tackX=1 crewX=-0.5 stays=-1 sheet=35 brail=1 exc=0.8deg v=109%
+  TWA150/TWS4: HOLDS tackX=1 crewX=-1 stays=0 sheet=35 brail=1 exc=0.2deg v=108%
+  TWA160/TWS4: HOLDS tackX=1 crewX=-1 stays=1 sheet=55 brail=1 exc=0.0deg v=109%
+  TWA170/TWS4: HOLDS tackX=1 crewX=-1 stays=1 sheet=55 brail=0.5 exc=8.8deg v=103%
+  TWA180/TWS4: HOLDS tackX=-0.5 crewX=0 stays=-1 sheet=75 brail=1 exc=0.6deg v=77%
+  TWA50/TWS6: NONE
+  TWA60/TWS6: NONE
+  TWA70/TWS6: NONE
+  TWA80/TWS6: HOLDS tackX=1 crewX=-0.5 stays=0 sheet=16 brail=0 exc=0.8deg v=103%
+  TWA90/TWS6: HOLDS tackX=1 crewX=-1 stays=0 sheet=20 brail=0 exc=0.3deg v=104%
+  TWA100/TWS6: HOLDS tackX=1 crewX=-0.5 stays=1 sheet=24 brail=0 exc=7.7deg v=100%
+  TWA110/TWS6: HOLDS tackX=1 crewX=-1 stays=1 sheet=28 brail=0 exc=12.5deg v=101%
+  TWA120/TWS6: HOLDS tackX=1 crewX=-1 stays=1 sheet=55 brail=1 exc=4.3deg v=103%
+  TWA130/TWS6: HOLDS tackX=1 crewX=-1 stays=1 sheet=55 brail=1 exc=14.1deg v=102%
+  TWA140/TWS6: HOLDS tackX=-0.5 crewX=-1 stays=1 sheet=35 brail=1 exc=0.2deg v=105%
+  TWA150/TWS6: HOLDS tackX=0.5 crewX=-1 stays=1 sheet=35 brail=0.5 exc=0.1deg v=103%
+  TWA160/TWS6: HOLDS tackX=1 crewX=-1 stays=1 sheet=55 brail=0.5 exc=0.5deg v=103%
+  TWA170/TWS6: HOLDS tackX=1 crewX=-1 stays=1 sheet=55 brail=0.5 exc=10.0deg v=101%
+  TWA180/TWS6: HOLDS tackX=0 crewX=0.5 stays=-1 sheet=75 brail=1 exc=0.2deg v=98%
+  TWA50/TWS10: HOLDS tackX=0 crewX=-1 stays=1 sheet=35 brail=0 exc=1.1deg v=93%
+  TWA60/TWS10: HOLDS tackX=-0.5 crewX=0 stays=1 sheet=55 brail=0 exc=0.0deg v=100%
+  TWA70/TWS10: HOLDS tackX=1 crewX=0.5 stays=1 sheet=75 brail=0.5 exc=0.0deg v=100%
+  TWA80/TWS10: HOLDS tackX=0.5 crewX=-0.5 stays=1 sheet=75 brail=0 exc=0.0deg v=100%
+  TWA90/TWS10: HOLDS tackX=1 crewX=-1 stays=1 sheet=75 brail=1 exc=0.4deg v=106%
+  TWA100/TWS10: HOLDS tackX=1 crewX=0 stays=1 sheet=20 brail=0 exc=0.5deg v=107%
+  TWA110/TWS10: HOLDS tackX=1 crewX=-0.5 stays=1 sheet=35 brail=0.5 exc=1.5deg v=108%
+  TWA120/TWS10: HOLDS tackX=1 crewX=-0.5 stays=1 sheet=28 brail=0 exc=1.3deg v=108%
+  TWA130/TWS10: HOLDS tackX=1 crewX=-1 stays=1 sheet=35 brail=0.5 exc=3.7deg v=129%
+  TWA140/TWS10: HOLDS tackX=1 crewX=0 stays=0 sheet=35 brail=0.5 exc=0.1deg v=103%
+  TWA150/TWS10: HOLDS tackX=1 crewX=-0.5 stays=1 sheet=35 brail=0 exc=0.6deg v=104%
+  TWA160/TWS10: HOLDS tackX=1 crewX=-1 stays=1 sheet=55 brail=0.5 exc=1.8deg v=102%
+  TWA170/TWS10: HOLDS tackX=1 crewX=-1 stays=1 sheet=55 brail=0.5 exc=11.1deg v=99%
+  TWA180/TWS10: HOLDS tackX=-1 crewX=0.5 stays=-1 sheet=75 brail=1 exc=0.8deg v=74%
+
+WHAT THIS DOES AND DOES NOT SAY. It is a measurement of the trim space, not
+a statement that the boat sails these courses in practice: holdsCourse
+freezes the trim for 300s. N3 (docs/work-order-2026-08-10-blok-B.md) tried
+a second predicate with continuous, bounded trim correction and got 0/9 on
+the beat by a different failure mode (safe but wide excursion, not
+capsize) -- see that section for the two numbers side by side. Which
+predicate defines the criterion is the owner's decision, not resolved here.

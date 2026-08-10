@@ -118,6 +118,24 @@ holds `crewPosX=0` (`theta=0`), so pitch is inert there by construction.
   widening, not L5's new physics, that resolved the bulk of the
   TWA140-160 zero-coverage finding.
 
+**Erratum (2026-08-10, N1 of `docs/work-order-2026-08-10-blok-B.md`):**
+the 20/42 → 21/42 delta above is superseded — the narrow-search snapshot it
+was measured against undercounted by construction (see ADR 0037's own
+erratum). More importantly, **L5 is now proven to have zero effect on any
+`holdsCourse`-based coverage metric, full stop**, independent of which
+search finds it: `scratch/n1c_pitch_settling.mjs` measured pitch settling to
+within numerical noise of its equilibrium in ~0.4s, against a shortest
+relevant test window of 10-45s. At steady state
+`pitchClrCoeff*theta ≡ crewForeAftTrimCoeff*crewPosX` exactly (the
+re-anchoring this ADR's own "CLR coupling" section describes is, at
+equilibrium, algebraically identical to the direct wire it replaced). The
+20/42 → 21/42 point (TWA170/TWS10) and the 6/6 → 4/6 S2 regression above are
+real, measured effects of the code that shipped this round — but not of the
+pitch *dynamics* specifically; both are attributable to the CLR value at
+steady state, which L5 reproduces exactly rather than changes. The physical
+motivation stands (a real hydrostatic pitch mechanism replacing a bare
+wire), but the coverage delta claim in this ADR should be read as void.
+
 ## Consequences
 
 - `out/polar.csv` regenerated and committed alongside this change.
