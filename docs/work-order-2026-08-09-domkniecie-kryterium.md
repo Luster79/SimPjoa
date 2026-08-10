@@ -1,6 +1,6 @@
 # Lista poprawek — domknięcie kryterium: dwie strefy zerowego pokrycia
 
-*Last reviewed: 2026-08-09*
+*Last reviewed: 2026-08-10*
 *Wejście: kryterium sukcesu i jego zakres (`docs/README.md`), wykonanie K1-K6
 (`docs/work-order-2026-08-09-kryterium-bez-wiosla.md`, Część V), ADR 0034/0035/0036,
 snapshot `docs/coverage-no-oar-2026-08-09.txt`. Pomiary własne na stanie repo po K1-K6.*
@@ -449,6 +449,27 @@ jak podejrzewano w diagnozie (I.1), teraz potwierdzone liczbowo:
   zakres trymu tego nie naprawi — trzeba nowej sztywności, czyli L5.**
 
 *Nakład: mały. Blok `repro`: `scratch/l2_moment_budget.mjs`.*
+
+> **ERRATA 2026-08-10 — całe rozstrzygnięcie L2 jest wycofane (ADR 0039).**
+> `scratch/l2_moment_budget.mjs:34` liczył `dM/dψ`, obracając `heading` przy
+> zamrożonych `u`/`v` — a `u`/`v` są w układzie ŁODZI, więc obracał kadłub
+> razem z opływem. Wszystkie momenty hydrodynamiczne (kadłub i ama) skracały
+> się w różnicy i mierzony był **wyłącznie takielunek**. Po poprawce (wektor
+> prędkości obracany o `−dψ`, prędkość w układzie świata stała)
+> **wszystkie 18 punktów jest przywracających**, a nachylenie rośnie
+> (bardziej ujemne) z wiatrem — odwrotnie niż zapisano w tabeli:
+>
+> | pasmo | `dM/dψ` TWS4 | TWS6 | TWS10 |
+> |---|---|---|---|
+> | TWA50-70 | −11,0 ÷ −14,0 | −20,4 ÷ −25,1 | −57,3 ÷ −93,3 |
+> | TWA140-160 | −6,4 ÷ −8,4 | −12,0 ÷ −15,0 | −37,6 ÷ −57,7 |
+>
+> Tym samym upada wniosek „baksztag to czysty problem SZTYWNOŚCI zdominowany
+> przez sam żagiel” i zdanie **„żaden zakres trymu tego nie naprawi — trzeba
+> nowej sztywności, czyli L5”**, które było deklarowaną motywacją L5. Sam
+> szósty DOF (ADR 0038) nie jest wycofany — stoi na własnych podstawach
+> fizycznych — ale erratum ADR 0038 („L5 ma zerowy wpływ na kryterium”)
+> zyskuje tu wyjaśnienie: przesłanka była artefaktem sondy.
 
 ### L6 — czy wywrotka podczas hamowania przed shuntem jest własnością łodzi czy sondy K3. Wykonane.
 

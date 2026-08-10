@@ -68,10 +68,26 @@ export function check_course_change(config, check, slow) {
   // confirmed end=-1 settles as cleanly as end=1 (phi -6.9 vs -5.5deg, no
   // capsize) — it means the two runs were never the same physical situation
   // to begin with. The autopilot's OWN target heading must track it too.
+  //
+  // ...and so must the WIND. Flipping the heading alone leaves windDirFrom
+  // at HEADING0+twa, which is TWA=+twa off the end=+1 bow but TWA=-(180-twa)
+  // off the end=-1 one: `heldState(70,-1)` actually ran at TWA110 while
+  // carrying polarTrim(70)'s sheet and HOLD_TRIM[70], and obtainCourse then
+  // scored that transit against a band named for TWA70. freeRun could not
+  // catch this because it only ever runs at TWA90, which is self-mirroring
+  // (180-90=90).
+  //   The mirror has to flip the wind's SIDE, not just its angle. The ama is
+  // bolted to one physical side and does not relocate at a shunt, so in the
+  // active-bow frame it sits at +y on end=+1 and -y on end=-1 (state.js
+  // Conventions) — and it must stay to WINDWARD on both. The same physical
+  // situation is therefore TWA=+twa on end=+1 and TWA=-twa on end=-1, i.e.
+  // windDirFrom = heading0 + end*twa. Measuring from heading0 while keeping
+  // the sign puts the ama to LEEWARD on end=-1, which capsizes during the
+  // settle — the old code had the side right and only the angle wrong.
   function heldState(twa, end) {
     const row = polarTrim(twa);
-    const windDirFrom = HEADING0 + twa * DEG;
     const heading0 = end === 1 ? HEADING0 : HEADING0 + Math.PI;
+    const windDirFrom = heading0 + end * twa * DEG;
     let state = { t: 0, x: 0, y: 0, heading: heading0, u: 1.0, v: 0, r: 0, phi: 0, p: 0, z: 0, w: 0,
       delta: row.bestSheetAngle * DEG, end, amaLoad: 0, abackTimer: 0, capsized: false,
       shunt: { phase: 'none', progress: 0 } };
@@ -115,10 +131,14 @@ export function check_course_change(config, check, slow) {
     };
   }
 
-  // end=1 bearing away is the one direction/end combination that actually
-  // holds (measured 2026-08-09, TWA90.1, comfortably inside the +-10deg
-  // band) -- a real assertion, not xfail. The other three (pointing up on
-  // either end, bearing away on end=-1) are xfail with their own numbers.
+  // Bearing away holds on BOTH ends (measured 2026-08-10: TWA90.1 on end=+1,
+  // TWA92.1 on end=-1, both comfortably inside the +-10deg band) -- real
+  // assertions, not xfail. end=-1 was xfail until the heldState wind-mirror
+  // fix above: it was being started at TWA110 under TWA70's trim, so what
+  // the STEERING bucket held was a harness setup bug, not a boat limit. The
+  // two ends now agree to ~2deg, which is itself the check that the mirror
+  // is right. Pointing up remains xfail on both ends, symmetrically (TWA83.3
+  // and TWA85.4 against a 70+-10 band) -- that one IS a model limitation.
   // K1's own rule applies here too: report what holds, don't fold a real
   // pass into an xfail bucket to keep the four checks looking uniform.
   for (const end of [1, -1]) {
@@ -126,7 +146,7 @@ export function check_course_change(config, check, slow) {
     check(`K3: bearing away (TWA70 -> TWA90, TWS6, end=${end}) reached under trim alone with the oar shipped throughout, and holds`,
       bearAway.fromConfirmed && bearAway.reachedTarget && bearAway.converged && bearAway.restoring && !bearAway.capsized,
       `startHoldConfirmed=${bearAway.fromConfirmed} reached TWA${bearAway.twaReached.toFixed(1)} (target 90+-10, excursion from start ${bearAway.excursion.toFixed(1)}deg) converged=${bearAway.converged} restoring=${bearAway.restoring} speedRatio=${(bearAway.speedRatio * 100).toFixed(0)}% capsized=${bearAway.capsized}`,
-      end === 1 ? null : 'STEERING');
+      null);
 
     const pointUp = obtainCourse(90, 70, end);
     check(`K3: pointing up (TWA90 -> TWA70, TWS6, end=${end}) reached under trim alone with the oar shipped throughout, and holds`,

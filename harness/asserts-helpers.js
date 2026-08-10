@@ -63,6 +63,30 @@ function steeringDrift(config, baseControls, applyChange, settleSeconds = 20, lo
   return { drift, capsized: state.capsized, amaLoadBefore, amaLoadAfter: state.amaLoad, finalState: state };
 }
 
+// yawMomentAtHeading(config, controls, state, dpsiDeg) -> M [N*m]
+// The heading perturbation every directional-stiffness probe here needs.
+// Rotating `heading` ALONE is not a yaw perturbation of the boat: u/v are
+// BOAT-frame (state.js Conventions), so holding them fixed while heading
+// moves rotates the water flow along with the hull. Every hydrodynamic yaw
+// moment -- hull and ama both, pure functions of u/v/r -- then comes out
+// identical at every perturbed heading and cancels in the difference, and
+// what survives is the rig alone. That is the SMALL term: measured at TWS6
+// the aero-only slope runs -1.8 to +2.2 N*m/deg against a whole-boat -22 to
+// -27, and it changes SIGN at TWA110 and TWA140, so strongly restoring
+// trims were being scored as destabilising (ADR 0039).
+// Yawing the boat while it keeps travelling the same way THROUGH THE WATER
+// leaves the world-frame velocity unchanged, so the boat-frame velocity
+// rotates by -dpsi against the hull.
+function yawMomentAtHeading(config, controls, state, dpsiDeg) {
+  const a = -dpsiDeg * DEG;
+  return computeForces({
+    ...state,
+    heading: state.heading + dpsiDeg * DEG,
+    u: state.u * Math.cos(a) - state.v * Math.sin(a),
+    v: state.u * Math.sin(a) + state.v * Math.cos(a),
+  }, controls, config).M;
+}
+
 // holdsCourse(config, controls, state, { windowSeconds }) -> {
 //   excursion, speedRatio, capsized, converged, restoring, slope, finalState }
 //
@@ -101,7 +125,7 @@ function holdsCourse(config, controls, state, { windowSeconds = 60 } = {}) {
   const driftLastThird = Math.abs(normalizeAngle(s.heading - headingBeforeLastThird)) / DEG;
   const excursion = Math.abs(normalizeAngle(s.heading - headingBefore)) / DEG;
   const converged = driftLastThird <= driftFirstThird / 3;
-  const Mof = (dpsi) => computeForces({ ...s, heading: s.heading + dpsi * DEG }, controls, config).M;
+  const Mof = (dpsi) => yawMomentAtHeading(config, controls, s, dpsi);
   const slope = (Mof(3) - Mof(-3)) / 6;
   return {
     excursion,
@@ -189,7 +213,7 @@ function holdsCourseActiveTrim(config, controls, state, { windowSeconds = 300, c
   const driftLastThird = Math.abs(normalizeAngle(s.heading - headingBeforeLastThird)) / DEG;
   const excursion = Math.abs(normalizeAngle(s.heading - headingBefore)) / DEG;
   const converged = driftLastThird <= driftFirstThird / 3;
-  const Mof = (dpsi) => computeForces({ ...s, heading: s.heading + dpsi * DEG }, c, config).M;
+  const Mof = (dpsi) => yawMomentAtHeading(config, c, s, dpsi);
   const slope = (Mof(3) - Mof(-3)) / 6;
   return {
     excursion,
@@ -209,4 +233,4 @@ function finiteSeries(series) {
     Number.isFinite(s.u) && Number.isFinite(s.v) && Number.isFinite(s.r));
 }
 
-export { DEG, HEADING0, normalizeAngle, freshState, steeringOk, steeringDrift, holdsCourse, holdsCourseActiveTrim, finiteSeries };
+export { DEG, HEADING0, normalizeAngle, freshState, steeringOk, steeringDrift, yawMomentAtHeading, holdsCourse, holdsCourseActiveTrim, finiteSeries };
