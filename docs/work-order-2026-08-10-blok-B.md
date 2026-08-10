@@ -210,7 +210,7 @@ podjąć na liczbach niż jej uniknąć.
 | ADR | temat | pozycja |
 |---|---|---|
 | — | N1 nie jest decyzją, tylko pomiarem: **poprawia sekcje „Measured" w ADR 0037 i 0038**, nie tworzy nowego ADR-a (ADR-y są append-only, więc korekta idzie jako erratum w treści albo nowy ADR superseding, zależnie od skali) | N1 |
-| 0039 | kryterium: trym zamrożony vs trym ciągły — **tylko jeśli właściciel zdecyduje**, że definicja się zmienia | N3 |
+| ~~0039~~ 0041 | kryterium: trym zamrożony vs trym ciągły — **tylko jeśli właściciel zdecyduje**, że definicja się zmienia | N3 |
 | 0040 | napęd ostro: rozstrzygnięcie deficytu wobec Di Piazzy | N5 |
 | — | N2 i N4 tylko jeśli zmienią model albo wycofają twierdzenie ADR-a | — |
 
@@ -384,6 +384,45 @@ pasmo, obie dostarczone.** ADR 0037 i 0038 skorygowane niżej.
 `scratch/n1c_pitch_settling.mjs`.*
 
 ### N3 — wariant predykatu z trymem ciągłym. Wykonane; wynik niejednoznaczny, zaraportowany bez upiększeń.
+
+> **PRZELICZONE (2026-08-10, ADR 0039).** `holdsCourseActiveTrim()` miała tę
+> samą wadliwą sondę `restoring` co `holdsCourse()`. Po poprawce
+> `scratch/n3_beat_comparison.mjs` przeliczony na wszystkich 9 punktach.
+> **Werdykt bez zmian: 0/9 oba predykaty.** Zmienił się natomiast POWÓD, i to
+> zmienia wnioski:
+>
+> | | FROZEN | ACTIVE |
+> |---|---|---|
+> | `converged` | 9/9 | 9/9 |
+> | `restoring` | 6/9 (3× `n` to wywrotki przy TWS6) | **9/9** |
+> | wywrotki | 3/9 | **0/9** |
+> | prędkość | 0–24% | 22–36% |
+> | wychylenie | 4,8–53,2° | 37,5–54,8° |
+>
+> 1. **Nic tu nie jest niestabilne kierunkowo.** 15 z 18 przebiegów jest
+>    `restoring`, wszystkie `converged`. Stare odczyty sugerujące brak
+>    sztywności były artefaktem sondy — ta sama korekta co w L2.
+> 2. **Trym ciągły niezawodnie zamienia wywrotkę w przeżycie** (3→0). To
+>    jedyne twierdzenie N3, które przetrwało w niezmienionej postaci.
+> 3. **Trym ciągły POGARSZA wychylenie** (np. TWA50/TWS4: 5,1° → 38,2°),
+>    bo `tackX` we wszystkich dziewięciu przypadkach dobija do −1,00, a
+>    załoga wjeżdża do środka — łódka osiada na innym, stabilnym kursie.
+> 4. **Wiążącym warunkiem jest PRĘDKOŚĆ, nie kurs.** Przy TWA50/TWS4,
+>    TWA60/TWS4 i TWA50/TWS10 zamrożony trym trzyma kurs w 5–6°, zbieżnie i
+>    z momentem przywracającym — i odpada **wyłącznie** na progu 50%
+>    prędkości, mając 18–24%. Łódka trzyma kurs, tylko staje.
+> 5. **Wszystkie 9 punktów trzyma na INNYCH trymach** (`docs/coverage-no-oar-
+>    2026-08-10b.txt`, prędkości 91–133%). To zdanie o tym konkretnym trymie
+>    startowym (tackX=0, `crewPos` z optimum prędkościowego), nie o łodzi.
+>
+> **Pytanie o predykat zamknięte decyzją właściciela (2026-08-10):**
+> dotrymowywanie w miarę nabierania prędkości jest dopuszczalne, problemem
+> jest moment, gdy kursu nie da się utrzymać. Nie zmienia to żadnej liczby
+> pokrycia — surowszy predykat (trym zamrożony) i tak przechodzi 42/42.
+> **Otwarte zostaje co innego:** czy „trzyma kurs, ale traci 80% prędkości"
+> liczy się jako utrzymanie kursu. Reguła właściciela mówi o niemożności
+> utrzymania kursu; ten przypadek to utrzymany kurs przy zatrzymującej się
+> łodzi — inny tryb porażki, nierozstrzygnięty.
 
 `holdsCourseActiveTrim()` w `harness/asserts-helpers.js` — drugi predykat
 obok `holdsCourse()`, korekta co 10 s, krok ≤0,1, `tackX` proporcjonalnie do
