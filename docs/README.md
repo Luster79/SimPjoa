@@ -64,11 +64,16 @@ with is *stricter* than the criterion requires, since the owner has ruled
 (2026-08-10) that continuous re-trimming is acceptable and the failure that
 matters is a course that cannot be held — so the figure is a floor.
 
-**Obtaining a course: half open.** `K3` (`harness/asserts-course-change.js`)
-shows bearing away and shunting both work oar-free on both ends. Pointing up
-does not: TWA90→70 reaches only 83-85deg against a ±10deg band, on both ends
-symmetrically. That is the one open item that looks like a genuine capability
-gap rather than a measurement artefact.
+**Obtaining a course: half open, and the open half is under suspicion.** `K3`
+(`harness/asserts-course-change.js`) shows bearing away and shunting both work
+oar-free on both ends. Pointing up does not: TWA90→70 reaches only 83-85deg
+against a ±10deg band. But `K3` steers at a hardcoded `HOLD_TRIM` inherited
+from `S1c`'s too-narrow search, and a probe on 2026-08-10 found that aiming
+instead at the trim `S3` shows actually holds TWA70 reaches **79.6deg — inside
+the band** — converged and restoring. One point, one wind, one end, and only
+0.4deg of margin, so that is a lead and not a result. The open work is
+`work-order-2026-08-10-ostrzenie.md`, which starts by re-deriving the target
+rather than by adding physics.
 
 **Out of scope, unsolved:** TWA < 50, and whether a trim that holds heading
 while decaying to ~20% of its speed counts as holding at all.
@@ -143,6 +148,15 @@ Append-only. Never edit an old ADR; supersede it with a new one.
 | 0037 | Mast shadow completes the sheeting floor (L4) -- ADR 0010's own mast-shadow term, declined at the time for lacking a consumer (`deltaMinDeg` was 10.7deg then); the boat resize (ADR 0021) took `deltaMinDeg` to exactly 0, giving it one. Explicit estimate (8deg / 15% CL), not measured. Dead angle unchanged (~17deg); close-hauled cost -1.8% at TWA40 |
 | 0038 | Pitch is the sixth DOF (L5) -- same method as heave (S8): rigorous hydrostatic stiffness, tuned inertia/damping pair, crew weight as the only driving moment. Replaces `crewForeAftTrimCoeff`'s direct crewPosX-to-CLR wire with a real dynamic angle. K2 (narrow-search) coverage 20/42->21/42; S2 regressed 6/6->4/6 (reported, not retuned) -- L1's search-widening, not L5's new physics, turned out to be the larger lever on TWA140-160's coverage |
 | 0039 | The restoring probe omitted the hull, and the end mirror omitted the wind -- two measurement defects plus a harness audit. Withdraws L2's broad-reach stiffness diagnosis and 0034's `end=-1` asymmetry; adds `S3` (the criterion's own claim, both ends) and the search rewrite that took coverage to 42/42 in 20min. **Read it before trusting any "property of the boat" conclusion dated earlier** |
+
+## Open work
+
+| File | What it covers |
+|---|---|
+| `work-order-2026-08-10-ostrzenie.md` | Pointing up — the last open half of the criterion. Starts by re-deriving `K3`'s target trim rather than by adding physics, because the first probe suggests the gap may be the target, not the boat |
+
+A work order lives here while it is open and moves to `Archive/` when it is
+done. There is exactly one open at a time.
 
 ## History — `Archive/`
 
