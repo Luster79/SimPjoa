@@ -12,18 +12,21 @@
 //
 //     node harness/coverage-no-oar.js | tee docs/coverage-no-oar-YYYY-MM-DD.txt
 //
-// Expensive by design (a full existence search per grid point) — the work
-// order's own cost note applies: a two-stage prefilter (cheap 60s screen,
-// full 300s holdsCourse only for survivors) is what keeps this in the tens
-// of minutes rather than hours. See K1 (harness/asserts-helpers.js's
+// Cost: a trial is a 60s screen, and one that clears it a further 300s
+// confirmation. Because the question is EXISTENCE, the search stops at the
+// first confirmed holder and the trial order is taken from what has actually
+// won before (see TACKX_TRIALS) — a point that holds usually costs a handful
+// of trials. A point that does NOT hold still costs the full sweep, because
+// proving non-existence means exhausting it; expect those to dominate the
+// runtime of any grid with real gaps in it. See K1 (harness/asserts-helpers.js's
 // holdsCourse) for what "holds" means here: excursion, convergence, AND a
 // restoring moment at the settled state — the same predicate S1a/S1c/S2/
 // C-B/C-C use, applied over the whole polar instead of six operating points.
 
 import { createConfig } from '../core/config.js';
-import { integrate, computeForces } from '../core/integrator.js';
+import { integrate } from '../core/integrator.js';
 import { computePolar, headingHoldRudder } from './polar.js';
-import { DEG, HEADING0, holdsCourse } from './asserts-helpers.js';
+import { DEG, HEADING0, holdsCourse, yawMomentAtHeading } from './asserts-helpers.js';
 
 // TWA starts at 50, not 40: TWA < 50 is out of scope for the success
 // criterion by owner decision (2026-08-09) -- see docs/README.md, "The
@@ -38,9 +41,16 @@ const DEFAULT_TWS_LIST = [4, 6, 10];
 // see asserts-polar-helm.js's S2, whose own tally uses both signs of stays
 // depending on TWA), so this is not a sub-range that could hide a holder the
 // way the work order's own convention (docs/README.md) warns against.
-const TACKX_TRIALS = [-1, -0.5, 0, 0.5, 1];
+//
+// ORDER matters now that the search stops at the first holder (see main()):
+// it decides how much that early exit actually saves, and nothing else — the
+// SET is unchanged, so no holder can be hidden by reordering. The order is
+// taken from the 39 winning trims the 2026-08-10 snapshot recorded, most
+// frequent first: stays=+1 won 30/39, tackX=+1 25/39, crewPosX=-1 20/39.
+// Measured, not guessed; re-derive it if the boat changes.
+const TACKX_TRIALS = [1, 0.5, -0.5, 0, -1];
 const CREWX_TRIALS = [-1, -0.5, 0, 0.5, 1];
-const STAYS_TRIALS = [-1, 0, 1];
+const STAYS_TRIALS = [1, -1, 0];
 
 // --wide-search (L1, docs/work-order-2026-08-09-domkniecie-kryterium.md):
 // by default this file freezes sheet/brail at the polar's own SPEED-optimal
@@ -108,7 +118,7 @@ const STATIC_STEP_DEG = 2.5;
 // staticScreenKeeps(config, controls, state) -> bool
 // True = "might hold, run the real test". False = "no equilibrium reachable".
 function staticScreenKeeps(config, controls, state) {
-  const Mat = (dpsi) => computeForces({ ...state, heading: state.heading + dpsi * DEG }, controls, config).M;
+  const Mat = (dpsi) => yawMomentAtHeading(config, controls, state, dpsi);
   let prev = Mat(-STATIC_WINDOW_DEG);
   for (let d = -STATIC_WINDOW_DEG + STATIC_STEP_DEG; d <= STATIC_WINDOW_DEG + 1e-9; d += STATIC_STEP_DEG) {
     const cur = Mat(d);
@@ -189,7 +199,24 @@ function main() {
       const trials = [];
       for (const t of TACKX_TRIALS) for (const x of CREWX_TRIALS) for (const st of STAYS_TRIALS) trials.push({ t, x, st });
 
+      // EXISTENCE, so the search stops at the first confirmed holder. The
+      // metric asks "does ANY trim hold", and profiling one point (TWA50/TWS4,
+      // wide search) showed how much the old exhaustive pass was spending to
+      // answer a question it had already answered: 750 trials -> 335 survivors
+      // -> 284 of those held, and the FIRST holder was survivor #2. 480 of the
+      // point's 700 seconds went on re-proving it 283 more times.
+      //   Two changes, both of which leave the pass/fail verdict identical:
+      // the two stages are INTERLEAVED (a trial that clears the 60s screen is
+      // taken straight to its 300s confirmation, instead of screening all 750
+      // first), and the whole point's search breaks at the first holder. What
+      // this DOES change is which trim gets reported -- the first one found in
+      // TACKX/CREWX/STAYS_TRIALS order, not the minimum-excursion one. That is
+      // the documented cost of the flag-free existence answer; --validate-screen
+      // still runs exhaustively, since measuring the screen's false-rejection
+      // rate needs every trial regardless.
+      const exhaustive = VALIDATE_SCREEN;
       let best = null, nScreened = 0, nTrials = 0;
+      pointSearch:
       for (const [sheetDeg, brailWind] of sheetBrailPairs) {
         const { state: settled, windDirFrom } = settledState(config, twa, tws, sheetDeg, brailWind, polarRow.bestCrewPos);
         const controlsFor = (t) => ({
@@ -197,32 +224,6 @@ function main() {
           brailLee: 0, brailWind, crewPos: polarRow.bestCrewPos,
           crewPosX: t.x, tackX: t.t, stays: t.st, shuntRequest: false,
         });
-
-        // Stage 0 (M1, --static-screen): non-integrating rejection. See
-        // staticScreenKeeps' own comment for why it is permissive by design.
-        // --validate-screen instead runs BOTH paths on every trial and
-        // reports disagreements, so the false-rejection rate is measured
-        // rather than assumed.
-        const stage1Input = [];
-        for (const t of trials) {
-          nTrials++;
-          if (STATIC_SCREEN && !staticScreenKeeps(config, controlsFor(t), settled)) {
-            nStaticRejected++;
-            continue;
-          }
-          stage1Input.push(t);
-        }
-
-        // Stage 1: cheap 60s screen -- the plain excursion/speed/capsize band
-        // the rest of the harness has always used, no convergence/restoring
-        // yet. Discards trims that are obviously not going to hold before
-        // paying for the full 300s window.
-        const survivors = [];
-        for (const t of stage1Input) {
-          const screen = holdsCourse(config, controlsFor(t), settled, { windowSeconds: 60 });
-          if (screen.excursion <= 15 && screen.speedRatio >= 0.5 && !screen.capsized) survivors.push(t);
-        }
-        nScreened += survivors.length;
 
         // --validate-screen: for every trial the static screen WOULD have
         // rejected, run the full 300s test anyway and record whether it
@@ -240,12 +241,25 @@ function main() {
           }
         }
 
-        // Stage 2: full 300s window, K1's converged+restoring predicate, only
-        // for stage-1 survivors.
-        for (const t of survivors) {
+        // The search proper. Stage 0 (M1, --static-screen) is the optional
+        // non-integrating rejection -- see staticScreenKeeps' own comment for
+        // why it is permissive by design, and N1's note on why it is unsafe
+        // to report from. Then the cheap 60s screen (plain excursion/speed/
+        // capsize, no convergence/restoring yet), and anything that clears it
+        // goes straight to the full 300s window with K1's predicate.
+        for (const t of trials) {
+          nTrials++;
+          if (STATIC_SCREEN && !staticScreenKeeps(config, controlsFor(t), settled)) {
+            nStaticRejected++;
+            continue;
+          }
+          const screen = holdsCourse(config, controlsFor(t), settled, { windowSeconds: 60 });
+          if (!(screen.excursion <= 15 && screen.speedRatio >= 0.5 && !screen.capsized)) continue;
+          nScreened++;
           const full = holdsCourse(config, controlsFor(t), settled, { windowSeconds: 300 });
           if (full.excursion <= 15 && full.speedRatio >= 0.5 && full.converged && full.restoring && !full.capsized) {
             if (!best || full.excursion < best.full.excursion) best = { ...t, sheetDeg, brailWind, full };
+            if (!exhaustive) break pointSearch;
           }
         }
       }
