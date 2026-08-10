@@ -1,10 +1,51 @@
 # Findings — work-order-2026-08-05-statecznosc-kierunkowa (D2-D4)
 
-*Last reviewed: 2026-08-08*
+*Last reviewed: 2026-08-10*
 
 Evidence for D2, D3, D4 of `work-order-2026-08-05-statecznosc-kierunkowa.md`,
 run in the order Part IV prescribes (cheap items first). D1 is not in this
 document — see its own section at the end for why.
+
+> **ERRATUM 2026-08-10 — D4's proof no longer holds, and one of D3's
+> sub-observations is superseded.** The probes behind both sections are now
+> committed (`scratch/d4_symmetry.js`, `d4_symmetry2.js`,
+> `d3_ama_bound.js`, `evaluate_d3.js`), and re-running them against current
+> `/core` no longer reproduces what is recorded below. Neither discrepancy
+> is a bug: both trace to deliberate, ADR-documented mechanisms added after
+> these measurements were taken.
+>
+> **D4.** The residual is no longer ~1e-13. Zeroing the same three shifts
+> now gives `yawMoment` = -1.239e+3 at `v=-2`, ±2.082e+2 at `v=±0.5`, and
+> 2.082e+2 at both `phi=±0.3`. The reason is that a FOURTH fore-aft
+> mechanism exists: **ADR 0032's migrating CLR** (D1), a per-station
+> vortex-lift blend inside `hullSideForce` driven by drift angle and
+> `uDirection`, which none of `clrXFraction` / `crewForeAftTrimCoeff` /
+> `heelClrShiftCoeff` controls. It landed at 20:43 on 2026-08-08 — hours
+> after this section was written. **The load-bearing sentence below ("there
+> is nothing *left* that could carry a hidden asymmetry once the three
+> named shifts are zeroed; the residual being exactly zero is the whole
+> proof") is therefore false as of ADR 0032.** The CONCLUSION may well still
+> be right — every fore-aft moment the model produces may still trace to a
+> named, justified mechanism, now four of them rather than three — but that
+> is no longer demonstrated here. Re-deriving it needs a way to neutralise
+> the migrating blend too, which no config field currently offers.
+>
+> **D3.** The headline claim survives: `d3_ama_bound.js` still reports
+> `within=true` at every point it sweeps, so the term is still bounded by
+> `|Fx|·spacing` in the steady regime. What is superseded is the
+> sub-observation that `yawMomentSide` is "exactly zero for every leeway `v`
+> tried" at `r=0` — it now reads ±38.1 at `v=±0.5`, ±6.1 at `±0.2`, ±0.4 at
+> `±0.05`, antisymmetric in `v` as a migrating centre would be. Cause:
+> **ADR 0036** (K5) gave the ama the same migrating-CLR mechanism ADR 0032
+> gave the hull, which is exactly what removes that zero. The stated reason
+> for the zero ("the ama's station distribution is uniform and symmetric
+> about its centre with no `clrX`-equivalent offset") no longer describes
+> the code.
+>
+> Unrelated drift worth noting for anyone re-running these: ADR 0038 changed
+> `hullSideForce`'s fourth parameter from `crewPosX` to `theta`. The D4
+> scripts pass `0` there, which is valid under either reading, so their
+> numbers are not garbage — but that is luck, not design.
 
 ## D4 — fore-aft symmetry is genuinely zero, not accidentally zero
 
@@ -83,8 +124,9 @@ Part I.3 quotes — that figure is two orders of magnitude below where the bound
 would even be tested. No code change; the term is doing what T4 intended and
 is not overstated.
 
-*(An earlier ad hoc probe in this same investigation, not committed, checked
-only `r=0.3` — right at the point this sweep shows the bound starts to be
+*(An earlier ad hoc probe in this same investigation — `scratch/evaluate_d3.js`,
+uncommitted when this was written, committed 2026-08-10 — checked
+only `r=0.3`, right at the point this sweep shows the bound starts to be
 exceeded. That is not a bug in the term; `r=0.3 rad/s` sustained is not a
 steady-sailing state, so that single point does not generalise the way the
 sweep above does.)*
