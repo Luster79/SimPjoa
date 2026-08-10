@@ -4,7 +4,7 @@
 *Refines 0026-0028: those found the model's downwind steering mechanisms were
 sound but data-starved. This ADR revises the data, not the model, and reports
 how far that goes. Full methodology and search log:
-`docs/work-order-2026-08-05-boat-data.md`.*
+`Archive/work-order-2026-08-05-boat-data.md`.*
 
 ## Context
 

@@ -92,7 +92,7 @@ const HEADING_HOLD_TOLERANCE = 15 * DEG;
 // two-regime brailWind characteristic makes a partial carrot pull a real
 // candidate for the polar-optimal deep trim, not just a survival/panic
 // control.
-// P2 (docs/work-order-2026-07-22.md, docs/diagnostic-2026-07-22-residuary-hump.md
+// P2 (Archive/work-order-2026-07-22.md, Archive/diagnostic-2026-07-22-residuary-hump.md
 // Result 5): the OLD gate required 10 CONSECUTIVE per-step samples each
 // within 0.01 m/s of the last one, reset to zero by a single noisy tick —
 // with maxSeconds=25 that left only ~15s for acceleration, and some

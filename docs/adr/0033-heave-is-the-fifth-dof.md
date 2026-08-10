@@ -1,7 +1,7 @@
 # ADR 0033 — Heave is the fifth DOF
 
 *Date: 2026-08-09*
-*S8 of `docs/work-order-2026-08-02-steering-and-sources.md`. The owner's own
+*S8 of `Archive/work-order-2026-08-02-steering-and-sources.md`. The owner's own
 choice among two options presented (full 5th-DOF heave vs. a cheaper
 quasi-static draft closure) — see that work order for the alternative not
 taken.*
@@ -94,7 +94,7 @@ same comfortable margins as before (14.9deg vs. a 50deg ceiling; 0.00s vs. a
 **S1c demoted back to xfail:STEERING (4/6, was 6/6).** `S1c`
 (`harness/asserts-polar-helm.js`) — oar shipped, course held by trim alone —
 was promoted to a hard pass by T4's ama-lateral-plane fix
-(docs/work-order-2026-08-05-sterownosc.md). S8's draft-ratio coupling changes
+(Archive/work-order-2026-08-05-sterownosc.md). S8's draft-ratio coupling changes
 the same hull hydrodynamics that check's margin depends on, and costs it 2 of
 6 grid points. Root-caused, not assumed: with the heave→hull coupling forced
 off in an isolated integrator (heave itself still free to move, just not fed

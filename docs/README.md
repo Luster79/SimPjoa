@@ -40,16 +40,38 @@ Two consequences bind the work:
 
 - **Oar-deployed course-hold checks are diagnostics, not acceptance.** A
   deployed oar is a fixed 0.15 m² fin and supplies most of the model's
-  directional stability (`work-order-2026-08-02-steering-and-sources.md`,
-  part III.1). The acceptance set is the oar-shipped one: `S1b`, `S1c`
-  (`harness/asserts-polar-helm.js`), `C-A`/`C-B`/`C-C`
-  (`harness/asserts-deep-course.js`).
+  directional stability (`Archive/work-order-2026-08-02-steering-and-sources.md`,
+  part III.1). The acceptance set is the oar-shipped one: `S3` — the
+  criterion's own claim, full trim set on both ends — plus `S1b`, `S1c`
+  (`harness/asserts-polar-helm.js`) and `C-A`/`C-B`/`C-C`
+  (`harness/asserts-deep-course.js`). Those five are each scoped to a NAMED
+  control subset, so where they fail they measure that scope, not the boat's
+  capability (ADR 0039).
 - **Physical characteristics may be manipulated, but only within a limited
   range** — in particular where a characteristic is unknown or known only
   approximately. Anything a source fixes (the manual, Di Piazza, Flay, the
   PJOA FOLK CSVs) is not free. This is a licence to explore genuinely
   unknown coefficients inside a defensible band; it is not a licence to
   re-pick a value until an assertion agrees — see the conventions below.
+
+### Where it stands (2026-08-10)
+
+**Holding a course: covered.** `harness/coverage-no-oar.js` finds a
+rudder-free holding trim at all 42 in-scope grid points
+(`coverage-no-oar-2026-08-10b.txt`), and `S3` confirms it on both ends at TWS6
+across the reach and deep bands. The frozen-trim predicate this is measured
+with is *stricter* than the criterion requires, since the owner has ruled
+(2026-08-10) that continuous re-trimming is acceptable and the failure that
+matters is a course that cannot be held — so the figure is a floor.
+
+**Obtaining a course: half open.** `K3` (`harness/asserts-course-change.js`)
+shows bearing away and shunting both work oar-free on both ends. Pointing up
+does not: TWA90→70 reaches only 83-85deg against a ±10deg band, on both ends
+symmetrically. That is the one open item that looks like a genuine capability
+gap rather than a measurement artefact.
+
+**Out of scope, unsolved:** TWA < 50, and whether a trim that holds heading
+while decaying to ~20% of its speed counts as holding at all.
 
 ## The primary source — `sources/`
 
@@ -72,7 +94,7 @@ criterion — see the "Conventions" note below.
 grid and prints a tally. It is a **report, not a build gate**, deliberately:
 some criteria describe controls the model does not have. Run it with
 `node harness/acceptance-manual.js`; the last full output is
-`acceptance-manual-2026-08-04.txt` (**15 PASS / 7 PARTIAL, nothing failing and
+`Archive/acceptance-manual-2026-08-04.txt` (**15 PASS / 7 PARTIAL, nothing failing and
 nothing unrepresentable** since the rig gained its vertical geometry, ADR 0019).
 The 08-03 snapshot is kept beside it because the findings cite its numbers.
 
@@ -120,45 +142,22 @@ Append-only. Never edit an old ADR; supersede it with a new one.
 | 0036 | The ama's centre of lateral resistance migrates too (K5) -- reuses D1's migrating-CLR mechanism (ADR 0032) on the ama's own strip integration (T4); corrects a stale premise (the ama was already multi-station, not single-strip). Coverage: 20/45 before and after, but a real trade (TWA80/TWS6 gained, TWA170/TWS10 lost), not a null result |
 | 0037 | Mast shadow completes the sheeting floor (L4) -- ADR 0010's own mast-shadow term, declined at the time for lacking a consumer (`deltaMinDeg` was 10.7deg then); the boat resize (ADR 0021) took `deltaMinDeg` to exactly 0, giving it one. Explicit estimate (8deg / 15% CL), not measured. Dead angle unchanged (~17deg); close-hauled cost -1.8% at TWA40 |
 | 0038 | Pitch is the sixth DOF (L5) -- same method as heave (S8): rigorous hydrostatic stiffness, tuned inertia/damping pair, crew weight as the only driving moment. Replaces `crewForeAftTrimCoeff`'s direct crewPosX-to-CLR wire with a real dynamic angle. K2 (narrow-search) coverage 20/42->21/42; S2 regressed 6/6->4/6 (reported, not retuned) -- L1's search-widening, not L5's new physics, turned out to be the larger lever on TWA140-160's coverage |
-| 0039 | The restoring probe omitted the hull, and the end mirror omitted the wind -- K1's `restoring` perturbed `heading` while holding BOAT-frame `u`/`v` fixed, so every hull/ama yaw moment cancelled and only the rig's (order-of-magnitude smaller, sign-flipped at TWA110/140) slope was measured; K3's `heldState` flipped the heading by pi for `end=-1` but not `windDirFrom`, running TWA110 under TWA70's trim. **Withdraws L2's "TWA140-160 is a pure stiffness problem dominated by the sail" (all 18 of its NONE points are restoring under the corrected probe) and 0034's `end=-1` asymmetry (a harness bug, not the boat)**. Also carries the harness audit: no oar-free measurement anywhere searched the crew's LATERAL position or ran `end=-1`, and `S1c` never touched `stays` -- new check `S3` makes the criterion's own claim (full trim set, both ends, 300s) and passes 10/10, so **C-B/C-C's 0/2 is a property of the fixed recipes they test, not a capability limit** |
+| 0039 | The restoring probe omitted the hull, and the end mirror omitted the wind -- two measurement defects plus a harness audit. Withdraws L2's broad-reach stiffness diagnosis and 0034's `end=-1` asymmetry; adds `S3` (the criterion's own claim, both ends) and the search rewrite that took coverage to 42/42 in 20min. **Read it before trusting any "property of the boat" conclusion dated earlier** |
 
-## Work orders — what to do
+## History — `Archive/`
 
-| File | Status |
-|---|---|
-| `work-order-2026-07-22.md` | Nearly complete. **R10 done** (eslint/tsc/prettier tooling added, R10 commit). **R13 partial**: `harness/asserts.js` split into 8 files, verified byte-identical `run_tests.js` output before/after. `ui/app.js` deliberately deferred -- a state-management rewrite (~30 shared mutable module vars, no automated UI tests), not a mechanical file cut, owner's call to do it as its own dedicated session. |
-| `work-order-2026-07-30-physics-audit.md` | **Complete** — F1-F16 all executed. |
-| `work-order-2026-08-05-sterownosc.md` | **Complete, with T1 withdrawn.** T1's `boomLift` was a line the rig does not carry (ADR 0031); T2-T6 stand. Its Part IV TWA160+ "structural limit" is withdrawn by ADR 0030. |
-| `work-order-2026-08-05-boat-data.md` | **Complete.** Ama length/buoyancy revised x1.40 (ADR 0029). Its TWA155-165 "structural gap" is **withdrawn by ADR 0030** -- the search had the sheet pinned. `hull.massSway` left untouched by owner decision (collides with ADR 0018). |
-| `work-order-2026-08-05-statecznosc-kierunkowa.md` | **Complete, D1-D4 all done.** D4: fore-aft symmetry confirmed zero to float precision -- **that proof no longer holds** (erratum 2026-08-10: D1/ADR 0032's own migrating CLR is a fourth fore-aft mechanism the check does not neutralise, so the residual is now ~1e+3, not ~1e-13; the conclusion may still stand but is undemonstrated). D3: the ama's own lateral-plane term is bounded and not overstated -- bound still holds; its "exactly zero at r=0" sub-observation is superseded by ADR 0036. D2: Munk magnitude re-affirmed defended, ADR 0018 unchanged. D1 (ADR 0032): geometric CLR migration, roughly doubles hull yaw stiffness TWA94-158, costs TWA162-174 -- a real, measured trade, not a bug; capsize margins re-validated (all three scenarios), H3 re-anchored. |
-| `work-order-2026-08-02-steering-and-sources.md` | **S1-S8 complete.** S7 audited 2026-08-08: all 18 narrow-band assertions checked against the criterion, none non-compliant -- most already converted or justified by earlier rounds and D1. S8 done (ADR 0033): heave DOF closes the vertical force balance; polar speed measured (mean -0.36%); one steering check (S1c) demoted to xfail as a genuine, root-caused consequence, not a bug. S3 was implemented and withdrawn (ADR 0013). Sailing without the oar reached 3/6 (ADR 0017); the Munk double-count hypothesis was audited and rejected (ADR 0018). What used to block further progress here on Flay's yaw-moment data is resolved two ways: that data does not exist in the source at all (ADR 0032), and D1 found a geometric route around the gap instead (same ADR). **Open: S9-S11** (Block D, added 2026-08-09) -- pitch DOF, re-measuring the heel-to-yaw matrix under D1/S8's changed physics, and extending the ama's lateral plane to a full strip integration. **Part V** (2026-08-09) scores every item against the success criterion above and re-orders the open block S10 -> S11 -> S9; it also names what the criterion measures and this package does not (permanence, obtaining a course, aggregate coverage). Those three became `work-order-2026-08-09-kryterium-bez-wiosla.md`. |
-| `work-order-2026-08-09-kryterium-bez-wiosla.md` | **K1-K6 complete.** `K1` (`holdsCourse()`) adds convergence + a restoring-moment check to every course-hold band; coverage narrowed as expected (S2 5/6->3/6, C-C 1/2->0/2), no threshold loosened. `K2` (`harness/coverage-no-oar.js`) gives the criterion its first single number, later re-scoped to TWA>=50 (see the success-criterion note above) — snapshot `docs/coverage-no-oar-2026-08-09.txt`, kept current through K5 and L1-L7. `K3` (`harness/asserts-course-change.js`) is the first measurement of *obtaining* a course: one of six direction/end combinations holds (bearing away, `end=1`, promoted out of xfail); a bug in the check itself (fixed heading regardless of `end`) was caught and corrected before it produced a false asymmetry finding — see ADR 0034. `K4` re-ran T3's `heelClrSign`/`yawHeelSign` matrix under current physics: no combination improves coverage — both stay at 0, no ADR needed (own acceptance criterion). `K5` (ADR 0036) gave the ama the same migrating-CLR mechanism D1 gave the hull. `K6` is `docs/parameter-register.md` (ADR 0035). Successor: `work-order-2026-08-09-domkniecie-kryterium.md`. |
-| `work-order-2026-08-09-domkniecie-kryterium.md` | **L1-L7 complete.** Attacked the two zero-coverage bands K2 exposed: TWA 50-70 and TWA 140-160, with *different* causes (L2 -- **this whole diagnosis is WITHDRAWN by ADR 0039**: it read `dM/dpsi` off a probe that omitted the hull, so what it called a "genuine stiffness deficit on the broad reach, dominated by the sail's own yaw moment, +0.8 to +6.7 N*m/deg" was the rig-only slope. Corrected, all 18 of its NONE points are restoring, and the slope grows *more* restoring with wind. L2's conclusion "no trim range fixes this -- new stiffness is needed, i.e. L5" was L5's stated motivation). `L3`: the source manual's own chapter III caveats "use with moderation" and describes CONTINUOUS active trim, not a set-and-forget equilibrium -- a scope question for the criterion itself, flagged not resolved. `L4` (ADR 0037) added the mast-shadow term ADR 0010 declined for lack of a consumer -- `deltaMinDeg=0` on this boat gives it one. `L5` (ADR 0038) is a real pitch DOF (6th, same method as heave/S8) driving the CLR, replacing `crewForeAftTrimCoeff`'s direct wire. `L6` root-caused the K3 shunt capsize to the braking manoeuvre itself (any deceleration, not a specific brail choice, destabilises the TWA90 hold trim -- the trim is stable indefinitely if left alone). `L7` confirmed L5 does not narrow the existing tackX helm-lever range. **The single most consequential finding was L1's own control measurement, not a physics change**: K2's narrow search (sheet/brail frozen at the polar's speed optimum) was masking real coverage -- a targeted wide search (sheet+brail as free axes) on TWA140/150/160 found **9/9 hold**, at sheet angles (35-55deg) far from the frozen optimum (48-84deg). L4+L5 combined moved the *official* (narrow-search) K2 snapshot only 20/42->21/42 (one point) -- most of the apparent gap was the search method, not the boat. **Część VI (M1-M3)** is a follow-up block that changed no physics at all, only measurement: `M2` overturned the beat diagnosis (an in-range, restoring `tackX` null exists at all 9 beat points -- authority is NOT the constraint; the failure is a heel runaway, the crew's weight sinking the ama once the sail's heeling moment drops with speed; the "oar carries side force" hypothesis was tested and falsified). `M3` found two defects in K3's own shunt check (`slowedBelowLockout` was being satisfied *by* the capsize; and the manual's ch. IV steps were executed as discrete phases, which capsizes the boat either way round -- crew-in-first to leeward at +65deg, sheet-out-first to windward at -65deg, the same balance from opposite sides) and, executing them as one coordinated ramp, **got the oar-free shunt completing on both ends** (post-shunt excursion 12deg, inside the band; only re-powering from the near-dead-stop still fails). `M1` added a validated non-integrating pre-screen (`--static-screen`; 200 rejected trims re-tested in full, **0 false rejections**) and its first wide-search result is **TWA50/TWS4 HOLDS -- the first beat point ever to hold**, again from search width alone. The completed wide run then produced an implausible pattern (0/9 across TWA50-130 at TWS6 while TWS4/TWS10 held almost everything) which was **not accepted**: `--wide-search` had been REPLACING the polar-optimal sheet with its coarse grid instead of adding to it, so it was not a superset of the default search -- at TWS6 the reaching courses hold at sheet 16-28deg and the grid offers {35,55,75}. Fixed. **Union of the two searches: 38/42 (90%)**, the four remaining gaps all at TWS6 and all the least trustworthy NONEs in the table. Sobering meta-result: all three M-items found a defect in the MEASUREMENT, not the boat -- which means L4/L5's "+1 point" verdicts were scored against a metric that was losing 8-17 points, and their real effect on the criterion is **unmeasured**, an open item rather than a result. Successor: `work-order-2026-08-10-blok-B.md`. |
-| `work-order-2026-08-10-blok-B.md` | **N1-N5 complete.** One item of the proposal that preceded this block (widen the CE-CLR lever) was **withdrawn outright**, because M2 measured the tack null in range with better than 2x margin at all nine beat points. `N2` closed one of the four remaining gaps (TWA130/TWS6, via a denser sheet grid); the other three (TWA50/60/70/TWS6) resisted even the dense grid -- the first result in blocks A/B that did NOT change under a wider search, strengthening M2's heel-runaway diagnosis. **That reading is withdrawn by ADR 0039**: all three hold once `restoring` is measured correctly, and two of them at the polar's own speed optimum (sheet 8 and 12deg), a trim every search always contained -- it was being found and then discarded by the predicate, so the three points were never evidence about the boat. `N4` closed the last piece of the oar-free shunt (accelerating from a dead stop): the repower ramp itself was too fast, capsizing ~10s into the following hold once the boat picked up just enough speed for the sail's heeling moment to outrun the crew's still-building righting moment; `REPOWER_RAMP_SECONDS=45` fixes it -- **K3's oar-free shunt now passes in full, its `xfail` lifted, for the first time in the project's history**. `N5` diagnosed the close-hauled drive deficit vs Di Piazza (`S4b`) down to the peak-search method itself (the model picks a lower-L/D, higher-CL trim than the validated 2D profile's own optimum when maximising boat-frame `Fx` rather than sail-frame `L/D`) but left it unresolved and unforced, pending a source-fidelity question (does Di Piazza's Fig 4 come from the same peak-search or a fixed trim?) that a previous work order already left open. **`N1` found a second, more serious measurement defect while re-scoring L4/L5**: the fast parallel run used `--static-screen`, whose own 3-point validation sample (from block A) did not cover the points that turned out to false-reject -- a direct check confirmed the polar-optimal trim at TWA80/TWS6 holds cleanly (0.8deg excursion) despite the screen rejecting it. `--static-screen` is now flagged unsafe-to-report in `harness/coverage-no-oar.js` and was not used for the final numbers. **Re-measured coverage, full 42-point grid, single-pass `--wide-search` (already a superset of the narrow search, no union trick needed): current config 39/42 (93%), `--no-mast-shadow` 40/42 (95%)** -- snapshot `docs/coverage-no-oar-2026-08-10.txt`, **itself superseded the same day by `docs/coverage-no-oar-2026-08-10b.txt` at 42/42 (100%)**, once ADR 0039 fixed the `restoring` probe these numbers were scored with. That snapshot is also a single 20-minute pass rather than a ~9-hour one: the search stops at the first confirmed holder, since the metric asks existence (ADR 0039) -- so the trims it prints are the first found, not the best. **L4 (mast shadow)'s entire effect on the criterion is one point, TWA50/TWS6** (held without it, not with it) -- the same realism/criterion tradeoff ADR 0037 already measured on the speed side, now also on the coverage side; keeping L4 is the owner's call. **L5 (pitch) is proven to have exactly zero effect on this metric**: it settles to equilibrium in ~0.4s against a 10-45s test window, so at steady state its CLR contribution is algebraically identical to the direct wire it replaced (see ADR 0038's erratum). `N3` added `holdsCourseActiveTrim()` beside `holdsCourse()` (periodic bounded tack/crew correction) and measured both on all nine beat points: active trim consistently prevents capsize (0/9 vs 3/9) and improves speed retention, but neither predicate closes any of the nine points within the 15deg band. **Re-run 2026-08-10 with ADR 0039's corrected probe: verdict unchanged (0/9 both), reason changed** -- 15 of the 18 runs are `restoring` and all 18 `converged`, so nothing here is directionally unstable; the binding constraint is SPEED, not heading (three points hold to 5-6deg, converged and restoring, and fail only the 50% speed floor at 18-24%). All nine hold at other trims, so this measures the starting trim, not the boat. **The predicate question is closed by owner decision (2026-08-10): continuous re-trimming is acceptable, the failure that matters is a course that cannot be held** -- which changes no coverage number, since the stricter frozen predicate already passes 42/42. Still open: whether "holds the course but decays to 20% speed" counts as holding. |
+Completed work orders, their findings, the external review cycle, and
+superseded snapshots live in `Archive/`. They are **evidence, not
+instructions**: they record what was measured and why a number is what it is,
+at the date on the file. Code comments cite them for provenance and those
+citations are kept current, but nothing in `Archive/` describes how the model
+works now — the ADRs above and the context map do that.
 
-Work that came from the primary source rather than a work order is tracked in
-the findings document, not here — see its last four sections.
-
-## Findings — evidence for what was done
-
-| File | Covers |
-|---|---|
-| `findings-2026-07-22-work-order.md` | Execution of the 07-22 order |
-| `findings-2026-07-30-physics-audit.md` | Execution of the physics audit, with the measured numbers behind every change |
-| `findings-2026-08-02-steering-and-sources.md` | Execution of the 08-02 order stage by stage, **then** the acceptance run against the manual and everything it uncovered |
-| `findings-2026-08-08-directional-stability.md` | D2-D4 of the 08-05 directional-stability order: fore-aft symmetry, the ama's own yaw term, and the Munk-moment re-audit |
-| `acceptance-manual-2026-08-04.txt` | Raw output of `harness/acceptance-manual.js` — current |
-| `acceptance-manual-2026-08-03.txt` | The previous snapshot, cited by the findings |
-| `capsize-margins-2026-07-30.md` | Margin sweep run as a precondition for the audit's block D |
-| `diagnostic-2026-07-22-residuary-hump.md` | The investigation that produced the 07-22 physics items |
-
-## Review cycle
-
-| File | Covers |
-|---|---|
-| `review-2026-07-22-maturity.md` | External maturity review of the whole project |
-| `review-2026-07-22-response.md` | Point-by-point response, including where it disagrees |
-
+Treat an archived claim as true *as of its date*, not as true. Several have
+been overtaken by later work: ADR 0039 lists the ones found on 2026-08-10,
+and `Archive/findings-2026-08-08-directional-stability.md` carries an erratum
+for a proof that a neighbouring item in its own work order invalidated hours
+after it was written.
 ## Conventions worth knowing before changing physics
 
 - **`out/polar.csv` is byte-gated in CI.** Any change to the model or the
@@ -196,6 +195,17 @@ the findings document, not here — see its last four sections.
   same defect in the tack survived them untouched for another four (ADR 0023).
   A regression check written against one defect tests that defect; a symmetry
   invariant is worth only what its inputs exercise.
+- **Suspect the instrument before the boat.** On 2026-08-10 four separate
+  conclusions recorded as settled turned out to rest on measurements that were
+  wrong or too narrow: a directional-stiffness probe that rotated the hull
+  together with the flow and so measured the rig alone; an end mirror that
+  flipped the heading but not the wind; an acceptance set that never searched
+  the crew's lateral position, `stays`, or the second end; and a symmetry proof
+  invalidated by a neighbouring item in its own work order. Every one of them
+  had the same direction of error — the boat was recorded as less capable than
+  it is. Before adding physics to fix a limitation, re-derive the measurement
+  that found it. A conclusion of the form "this is a property of the boat" is
+  the one most worth re-measuring, because nothing downstream re-tests it.
 - **A derived document is not the source.** `Kryteria_Akceptacji` transcribed
   one rule backwards, and a long, correct-looking argument was built on it
   before the original PDF settled it in one sentence. It happened a second time

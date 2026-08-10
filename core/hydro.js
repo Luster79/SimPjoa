@@ -15,7 +15,7 @@ const U_SMOOTH = 0.05; // m/s
 // Stations for the hull's lateral strip integration (hullSideForce). The
 // integral is converged to <0.5% by 21 (checked against 41 and 81).
 const HULL_STATIONS = 21;
-// Stations for the ama's own strip integration (T4, docs/work-order-2026-08-
+// Stations for the ama's own strip integration (T4, Archive/work-order-2026-08-
 // 05-sterownosc.md). Not independently convergence-checked the way
 // HULL_STATIONS was — the taper and CS(leeway) are both smooth over the
 // ama's much shorter length, so this is chosen with comfortable margin
@@ -30,7 +30,7 @@ function ittc57Cf(u, length) {
   return 0.075 / ((logRe - 2) * (logRe - 2));
 }
 
-// heaveZ (S8, docs/work-order-2026-08-02-steering-and-sources.md): the 5th
+// heaveZ (S8, Archive/work-order-2026-08-02-steering-and-sources.md): the 5th
 // DOF's vertical displacement from the design waterline [m], +up — trailing
 // and OPTIONAL (defaults to 0, the design draft) rather than inserted
 // alongside u: every isolated hull-physics probe in harness/asserts-hull-
@@ -110,7 +110,7 @@ function hullSideForceCoeff(lambdaDeg, hull) {
 // geometry: the CE-CLR "lead" concept only means anything if both sides of
 // it reference the same point.
 //
-// theta (pitch angle, rad -- L5, docs/work-order-2026-08-09-domkniecie-
+// theta (pitch angle, rad -- L5, Archive/work-order-2026-08-09-domkniecie-
 // kryterium.md, the 6th DOF, config.pitch) shifts it: a real dynamic angle
 // driven by crew fore-aft weight (stability.js's crewPitchMoment) against
 // the hull's own hydrostatic pitch stiffness, replacing the old direct
@@ -140,7 +140,7 @@ export function clrXPosition(theta, config) {
 // weathercocking entirely -- so the distribution carries the same clrX the
 // model already uses, rather than a second, independent statement of it.
 //
-// heelClrShiftCoeff (T3, docs/work-order-2026-08-05-sterownosc.md): the SAME
+// heelClrShiftCoeff (T3, Archive/work-order-2026-08-05-sterownosc.md): the SAME
 // taper ALSO shifts with heel. A heeled V-section hull immerses its two sides
 // unequally along its whole length, not just port-starboard, which is the
 // standard simplified-VPP treatment of the real "heel moves the CLR fore-aft"
@@ -176,7 +176,7 @@ function stationWeights(theta, phi, config, draftRatio) {
   for (let i = 0; i < HULL_STATIONS; i++) {
     const x = -L / 2 + (i + 0.5) * (L / HULL_STATIONS);
     // dAFlat (untapered per-strip share) rides along so hullSideForce's own
-    // migrating-CLR term (D1, docs/work-order-2026-08-05-statecznosc-
+    // migrating-CLR term (D1, Archive/work-order-2026-08-05-statecznosc-
     // kierunkowa.md) can build its OWN weighting from the same area budget
     // without re-deriving it — see that function's own comment for why it
     // needs a second distribution, not this one reused.
@@ -240,7 +240,7 @@ export function hullSideForce(u, v, r, theta, phi, config, heaveZ = 0) {
     const leewayAbs = leewayFoldedRad;
     const leewayAbsDeg = leewayAbs / DEG;
 
-    // --- Migrating centre of lateral resistance (D1, docs/work-order-2026-
+    // --- Migrating centre of lateral resistance (D1, Archive/work-order-2026-
     // 08-05-statecznosc-kierunkowa.md) --------------------------------------
     // The station taper above (stationWeights) is fixed once crewPosX/phi are
     // set -- at r=0 every station sees the SAME leeway, the strip sum
@@ -478,7 +478,7 @@ export function amaDrag(u, v, r, phi, crewPos, end, config) {
   const yAma = ama.spacing * end;
   const yawMomentDrag = -yAma * Fx;
 
-  // --- T4: the ama's own lateral plane (docs/work-order-2026-08-05-
+  // --- T4: the ama's own lateral plane (Archive/work-order-2026-08-05-
   // sterownosc.md) -----------------------------------------------------
   // The ama is a slender float, not a point — it has its own side force and
   // its own yaw damping, by the SAME strip integration hullSideForce already
@@ -510,7 +510,7 @@ export function amaDrag(u, v, r, phi, crewPos, end, config) {
   const yAmaSurge = r * yAma; // rigid-body surge correction at the ama's own fixed lateral offset
   const uAma = u - yAmaSurge;
   const dAama = amaLateralAreaFull / AMA_STATIONS;
-  // K5 (docs/work-order-2026-08-09-kryterium-bez-wiosla.md, = S11 from the
+  // K5 (Archive/work-order-2026-08-09-kryterium-bez-wiosla.md, = S11 from the
   // 08-02 work order): the ama's own centre of lateral resistance migrates
   // with drift angle by the SAME mechanism D1 gave the hull (ADR 0032,
   // hullSideForce's own csLin/csVtx split above) -- T4 already made the

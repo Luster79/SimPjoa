@@ -323,7 +323,7 @@ cross-check at startup as required by the main prompt. Fixed schema version: a
       // sign satisfied the source; at 0 each of the manual's own named
       // mechanisms governs its own criterion. Restore only together with the
       // hull's term. See core/config.js at yawHeelSign for the measured
-      // matrix, and docs/findings-2026-08-02.
+      // matrix, and Archive/findings-2026-08-02.
       // CE GEOMETRY, current form (2026-08-03/04):
       //   xCE = clrXNeutral + hull.lead + tackOffset + swing + ceBrailXShift
       // three of whose four terms are newer than the round-7 text below.

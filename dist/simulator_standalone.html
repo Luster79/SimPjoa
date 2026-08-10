@@ -344,12 +344,12 @@ function readFileSync(p) {
 //   it, not because of a frame argument: the yard is not bolted to a fixed
 //   physical side, it swings to whichever side the wind demands (up to the
 //   end-aware chordAngle = end*delta — see aero.js).
-// - Heave: `z` (m) and `w` (m/s), the 5th DOF (S8, docs/work-order-2026-08-02-
+// - Heave: `z` (m) and `w` (m/s), the 5th DOF (S8, Archive/work-order-2026-08-02-
 //   steering-and-sources.md). z is vertical displacement from the DESIGN
 //   waterline, positive = UP (riding higher, less draft than design); w =
 //   dz/dt. Like phi/p, this is a world-vertical, physical-frame quantity —
 //   unaffected by heading and left unchanged at a shunt swap.
-// - Pitch: `theta` (rad) and `q` (rad/s), the 6th DOF (L5, docs/work-order-
+// - Pitch: `theta` (rad) and `q` (rad/s), the 6th DOF (L5, Archive/work-order-
 //   2026-08-09-domkniecie-kryterium.md). theta is the pitch angle, positive
 //   = BOW DOWN (matches crewPosX>0's old direct relationship to the CLR
 //   shift it drives — see hydro.js's clrXPosition); q = dtheta/dt. Like
@@ -941,7 +941,7 @@ function buildDefaultConfig(boat = 'default') {
       // 0.25 a full aft trim moves the CLR 0.625 m, i.e. an eighth of the
       // waterline, which is the upper end of what a crew shifting weight in a
       // 5 m canoe can plausibly do to the immersed lateral plane.
-      //   L5 (docs/work-order-2026-08-09-domkniecie-kryterium.md) gave the
+      //   L5 (Archive/work-order-2026-08-09-domkniecie-kryterium.md) gave the
       // boat the real pitch DOF this comment used to say did not exist —
       // this value is now re-anchored onto that DOF's own equilibrium angle
       // (config.pitch.thetaAtFullCrew) inside hydro.js's clrXPosition(),
@@ -951,7 +951,7 @@ function buildDefaultConfig(boat = 'default') {
       // sail/hull can also perturb, not a straight wire from the control.
       crewForeAftTrimCoeff: 0.25,
       crewTrimSign: 1,                     // +-1 — flips the crewPosX->CLR-shift direction; verified empirically (forward crew -> luff)
-      // heelClrShiftCoeff / heelClrSign (T3, docs/work-order-2026-08-05-
+      // heelClrShiftCoeff / heelClrSign (T3, Archive/work-order-2026-08-05-
       // sterownosc.md): the hull's own half of the heel-to-yaw coupling — see
       // hydro.js's stationWeights for the mechanism (a heeled V-hull's
       // lateral-plane distribution shifts fore-aft, the standard simplified
@@ -978,7 +978,7 @@ function buildDefaultConfig(boat = 'default') {
       // model has the rig half and not the hull half. **A partial model of a
       // cancelling pair has an essentially arbitrary sign.**
       //
-      // T3 (docs/work-order-2026-08-05-sterownosc.md) BUILT the missing hull
+      // T3 (Archive/work-order-2026-08-05-sterownosc.md) BUILT the missing hull
       // half — hydro.js's stationWeights, driven by hull.heelClrShiftCoeff/
       // heelClrSign — and re-ran the SAME matrix at all four sign
       // combinations of (heelClrSign, yawHeelSign), against the CURRENT
@@ -1069,7 +1069,7 @@ function buildDefaultConfig(boat = 'default') {
       // see core/hydro.js's amaDrag for why this, and not the form factor, is
       // the honest home for the ama's steering authority.
       //
-      // REVISED (docs/work-order-2026-08-05-boat-data.md) from equal to the
+      // REVISED (Archive/work-order-2026-08-05-boat-data.md) from equal to the
       // hull's own 0.006 down to 0.4x that (0.0024). The equal setting was
       // stated as "the conservative choice" precisely because it was not
       // measured; a longer, more slender float (this round's own ama.length
@@ -1192,7 +1192,7 @@ function buildDefaultConfig(boat = 'default') {
         if (sparLength <= p.boat_length_m) return 0;
         return Math.acos(p.boat_length_m / sparLength) * 180 / Math.PI;
       })(),
-      // mastShadowWidthDeg / mastShadowCLFactor (L4, docs/work-order-2026-08-
+      // mastShadowWidthDeg / mastShadowCLFactor (L4, Archive/work-order-2026-08-
       // 09-domkniecie-kryterium.md): see aero.js's sailCoefficients for the
       // mechanism and why ADR 0010 declined to add this term at the time
       // (this boat's deltaMinDeg=0 gives it a consumer that did not exist
@@ -1280,7 +1280,7 @@ function buildDefaultConfig(boat = 'default') {
       // luffing/yaw moment (-yCE*Fx in aero.js's yawMoment), which is the
       // mechanism the manual's downwind "carrot" technique relies on.
       //
-      // DERIVED (T2, docs/work-order-2026-08-05-sterownosc.md), not hand-set.
+      // DERIVED (T2, Archive/work-order-2026-08-05-sterownosc.md), not hand-set.
       // F4 already treats the brail as acting through AREA: at brailWind=1 the
       // working area falls to areaAtFullBrail (0.20) of the full sail. Under a
       // self-similar-shrink assumption -- the gathered working area is
@@ -1362,7 +1362,7 @@ function buildDefaultConfig(boat = 'default') {
       return {
         mass: CREW_MASS_KG,
         posMin: -0.3,
-        // posMax (T6, docs/work-order-2026-08-05-sterownosc.md): hydro.js's
+        // posMax (T6, Archive/work-order-2026-08-05-sterownosc.md): hydro.js's
         // amaDrag derives crewOnAma = crewPos*crew.mass/ama.maxBuoyancy, and
         // says outright that crewPos above ama.maxBuoyancy/crew.mass asks for
         // more than the float can carry, so it goes under. That ratio is
@@ -1378,7 +1378,7 @@ function buildDefaultConfig(boat = 'default') {
       };
     })(),
 
-    // --- Heave, the 5th DOF (S8, docs/work-order-2026-08-02-steering-and-
+    // --- Heave, the 5th DOF (S8, Archive/work-order-2026-08-02-steering-and-
     // sources.md) -----------------------------------------------------------
     // Fz (the sail's vertical force component from heel, aero.js) and the
     // ama's own net buoyancy-minus-weight when pressed or lifted (stability.js
@@ -1392,13 +1392,13 @@ function buildDefaultConfig(boat = 'default') {
     // calculation this project has no source for.
     heave: heaveResult,
 
-    // --- Pitch, the 6th DOF (L5, docs/work-order-2026-08-09-domkniecie-
+    // --- Pitch, the 6th DOF (L5, Archive/work-order-2026-08-09-domkniecie-
     // kryterium.md) --------------------------------------------------------
     // Fore-aft trim (crewPosX) has existed since the start only as a
     // phenomenological CLR shift in hydro.js's clrXPosition() -- hull.
     // crewForeAftTrimCoeff's own comment says outright "there is no pitch
     // DOF behind it... do not raise it further without a real pitch model
-    // to justify it." L2 (docs/work-order-2026-08-09-domkniecie-kryterium.md)
+    // to justify it." L2 (Archive/work-order-2026-08-09-domkniecie-kryterium.md)
     // found TWA140-160 is a genuine STIFFNESS deficit dominated by the
     // sail's own yaw moment, not an authority one -- exactly the kind of gap
     // a real trim DOF (changing wetted length / lateral-plane distribution
@@ -1461,7 +1461,7 @@ function buildDefaultConfig(boat = 'default') {
       // give a period inside 1.5-4 s and settle (|phi|<0.4deg) within 2-4
       // oscillation periods.
       //
-      // RE-MEASURED (T5, docs/work-order-2026-08-05-sterownosc.md) at the
+      // RE-MEASURED (T5, Archive/work-order-2026-08-05-sterownosc.md) at the
       // current (docs/adr/0021) stiffness, since these two predate that
       // re-parameterisation: an 8deg step-response probe gives a 3.00 s
       // period (target 1.5-4 s) settling in 2.29 oscillation periods (target
@@ -1494,7 +1494,7 @@ function buildDefaultConfig(boat = 'default') {
       // which would compress the whole roll envelope and require re-running
       // every capsize-margin scenario (T6's gust, T10, the aback scenario)
       // against a new operating point, the same "margin sweep run as a
-      // precondition" campaign docs/capsize-margins-2026-07-30.md was for.
+      // precondition" campaign Archive/capsize-margins-2026-07-30.md was for.
       // That is real work with its own acceptance criteria, not a T5-sized
       // item, and is not done here on an input this uncertain. What T5 DOES
       // fix is the config-level guard that would have caught the next silent
@@ -1603,7 +1603,7 @@ function buildDefaultConfig(boat = 'default') {
 // snapshot's absolute camber is already represented by the table itself.
 //
 // crew.posMax has the same problem for the same reason (T6,
-// docs/work-order-2026-08-05-sterownosc.md): it used to be a free 0-2 value,
+// Archive/work-order-2026-08-05-sterownosc.md): it used to be a free 0-2 value,
 // and is now derived from ama.maxBuoyancy/crew.mass and checked against it.
 // A recording made before that derivation existed can carry a posMax that
 // exceeds the ratio implied by the CURRENT boat (this fixture's own
@@ -1659,7 +1659,7 @@ function validateConfig(config) {
   inRange(config.sail.brailTrimRange, 0.01, 0.99, 'sail.brailTrimRange');
   inRange(config.crew.posMin, -1, 0, 'crew.posMin');
   inRange(config.crew.posMax, 0, 2, 'crew.posMax');
-  // T6 (docs/work-order-2026-08-05-sterownosc.md): crew.posMax must not let
+  // T6 (Archive/work-order-2026-08-05-sterownosc.md): crew.posMax must not let
   // the crew ask the ama for more buoyancy than it has — see hydro.js's
   // amaDrag and crew.posMax's own comment above. Re-checked here, not just
   // set correctly by default, so a config patch that changes ama.maxBuoyancy
@@ -1685,7 +1685,7 @@ function validateConfig(config) {
   inRange(config.crew.posXMax, 0, 1, 'crew.posXMax');
   if (!(config.stability.phiCapsizeDeg > config.stability.phiLiftoffDeg)) errs.push('stability.phiCapsizeDeg must be > phiLiftoffDeg');
   if (!(config.stability.phiCapsizeDeg > config.stability.phiSubmergeDeg)) errs.push('stability.phiCapsizeDeg must be > phiSubmergeDeg');
-  // T5 (docs/work-order-2026-08-05-sterownosc.md): a SANITY band, not a
+  // T5 (Archive/work-order-2026-08-05-sterownosc.md): a SANITY band, not a
   // precise derivation — see stability.phiLiftoffDeg's own comment for why a
   // tight geometric bound is not available. Ties phiLiftoffDeg/phiSubmergeDeg
   // to ama.length (a scaled, known quantity) rather than leaving them free of
@@ -1981,7 +1981,7 @@ function sailCoefficients(alpha, controls, config, deltaDeg = null) {
   const furl = brailLee * brailWind;
   const areaFactor = areaWindFactor * areaLeeFactor;
 
-  // Mast shadow (L4, docs/work-order-2026-08-09-domkniecie-kryterium.md):
+  // Mast shadow (L4, Archive/work-order-2026-08-09-domkniecie-kryterium.md):
   // sail.deltaMinDeg (ADR 0010) is the ROPE-REACH floor only -- whether the
   // sheet can physically pull the yard's clew in that far. On the PJOA FOLK
   // (8 m^2 sail, 5.0 m hull) that floor is exactly 0 (ADR 0021: "the spar no
@@ -2399,7 +2399,7 @@ const U_SMOOTH = 0.05; // m/s
 // Stations for the hull's lateral strip integration (hullSideForce). The
 // integral is converged to <0.5% by 21 (checked against 41 and 81).
 const HULL_STATIONS = 21;
-// Stations for the ama's own strip integration (T4, docs/work-order-2026-08-
+// Stations for the ama's own strip integration (T4, Archive/work-order-2026-08-
 // 05-sterownosc.md). Not independently convergence-checked the way
 // HULL_STATIONS was — the taper and CS(leeway) are both smooth over the
 // ama's much shorter length, so this is chosen with comfortable margin
@@ -2414,7 +2414,7 @@ function ittc57Cf(u, length) {
   return 0.075 / ((logRe - 2) * (logRe - 2));
 }
 
-// heaveZ (S8, docs/work-order-2026-08-02-steering-and-sources.md): the 5th
+// heaveZ (S8, Archive/work-order-2026-08-02-steering-and-sources.md): the 5th
 // DOF's vertical displacement from the design waterline [m], +up — trailing
 // and OPTIONAL (defaults to 0, the design draft) rather than inserted
 // alongside u: every isolated hull-physics probe in harness/asserts-hull-
@@ -2494,7 +2494,7 @@ function hullSideForceCoeff(lambdaDeg, hull) {
 // geometry: the CE-CLR "lead" concept only means anything if both sides of
 // it reference the same point.
 //
-// theta (pitch angle, rad -- L5, docs/work-order-2026-08-09-domkniecie-
+// theta (pitch angle, rad -- L5, Archive/work-order-2026-08-09-domkniecie-
 // kryterium.md, the 6th DOF, config.pitch) shifts it: a real dynamic angle
 // driven by crew fore-aft weight (stability.js's crewPitchMoment) against
 // the hull's own hydrostatic pitch stiffness, replacing the old direct
@@ -2524,7 +2524,7 @@ function clrXPosition(theta, config) {
 // weathercocking entirely -- so the distribution carries the same clrX the
 // model already uses, rather than a second, independent statement of it.
 //
-// heelClrShiftCoeff (T3, docs/work-order-2026-08-05-sterownosc.md): the SAME
+// heelClrShiftCoeff (T3, Archive/work-order-2026-08-05-sterownosc.md): the SAME
 // taper ALSO shifts with heel. A heeled V-section hull immerses its two sides
 // unequally along its whole length, not just port-starboard, which is the
 // standard simplified-VPP treatment of the real "heel moves the CLR fore-aft"
@@ -2560,7 +2560,7 @@ function stationWeights(theta, phi, config, draftRatio) {
   for (let i = 0; i < HULL_STATIONS; i++) {
     const x = -L / 2 + (i + 0.5) * (L / HULL_STATIONS);
     // dAFlat (untapered per-strip share) rides along so hullSideForce's own
-    // migrating-CLR term (D1, docs/work-order-2026-08-05-statecznosc-
+    // migrating-CLR term (D1, Archive/work-order-2026-08-05-statecznosc-
     // kierunkowa.md) can build its OWN weighting from the same area budget
     // without re-deriving it — see that function's own comment for why it
     // needs a second distribution, not this one reused.
@@ -2624,7 +2624,7 @@ function hullSideForce(u, v, r, theta, phi, config, heaveZ = 0) {
     const leewayAbs = leewayFoldedRad;
     const leewayAbsDeg = leewayAbs / DEG;
 
-    // --- Migrating centre of lateral resistance (D1, docs/work-order-2026-
+    // --- Migrating centre of lateral resistance (D1, Archive/work-order-2026-
     // 08-05-statecznosc-kierunkowa.md) --------------------------------------
     // The station taper above (stationWeights) is fixed once crewPosX/phi are
     // set -- at r=0 every station sees the SAME leeway, the strip sum
@@ -2862,7 +2862,7 @@ function amaDrag(u, v, r, phi, crewPos, end, config) {
   const yAma = ama.spacing * end;
   const yawMomentDrag = -yAma * Fx;
 
-  // --- T4: the ama's own lateral plane (docs/work-order-2026-08-05-
+  // --- T4: the ama's own lateral plane (Archive/work-order-2026-08-05-
   // sterownosc.md) -----------------------------------------------------
   // The ama is a slender float, not a point — it has its own side force and
   // its own yaw damping, by the SAME strip integration hullSideForce already
@@ -2894,7 +2894,7 @@ function amaDrag(u, v, r, phi, crewPos, end, config) {
   const yAmaSurge = r * yAma; // rigid-body surge correction at the ama's own fixed lateral offset
   const uAma = u - yAmaSurge;
   const dAama = amaLateralAreaFull / AMA_STATIONS;
-  // K5 (docs/work-order-2026-08-09-kryterium-bez-wiosla.md, = S11 from the
+  // K5 (Archive/work-order-2026-08-09-kryterium-bez-wiosla.md, = S11 from the
   // 08-02 work order): the ama's own centre of lateral resistance migrates
   // with drift angle by the SAME mechanism D1 gave the hull (ADR 0032,
   // hullSideForce's own csLin/csVtx split above) -- T4 already made the
@@ -3056,7 +3056,7 @@ const HOLD_FRAC = 0.5;
 // [-1, 1] (plus a little past -1 in the capped capsizing-arm reversal): how
 // much of the float's weight-or-buoyancy is currently engaged, from the
 // ease-in at absPhi=0 through the flat hold to the capsizing-arm reversal.
-// Factored out of rollRestoreMoment (S8, docs/work-order-2026-08-02-
+// Factored out of rollRestoreMoment (S8, Archive/work-order-2026-08-02-
 // steering-and-sources.md) so heaveVerticalForce below can read the SAME
 // engagement the roll moment already uses, rather than a second, drifting
 // copy of this shape — the two must agree for the same reason
@@ -3162,7 +3162,7 @@ function heaveDampingForce(w, config) {
   return -config.heave.dampingCoeff * w;
 }
 
-// --- Pitch, the 6th DOF (L5, docs/work-order-2026-08-09-domkniecie-
+// --- Pitch, the 6th DOF (L5, Archive/work-order-2026-08-09-domkniecie-
 // kryterium.md) -------------------------------------------------------------
 // crewPitchMoment(crewPosX, config) -> N*m, the one control-driven pitching
 // moment this model has -- the SAME structure crewRollMoment already uses
@@ -3466,7 +3466,7 @@ function computeForces(state, controls, config) {
   const Mdamp = rollDampingMoment(state.p, config);
   const Mroll = Msail + Mrestore + Mcrew + Mdamp;
 
-  // Heave (S8, the 5th DOF, docs/work-order-2026-08-02-steering-and-
+  // Heave (S8, the 5th DOF, Archive/work-order-2026-08-02-steering-and-
   // sources.md): the sail's own vertical force component (aero.Fz, computed
   // since before S8 but never consumed) plus the ama's net buoyancy-minus-
   // weight contribution (stability.js amaVerticalForce) — the two forces
@@ -3478,7 +3478,7 @@ function computeForces(state, controls, config) {
   const Famaz = amaVerticalForce(state.phi, config);
   const Fz = aero.Fz + Famaz;
 
-  // Pitch (L5, the 6th DOF, docs/work-order-2026-08-09-domkniecie-
+  // Pitch (L5, the 6th DOF, Archive/work-order-2026-08-09-domkniecie-
   // kryterium.md): the crew's fore-aft weight is the one control-driven
   // pitching moment this model has (the same status crewRollMoment has for
   // roll) — the hull's own hydrostatic restoring stiffness and damping are
@@ -3838,7 +3838,7 @@ const HEADING_HOLD_TOLERANCE = 15 * DEG__b10;
 // two-regime brailWind characteristic makes a partial carrot pull a real
 // candidate for the polar-optimal deep trim, not just a survival/panic
 // control.
-// P2 (docs/work-order-2026-07-22.md, docs/diagnostic-2026-07-22-residuary-hump.md
+// P2 (Archive/work-order-2026-07-22.md, Archive/diagnostic-2026-07-22-residuary-hump.md
 // Result 5): the OLD gate required 10 CONSECUTIVE per-step samples each
 // within 0.01 m/s of the last one, reset to zero by a single noisy tick —
 // with maxSeconds=25 that left only ~15s for acceleration, and some
@@ -4092,14 +4092,14 @@ const MS_TO_KN = 1.9438;
 // recording's codeVersion is meaningful (harness/replay.js warns on
 // mismatch) for a downloaded bundle without requiring a build step for
 // plain `python3 -m http.server` development.
-const CODE_VERSION = "e14d644";
+const CODE_VERSION = "fc75939+dirty";
 // BUILD_TIME: same pattern as CODE_VERSION above — tools/bundle.js
 // replaces this with the COMMIT's timestamp (not wall-clock build time),
 // so it stays stable across re-bundling the same commit and always
 // matches CODE_VERSION's hash. Shown in the bottom-right version footer
 // so a bug report/recording can be tied to an exact, dated build without
 // having to separately ask "which commit was this."
-const BUILD_TIME = "2026-08-10T20:25:54+02:00";
+const BUILD_TIME = "2026-08-10T20:37:25+02:00";
 
 // ---------------------------------------------------------------------
 // i18n — EN/PL. Static labels are marked with data-i18n="key" in

@@ -111,7 +111,7 @@ carried by area.
 - **The polar moves, substantially and by design.** Deep courses lose the
   free power the fixed-area model was giving them. Speed bands and
   deep-course acceptance criteria are re-anchored in the same commit; the
-  numbers are in `docs/findings-2026-07-30-physics-audit.md`.
+  numbers are in `Archive/findings-2026-07-30-physics-audit.md`.
 - **`out/polar.csv` regenerated**, and the CI byte-gate fails once by design.
 - **F3(b) is settled by consequence:** the CD column of both aero CSVs is now
   definitively not read by any runtime path. It is kept, and its cross-check

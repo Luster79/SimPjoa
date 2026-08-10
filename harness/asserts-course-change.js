@@ -1,4 +1,4 @@
-// harness/asserts-course-change.js — K3 (docs/work-order-2026-08-09-
+// harness/asserts-course-change.js — K3 (Archive/work-order-2026-08-09-
 // kryterium-bez-wiosla.md): the first measurement of the OTHER half of the
 // success criterion. Every existing course-hold check (S1a/b/c, S2 in
 // asserts-polar-helm.js; C-A/B/C in asserts-deep-course.js) starts the boat
@@ -25,7 +25,7 @@ import { integrate } from '../core/integrator.js';
 import { computePolar, headingHoldRudder } from './polar.js';
 import { DEG, HEADING0, holdsCourse } from './asserts-helpers.js';
 
-// Trims S1c currently finds hold TWA70/TWA90 at TWS6 (docs/work-order-
+// Trims S1c currently finds hold TWA70/TWA90 at TWS6 (Archive/work-order-
 // 2026-08-09's own full-suite measurement). Not re-searched here: S1c is
 // already the authority on which trims hold at these two points, and
 // re-deriving them again would double this file's own cost for no new
@@ -160,7 +160,7 @@ export function check_course_change(config, check, slow) {
   // m/s), so reaching the shunt at all means slowing the boat by trim alone,
   // never the rudder.
   //
-  // M3 (docs/work-order-2026-08-09-domkniecie-kryterium.md) rewrote this
+  // M3 (Archive/work-order-2026-08-09-domkniecie-kryterium.md) rewrote this
   // block twice, and both rewrites came from the source rather than from
   // tuning. The manual's chapter IV gives an explicit ORDER for shunting:
   //   1. "Luzujemy calkowicie szot i gejtawy by zagiel swobodnie odchylil
@@ -187,7 +187,7 @@ export function check_course_change(config, check, slow) {
   // check: everything ramps together over SHUNT_RAMP_SECONDS (depower) and
   // REPOWER_RAMP_SECONDS (the symmetric ramp back afterward).
   //
-  // N4 (docs/work-order-2026-08-10-blok-B.md): the two ramps are NOT
+  // N4 (Archive/work-order-2026-08-10-blok-B.md): the two ramps are NOT
   // interchangeable durations, and finding that out is what this item was
   // for. The 30s depower ramp never capsizes; a 30s REPOWER ramp does --
   // not during the ramp itself, but ~10s into the following hold, once the
@@ -279,7 +279,7 @@ export function check_course_change(config, check, slow) {
     check(`K3: shunt with the oar shipped completes and the new course holds (from TWA90, end=${end})`,
       from.confirmed && slowed && completed && endFlipped && !capsizedRepower &&
       post.excursion <= 15 && post.speedRatio >= 0.5 && post.converged && post.restoring && !post.capsized,
-      `startHoldConfirmed=${from.confirmed} capsizedDuringDepowerRamp=${capsizedRamp} slowedBelowLockout=${slowed} shuntCompleted=${completed} endAfter=${state.end} (expected ${-end}) capsizedDuringRepower=${capsizedRepower} postExcursion=${post.excursion.toFixed(1)}deg converged=${post.converged} restoring=${post.restoring} speedRatio=${(post.speedRatio * 100).toFixed(0)}% capsized=${post.capsized} -- N4 (docs/work-order-2026-08-10-blok-B.md): a 30s repower ramp capsized ~10s into the following hold, once the boat had picked up just enough speed for the sail's heeling moment to overtake the crew's still-building righting moment -- measured (scratch/n4_deadstop_diag.mjs) 30s fails, 40s survives, REPOWER_RAMP_SECONDS=45 for headroom. A genuine oar-free shunt: depower, shunt, repower, hold, all with rudderUp=true from the first step`,
+      `startHoldConfirmed=${from.confirmed} capsizedDuringDepowerRamp=${capsizedRamp} slowedBelowLockout=${slowed} shuntCompleted=${completed} endAfter=${state.end} (expected ${-end}) capsizedDuringRepower=${capsizedRepower} postExcursion=${post.excursion.toFixed(1)}deg converged=${post.converged} restoring=${post.restoring} speedRatio=${(post.speedRatio * 100).toFixed(0)}% capsized=${post.capsized} -- N4 (Archive/work-order-2026-08-10-blok-B.md): a 30s repower ramp capsized ~10s into the following hold, once the boat had picked up just enough speed for the sail's heeling moment to overtake the crew's still-building righting moment -- measured (scratch/n4_deadstop_diag.mjs) 30s fails, 40s survives, REPOWER_RAMP_SECONDS=45 for headroom. A genuine oar-free shunt: depower, shunt, repower, hold, all with rudderUp=true from the first step`,
       null);
   }
 }

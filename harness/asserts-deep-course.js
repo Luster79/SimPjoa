@@ -1,5 +1,5 @@
 // harness/asserts-deep-course.js — split out of the former single-file
-// harness/asserts.js (R13, docs/work-order-2026-07-22.md). Verbatim body,
+// harness/asserts.js (R13, Archive/work-order-2026-07-22.md). Verbatim body,
 // line range 2243-2564 of the pre-split file; see git history
 // for that file's own per-check provenance comments, preserved below unchanged.
 import { integrate } from '../core/integrator.js';
@@ -188,7 +188,7 @@ export function check_deep_course(config, check, slow) {
       const releaseSeconds = 120;
       const releaseControls = { windDirFrom, windSpeed: tws, sheet: sheetDeg * DEG,
         rudder: 0, rudderUp: true, ...trim };
-      // K1 (docs/work-order-2026-08-09-kryterium-bez-wiosla.md): holdsCourse
+      // K1 (Archive/work-order-2026-08-09-kryterium-bez-wiosla.md): holdsCourse
       // replaces the plain integration loop so this check gets the same
       // converged+restoring narrowing as S1a/S1c/S2 -- an average rate under
       // 15deg/min over the window is not the same claim as "the course is
@@ -322,7 +322,7 @@ export function check_deep_course(config, check, slow) {
         : lengthMatch ? `${seriesA.length} steps matched` : `length mismatch: ${seriesA.length} vs ${seriesB.length}`);
   }
 
-  // --- R14 (docs/work-order-2026-07-22.md): simulator.js facade —
+  // --- R14 (Archive/work-order-2026-07-22.md): simulator.js facade —
   // reset() must clear lastForces along with state, not just leave it
   // holding whatever the previous run last computed until the next
   // step(). Invisible in the live UI (which steps every frame right

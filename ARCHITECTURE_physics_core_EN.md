@@ -8,7 +8,7 @@ sign conventions, and the contracts other code relies on.
 
 It deliberately does **not** record how the model got here. Decisions and their
 reasoning live in `docs/adr/`; the evidence behind specific numbers lives in
-`docs/findings-*`; the round-by-round development history is
+`Archive/findings-*`; the round-by-round development history is
 `Archive/ARCHITECTURE_physics_core_EN_2026-08-04_historical.md` and the round
 documents beside it. `docs/README.md` is the index for all of it.
 
@@ -635,8 +635,8 @@ Stated so they are visible and measurable rather than silently missing.
   omission.
 - **The ama's own lateral plane, near parity with the hull's.** `amaDrag`
   computes a real `Fy` and yaw moment via strip integration on the float's own
-  length (T4, docs/work-order-2026-08-05-sterownosc.md), including the same
-  migrating-CLR mechanism D1 gave the hull (K5, docs/work-order-2026-08-09-
+  length (T4, Archive/work-order-2026-08-05-sterownosc.md), including the same
+  migrating-CLR mechanism D1 gave the hull (K5, Archive/work-order-2026-08-09-
   kryterium-bez-wiosla.md — the `csLin`/`csVtx` split and aft-ramped weighting,
   reused verbatim at the ama's own length and its own flow direction). Two
   terms are deliberately left out, not missing by oversight: the cross-flow

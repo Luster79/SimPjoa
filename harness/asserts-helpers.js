@@ -1,5 +1,5 @@
 // harness/asserts-helpers.js — shared constants and probe helpers used
-// across the asserts-*.js check modules (R13, docs/work-order-2026-07-22.md:
+// across the asserts-*.js check modules (R13, Archive/work-order-2026-07-22.md:
 // split out of the former single-file harness/asserts.js).
 import { integrate, computeForces } from '../core/integrator.js';
 import { headingHoldRudder } from './polar.js';
@@ -90,7 +90,7 @@ function yawMomentAtHeading(config, controls, state, dpsiDeg) {
 // holdsCourse(config, controls, state, { windowSeconds }) -> {
 //   excursion, speedRatio, capsized, converged, restoring, slope, finalState }
 //
-// K1 (docs/work-order-2026-08-09-kryterium-bez-wiosla.md): a heading
+// K1 (Archive/work-order-2026-08-09-kryterium-bez-wiosla.md): a heading
 // excursion under a fixed threshold over a fixed window is NOT the same
 // claim as "holds the course permanently" -- the work order's I.2 measured a
 // trim (TWA70, tack=0, crewX=-1) that passes a 60s/15deg excursion test and
@@ -141,7 +141,7 @@ function holdsCourse(config, controls, state, { windowSeconds = 60 } = {}) {
 // holdsCourseActiveTrim(config, controls, state, { windowSeconds,
 //   correctionIntervalSeconds, maxStep }) -> same shape as holdsCourse
 //
-// N3 (docs/work-order-2026-08-10-blok-B.md): a SECOND predicate, not a
+// N3 (Archive/work-order-2026-08-10-blok-B.md): a SECOND predicate, not a
 // replacement for holdsCourse. Two independent findings point at the same
 // question. L3: the source manual's chapter III is written in verbs of
 // continuous motion ("przesuwamy sie", "przyciagamy i luzujemy zagiel") and

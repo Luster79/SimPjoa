@@ -91,7 +91,7 @@ Project documentation follows a layered model to minimize token usage:
 
 - **`CLAUDE.md`** (this file, always loaded) — behavioral rules and the documentation map.
 - **`ARCHITECTURE_physics_core_EN.md`** (always loaded) — high-level context map: modules, boundaries, key patterns, links to deeper docs. (Named `ARCHITECTURE.md` in earlier drafts of this file; the repo has only the `_physics_core_EN` one.)
-- **`docs/<area>.md`** (load on demand) — one file per bounded area (e.g. `docs/battle-engine.md`, `docs/multiplayer.md`, `docs/viewmodels.md`). Read only the file(s) relevant to the current task.
+- **`docs/<area>.md`** (load on demand) — one file per bounded area (e.g. `docs/parameter-register.md`). Read only the file(s) relevant to the current task. Completed work orders and their findings are chronicle, not current state: they live in `Archive/` and are cited from code comments as evidence, not as descriptions of how the code works now.
 - **`docs/adr/NNNN-*.md`** (load on demand) — Architecture Decision Records. Short, dated, append-only. Read when working in an area whose ADR is referenced.
 - **Code-level docs** — KDoc/comments live next to the code. Do not duplicate them in markdown.
 

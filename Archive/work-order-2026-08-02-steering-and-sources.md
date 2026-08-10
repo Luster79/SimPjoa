@@ -1,8 +1,8 @@
 # Lista poprawek — sterowanie żaglami i zakotwiczenie w źródłach
 
 *Last reviewed: 2026-08-09*
-*Wejście: `docs/findings-2026-07-30-physics-audit.md` (wykonanie F1–F16),
-`docs/capsize-margins-2026-07-30.md`, ADR 0006/0007/0008, stan repo na
+*Wejście: `Archive/findings-2026-07-30-physics-audit.md` (wykonanie F1–F16),
+`Archive/capsize-margins-2026-07-30.md`, ADR 0006/0007/0008, stan repo na
 `2d6211d`. Pomiary własne na tym commicie.*
 
 Numeracja `S*` (steering/sources), nowa; nie koliduje z `R*`, `P*` ani `F*`.
@@ -671,7 +671,7 @@ przy teście trim-in.
 Ryzyko do zaplanowania z góry: S2 zmienia równowagę steru na każdym kursie, więc
 **wszystkie asercje kursowe** (D4-1/2/3, C-bearaway, C-A, R7-4c) trzeba
 przemierzyć, a nie tylko te, które akurat spadną. Wzorzec z
-`docs/capsize-margins-2026-07-30.md` — przewidzieć, które upadną, z liczbami,
+`Archive/capsize-margins-2026-07-30.md` — przewidzieć, które upadną, z liczbami,
 przed zmianą — sprawdził się i warto go powtórzyć.
 
 *Wynik: dźwignia CE–CLR zmieniająca znak w dostępnym zakresie sterowania.

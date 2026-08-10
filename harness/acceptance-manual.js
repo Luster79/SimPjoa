@@ -12,7 +12,7 @@
 //
 // Every directional criterion is measured on a GRID of operating points and
 // reported as a tally, not asserted at one hand-picked trim — the method that
-// exposed the sheet-trim steering claim (see docs/findings-2026-07-30).
+// exposed the sheet-trim steering claim (see Archive/findings-2026-07-30).
 //
 // SIGN CONVENTION used throughout: `turn` is in degrees, POSITIVE = the bow
 // moved TOWARD the wind (TWA fell, "ostrzy"/points up), NEGATIVE = the bow
@@ -401,7 +401,7 @@ export function runAcceptance(config) {
 
   // AC-5.3: backwind must be DETECTED and signalled.
   //
-  // tws RE-ANCHORED 6 -> 8 (docs/work-order-2026-08-05-boat-data.md), the
+  // tws RE-ANCHORED 6 -> 8 (Archive/work-order-2026-08-05-boat-data.md), the
   // same "re-find the same physical state" pattern docs/adr/0021 already
   // used for the aback SCENARIO's own wind speed (10 -> 14) and the T6 gust
   // peak (11.5 -> 11.75): the ama's buoyancy revision (example_proa_

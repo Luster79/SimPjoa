@@ -1,7 +1,7 @@
 # ADR 0037 — Mast shadow completes the sheeting floor
 
 *Date: 2026-08-09*
-*L4 of `docs/work-order-2026-08-09-domkniecie-kryterium.md`. Rusza polarę.*
+*L4 of `Archive/work-order-2026-08-09-domkniecie-kryterium.md`. Rusza polarę.*
 
 ## Context
 
@@ -52,7 +52,7 @@ Combined with L5 (pitch), K2's official (narrow-search) coverage snapshot
 moved 20/42 → 21/42 — one point (TWA170/TWS10). L4 alone was not isolated
 against K2; its effect there is folded into that combined delta.
 
-**Erratum (2026-08-10, N1 of `docs/work-order-2026-08-10-blok-B.md`):** the
+**Erratum (2026-08-10, N1 of `Archive/work-order-2026-08-10-blok-B.md`):** the
 narrow-search snapshot above undercounted coverage by construction (missed
 sheet/brail trims outside the polar optimum) and could not isolate L4 from
 L5. Re-measured by union search (polar optimum + wide grid, L5 proven
@@ -63,7 +63,7 @@ already measured above at TWA40/TWS6 (-1.8% speed) showing up on the
 criterion side: the realism gain (blocked flow near head-to-wind) costs the
 criterion side one operating point at the closest-to-wind reaching course in
 scope. Whether to keep L4 for that trade is the owner's call, not resolved
-here — see `docs/work-order-2026-08-10-blok-B.md`, Część II "Ryzyko".
+here — see `Archive/work-order-2026-08-10-blok-B.md`, Część II "Ryzyko".
 
 ## Consequences
 

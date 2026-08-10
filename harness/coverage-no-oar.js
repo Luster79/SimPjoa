@@ -1,4 +1,4 @@
-// harness/coverage-no-oar.js — K2 (docs/work-order-2026-08-09-kryterium-
+// harness/coverage-no-oar.js — K2 (Archive/work-order-2026-08-09-kryterium-
 // bez-wiosla.md): a single coverage number for the project's success
 // criterion ("any course obtainable and permanently holdable without the
 // oar") across the whole polar, instead of six scattered pass/fail lines
@@ -52,7 +52,7 @@ const TACKX_TRIALS = [1, 0.5, -0.5, 0, -1];
 const CREWX_TRIALS = [-1, -0.5, 0, 0.5, 1];
 const STAYS_TRIALS = [1, -1, 0];
 
-// --wide-search (L1, docs/work-order-2026-08-09-domkniecie-kryterium.md):
+// --wide-search (L1, Archive/work-order-2026-08-09-domkniecie-kryterium.md):
 // by default this file freezes sheet/brail at the polar's own SPEED-optimal
 // trim (bestSheetAngle/bestBrailWind) and only searches tackX/crewPosX/stays
 // -- a course that holds rudder-free need not be the fastest one at that
@@ -68,7 +68,7 @@ const WIDE_SEARCH = process.argv.includes('--wide-search');
 // by TACKX*CREWX*STAYS (75), and this is meant to run on a handful of
 // zero-coverage points (--twa=140,150,160), not the full 42-point grid.
 //
-// --dense-sheet (N2, docs/work-order-2026-08-10-blok-B.md): the coarse
+// --dense-sheet (N2, Archive/work-order-2026-08-10-blok-B.md): the coarse
 // {35,55,75} grid is what caused --wide-search's own superset defect (see
 // the comment at sheetBrailPairs below) -- it missed the 16-36deg sheets
 // TWS6's reaching courses actually hold at. The four points still NONE after
@@ -85,7 +85,7 @@ const TWA_LIST = twaArg ? twaArg.slice('--twa='.length).split(',').map(Number) :
 const twsArg = process.argv.find((a) => a.startsWith('--tws='));
 const TWS_LIST = twsArg ? twsArg.slice('--tws='.length).split(',').map(Number) : DEFAULT_TWS_LIST;
 
-// --- M1: static pre-screen (docs/work-order-2026-08-09-domkniecie-kryterium.md)
+// --- M1: static pre-screen (Archive/work-order-2026-08-09-domkniecie-kryterium.md)
 // The 60s integrated screen is what makes --wide-search cost ~9-11h on the
 // full 42-point grid. This rejects hopeless trims WITHOUT integrating: at
 // the settled state, sweep the HEADING alone and read the total yaw moment
@@ -102,7 +102,7 @@ const TWS_LIST = twsArg ? twsArg.slice('--tws='.length).split(',').map(Number) :
 // coverage number outright. Hence a window much wider than the 15deg
 // criterion, and hence --validate-screen, which measures the false-rejection
 // rate directly rather than arguing it.
-// KNOWN UNSAFE as of N1 (docs/work-order-2026-08-10-blok-B.md): the
+// KNOWN UNSAFE as of N1 (Archive/work-order-2026-08-10-blok-B.md): the
 // --validate-screen sample that cleared this (3 points: TWA70/110/160 @
 // TWS6) did not cover the whole grid, and a direct re-check at TWA80/TWS6
 // found a false rejection -- the polar-optimum trial (tackX=1, crewX=-0.5,
@@ -147,7 +147,7 @@ function settledState(config, twa, tws, sheetDeg, brailWind, crewPos) {
   return { state, windDirFrom };
 }
 
-// --no-mast-shadow (N1, docs/work-order-2026-08-10-blok-B.md): re-score
+// --no-mast-shadow (N1, Archive/work-order-2026-08-10-blok-B.md): re-score
 // coverage with L4 (ADR 0037) disabled, to separate its actual effect on
 // the criterion from the union-search fix's own effect -- both landed the
 // same day, and ADR 0037's "Measured" section was written against the

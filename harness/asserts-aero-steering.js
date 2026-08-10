@@ -1,5 +1,5 @@
 // harness/asserts-aero-steering.js — split out of the former single-file
-// harness/asserts.js (R13, docs/work-order-2026-07-22.md). Verbatim body,
+// harness/asserts.js (R13, Archive/work-order-2026-07-22.md). Verbatim body,
 // line range 104-514 of the pre-split file; see git history
 // for that file's own per-check provenance comments, preserved below unchanged.
 import { readFileSync } from 'node:fs';
@@ -132,7 +132,7 @@ export function check_aero_steering(config, check) {
     // wandering off downwind. The check's own stated intent is unchanged: it
     // drifts, it is not stuck, and it does not sail off.
     //
-    // Re-anchored again 2026-08-08 for D1 (docs/work-order-2026-08-05-
+    // Re-anchored again 2026-08-08 for D1 (Archive/work-order-2026-08-05-
     // statecznosc-kierunkowa.md), the migrating centre of lateral resistance.
     // A QUALITATIVE change this time, not just a number: before D1 this state
     // is a sustained limit-cycle yaw oscillation (period ~90s, matching this
@@ -315,7 +315,7 @@ export function check_aero_steering(config, check) {
       .map((c) => `${c.theta}:${c.model.toFixed(2)}/${c.lit.toFixed(2)}`).join(' ');
     check('S4b: driving-force curve matches Di Piazza Fig 4 (Santa Cruz) within +-0.15 across theta 55-180',
       rows.length > 0 && within.length === compared.length,
-      `${within.length}/${compared.length} points in band; worst theta=${worst.theta} model=${worst.model.toFixed(3)} lit=${worst.lit.toFixed(3)} (${(worst.model - worst.lit >= 0 ? '+' : '')}${(worst.model - worst.lit).toFixed(3)}) -- model/lit at theta ${table} -- the model is short close-hauled and long on the broad reach; agreement is within +-9% from theta 85 to 180 and degrades below it, which is the same close-hauled deficit xfail:CALIBRATION tracks from the other side. Reported, not retuned; see docs/findings-2026-08-02 stage 1`,
+      `${within.length}/${compared.length} points in band; worst theta=${worst.theta} model=${worst.model.toFixed(3)} lit=${worst.lit.toFixed(3)} (${(worst.model - worst.lit >= 0 ? '+' : '')}${(worst.model - worst.lit).toFixed(3)}) -- model/lit at theta ${table} -- the model is short close-hauled and long on the broad reach; agreement is within +-9% from theta 85 to 180 and degrades below it, which is the same close-hauled deficit xfail:CALIBRATION tracks from the other side. Reported, not retuned; see Archive/findings-2026-08-02 stage 1`,
       'CALIBRATION');
   }
 

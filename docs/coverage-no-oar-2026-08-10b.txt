@@ -1,7 +1,7 @@
 Coverage snapshot -- ADR 0039 (the restoring probe omitted the hull)
 Date: 2026-08-10, AFTER the corrected `restoring` probe, the corrected K3
 end-mirror, and the existence-search rewrite.
-SUPERSEDES docs/coverage-no-oar-2026-08-10.txt (39/42).
+SUPERSEDES Archive/coverage-no-oar-2026-08-10.txt (39/42).
 
     node harness/coverage-no-oar.js --wide-search
 

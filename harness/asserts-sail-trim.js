@@ -1,5 +1,5 @@
 // harness/asserts-sail-trim.js — split out of the former single-file
-// harness/asserts.js (R13, docs/work-order-2026-07-22.md). Verbatim body,
+// harness/asserts.js (R13, Archive/work-order-2026-07-22.md). Verbatim body,
 // line range 1337-1717 of the pre-split file; see git history
 // for that file's own per-check provenance comments, preserved below unchanged.
 import { integrate } from '../core/integrator.js';

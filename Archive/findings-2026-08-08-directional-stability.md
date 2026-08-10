@@ -82,7 +82,7 @@ precision) is the whole proof, not a sample of it.
 **Conclusion: confirmed, not an oversight.** The non-zero fore-aft moments
 the model does produce all trace to one of the three named, ADR-justified
 shifts (`clrXFraction`: ADR 0016/0017; crew trim: intentional steering
-control; heel: T3, `docs/work-order-2026-08-05-sterownosc.md`). Record this
+control; heel: T3, `Archive/work-order-2026-08-05-sterownosc.md`). Record this
 as settled — no code change.
 
 ## D3 — the ama's own lateral-plane term is bounded by drag×spacing

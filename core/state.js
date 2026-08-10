@@ -33,12 +33,12 @@
 //   it, not because of a frame argument: the yard is not bolted to a fixed
 //   physical side, it swings to whichever side the wind demands (up to the
 //   end-aware chordAngle = end*delta — see aero.js).
-// - Heave: `z` (m) and `w` (m/s), the 5th DOF (S8, docs/work-order-2026-08-02-
+// - Heave: `z` (m) and `w` (m/s), the 5th DOF (S8, Archive/work-order-2026-08-02-
 //   steering-and-sources.md). z is vertical displacement from the DESIGN
 //   waterline, positive = UP (riding higher, less draft than design); w =
 //   dz/dt. Like phi/p, this is a world-vertical, physical-frame quantity —
 //   unaffected by heading and left unchanged at a shunt swap.
-// - Pitch: `theta` (rad) and `q` (rad/s), the 6th DOF (L5, docs/work-order-
+// - Pitch: `theta` (rad) and `q` (rad/s), the 6th DOF (L5, Archive/work-order-
 //   2026-08-09-domkniecie-kryterium.md). theta is the pitch angle, positive
 //   = BOW DOWN (matches crewPosX>0's old direct relationship to the CLR
 //   shift it drives — see hydro.js's clrXPosition); q = dtheta/dt. Like

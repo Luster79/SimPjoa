@@ -329,7 +329,7 @@ and `rudder.Fy`) is deliberately **not** taken yet: the rudder still makes
 moment comparable to the ama's entire righting capacity — a spurious effect
 driven by a known bug. Revisit after F9.
 
-**Prediction scorecard** (from `docs/capsize-margins-2026-07-30.md`): I
+**Prediction scorecard** (from `Archive/capsize-margins-2026-07-30.md`): I
 predicted two failures — the trim-in steering leg and C-A's drift rate. One
 hit (trim-in), one miss (C-A passed), and one not predicted: **R15 moved UP**,
 9.20 -> 9.46, because F11's second `cos(phi)` cuts horizontal side force, hence
@@ -632,7 +632,7 @@ In recommended order:
   own ADR, naturally done with F7's CD-form change.
 - **F14, F16** — after F1, both small, both move the polar.
 - ~~**Capsize-margin recalibration**~~ — **DONE**, see
-  `docs/capsize-margins-2026-07-30.md`. Measured on the post-block-B model by
+  `Archive/capsize-margins-2026-07-30.md`. Measured on the post-block-B model by
   scaling the heel arm (what F12 will do) x1.00-x1.30. Outcome, briefly: the
   capsize margins are **robust** — T6's panic-release legs hold flat at
   15-16 deg phi across the whole range, and no capsize assertion fails at

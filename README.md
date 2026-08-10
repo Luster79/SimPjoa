@@ -291,7 +291,7 @@ Step 2, since the UI doesn't change them):
   slender-body hump on each, not a simulated sea state. The ama had none at
   all until then, while being the shorter body and therefore at the higher
   Froude number. Consequence (P5,
-  docs/work-order-2026-07-22.md): a followed sea is the main real-world
+  Archive/work-order-2026-07-22.md): a followed sea is the main real-world
   cause of yaw-hunting on offwind courses, so the model's stable,
   rudder-free deep-course equilibria are optimistic — they should not be
   read as "this boat holds a dead run hands-off on the water."

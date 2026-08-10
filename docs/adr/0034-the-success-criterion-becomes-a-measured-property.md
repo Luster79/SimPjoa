@@ -1,7 +1,7 @@
 # ADR 0034 — The success criterion becomes a measured property
 
 *Date: 2026-08-09*
-*K1-K3 of `docs/work-order-2026-08-09-kryterium-bez-wiosla.md`.*
+*K1-K3 of `Archive/work-order-2026-08-09-kryterium-bez-wiosla.md`.*
 
 ## Context
 
@@ -109,7 +109,7 @@ time while building the check meant to prevent it recurring.
   follow-up (loosening the trim search K3 uses only two fixed trims per TWA,
   found by S1c — a search across the transit, not just the two endpoints,
   is the natural next step).
-- `docs/coverage-no-oar-2026-08-09.txt` is the first committed coverage
+- `Archive/coverage-no-oar-2026-08-09.txt` is the first committed coverage
   snapshot; future physics changes should cite its delta the way polar
   changes are already cited.
 - K1's predicate is now the standing bar for every future course-hold

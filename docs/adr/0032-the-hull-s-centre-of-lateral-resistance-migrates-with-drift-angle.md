@@ -1,8 +1,8 @@
 # ADR 0032 — The hull's centre of lateral resistance migrates with drift angle
 
 *Date: 2026-08-08*
-*D1 of `docs/work-order-2026-08-05-statecznosc-kierunkowa.md`. Builds on D2-D4
-(`docs/findings-2026-08-08-directional-stability.md`), which cleared the
+*D1 of `Archive/work-order-2026-08-05-statecznosc-kierunkowa.md`. Builds on D2-D4
+(`Archive/findings-2026-08-08-directional-stability.md`), which cleared the
 Munk moment, the ama's own term, and fore-aft symmetry as the source of the
 measured zero hull yaw stiffness, leaving the hull's fixed CLR as the one
 place left to look.*

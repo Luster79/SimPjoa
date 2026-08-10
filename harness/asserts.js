@@ -2,7 +2,7 @@
 // returns an array of { name, pass, detail }; run_tests.js decides the exit
 // code from it.
 //
-// R13 (docs/work-order-2026-07-22.md): this used to be one ~2500-line
+// R13 (Archive/work-order-2026-07-22.md): this used to be one ~2500-line
 // function; the checks now live in harness/asserts-*.js, in the same order
 // they always ran in (each module a contiguous slice of the old file, cut at
 // section boundaries — not reshuffled by theme, so a diff against pre-split
@@ -26,7 +26,7 @@ import { check_course_change } from './asserts-course-change.js';
 // an xfail silently going green means something changed and needs review,
 // not a free pass.
 //
-// slow (R7, docs/work-order-2026-07-22.md): every check that calls
+// slow (R7, Archive/work-order-2026-07-22.md): every check that calls
 // computePolar() runs a sheet/crewPos/brail grid search, each cell its own
 // settle-to-steady simulation — the dominant cost of the whole suite's
 // runtime. Defaults true (the full, `npm run test:full` behavior); the

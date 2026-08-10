@@ -108,7 +108,7 @@ change recommended.
 > on the shipped drag model. Note also that the 6.33 m/s above is the model's FAST
 > branch; `out/polar.csv` reports 4.41 m/s as its maximum at this wind, because the
 > polar's settle gate discards the fast trims. See
-> `docs/diagnostic-2026-07-22-residuary-hump.md`.
+> `Archive/diagnostic-2026-07-22-residuary-hump.md`.
 
 The recordings do show a trim problem, though: all three carry `brailWind = 0.92`,
 well inside the SURVIVAL regime (`sail.brailTrimRange` = 0.6), where CL is cut **x0.2**

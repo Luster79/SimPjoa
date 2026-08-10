@@ -1,7 +1,7 @@
 # ADR 0038 — Pitch is the sixth DOF, and it drives the CLR
 
 *Date: 2026-08-09*
-*L5 of `docs/work-order-2026-08-09-domkniecie-kryterium.md`. Rusza polarę.*
+*L5 of `Archive/work-order-2026-08-09-domkniecie-kryterium.md`. Rusza polarę.*
 
 ## Context
 
@@ -107,7 +107,7 @@ holds `crewPosX=0` (`theta=0`), so pitch is inert there by construction.
 - C-B/C-C: unchanged (still 0/2 both).
 - **K2 (official, narrow-search) coverage: 20/42 → 21/42.** Exactly one
   point flipped (TWA170/TWS10: NONE → HOLDS); every other point's HOLDS/NONE
-  status is unchanged — see `docs/coverage-no-oar-2026-08-09.txt` for the
+  status is unchanged — see `Archive/coverage-no-oar-2026-08-09.txt` for the
   full diff. This is a smaller effect than L2's own diagnosis might suggest,
   and the reason is L1 (same work order): the official K2 search freezes
   sheet at the polar's speed optimum, and L1 found that TWA140-160's real
@@ -118,7 +118,7 @@ holds `crewPosX=0` (`theta=0`), so pitch is inert there by construction.
   widening, not L5's new physics, that resolved the bulk of the
   TWA140-160 zero-coverage finding.
 
-**Erratum (2026-08-10, N1 of `docs/work-order-2026-08-10-blok-B.md`):**
+**Erratum (2026-08-10, N1 of `Archive/work-order-2026-08-10-blok-B.md`):**
 the 20/42 → 21/42 delta above is superseded — the narrow-search snapshot it
 was measured against undercounted by construction (see ADR 0037's own
 erratum). More importantly, **L5 is now proven to have zero effect on any

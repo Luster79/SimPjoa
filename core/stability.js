@@ -45,7 +45,7 @@ const HOLD_FRAC = 0.5;
 // [-1, 1] (plus a little past -1 in the capped capsizing-arm reversal): how
 // much of the float's weight-or-buoyancy is currently engaged, from the
 // ease-in at absPhi=0 through the flat hold to the capsizing-arm reversal.
-// Factored out of rollRestoreMoment (S8, docs/work-order-2026-08-02-
+// Factored out of rollRestoreMoment (S8, Archive/work-order-2026-08-02-
 // steering-and-sources.md) so heaveVerticalForce below can read the SAME
 // engagement the roll moment already uses, rather than a second, drifting
 // copy of this shape — the two must agree for the same reason
@@ -151,7 +151,7 @@ export function heaveDampingForce(w, config) {
   return -config.heave.dampingCoeff * w;
 }
 
-// --- Pitch, the 6th DOF (L5, docs/work-order-2026-08-09-domkniecie-
+// --- Pitch, the 6th DOF (L5, Archive/work-order-2026-08-09-domkniecie-
 // kryterium.md) -------------------------------------------------------------
 // crewPitchMoment(crewPosX, config) -> N*m, the one control-driven pitching
 // moment this model has -- the SAME structure crewRollMoment already uses

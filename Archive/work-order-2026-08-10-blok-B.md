@@ -2,8 +2,8 @@
 
 *Last reviewed: 2026-08-10*
 *Wejście: wykonanie bloku A (M1-M3, Część VI
-`docs/work-order-2026-08-09-domkniecie-kryterium.md`), snapshot
-`docs/coverage-no-oar-2026-08-09.txt` (38/42), ADR 0034-0038. Stan repo na
+`Archive/work-order-2026-08-09-domkniecie-kryterium.md`), snapshot
+`Archive/coverage-no-oar-2026-08-09.txt` (38/42), ADR 0034-0038. Stan repo na
 `ce4f3fa`.*
 
 Numeracja `N*`, nowa; nie koliduje z `M*`, `L*`, `K*`, `S*`, `R*`, `P*`,
@@ -314,7 +314,7 @@ pytanie o Fig 4. Nie strojone.
 **Odkryty po drodze, poważniejszy defekt niż to, co N1 miało zmierzyć:**
 pierwszy przebieg (siatka 42 punktów z `--static-screen`, uruchomiony
 równolegle dla szybkości) dał 6 punktów `NONE` tam, gdzie stary,
-wąski-only snapshot (`docs/coverage-no-oar-2026-08-09.txt`) miał `HOLDS`
+wąski-only snapshot (`Archive/coverage-no-oar-2026-08-09.txt`) miał `HOLDS`
 (TWA130/TWS4, TWA80/90/100/120/TWS6, TWA110/TWS10). To było logicznie
 niemożliwe — poprawiony `--wide-search` zawsze zawiera optimum polary jako
 pierwszą parę, więc jest nadzbiorem wąskiego przeszukiwania; nie może

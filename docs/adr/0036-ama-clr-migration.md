@@ -1,8 +1,8 @@
 # ADR 0036 — The ama's centre of lateral resistance migrates too
 
 *Date: 2026-08-09*
-*K5 of `docs/work-order-2026-08-09-kryterium-bez-wiosla.md` (= S11 of
-`docs/work-order-2026-08-02-steering-and-sources.md`). Rusza polarę.*
+*K5 of `Archive/work-order-2026-08-09-kryterium-bez-wiosla.md` (= S11 of
+`Archive/work-order-2026-08-02-steering-and-sources.md`). Rusza polarę.*
 
 ## Context
 
@@ -10,7 +10,7 @@ S11's original premise — carried from the 08-02 work order into K5 — was
 that `amaDrag` (`core/hydro.js`) gave the ama a single-strip side force,
 unlike `hullSideForce`'s multi-station integration. Re-reading the current
 code before touching it found that premise stale: T4
-(`docs/work-order-2026-08-05-sterownosc.md`) already gave the ama an
+(`Archive/work-order-2026-08-05-sterownosc.md`) already gave the ama an
 11-station strip integration (`AMA_STATIONS`), with its own side force and
 yaw moment. `ARCHITECTURE_physics_core_EN.md`'s own "Known simplifications"
 section said so in its body while its own heading still read "a single
@@ -44,7 +44,7 @@ moment, not longitudinal drag.
 ama/hull drag-ratio anchors R7-4a/R15, F1, all pass with slightly shifted
 numbers).
 
-**K2 coverage** (`docs/coverage-no-oar-2026-08-09.txt`): **20/45 before,
+**K2 coverage** (`Archive/coverage-no-oar-2026-08-09.txt`): **20/45 before,
 20/45 after — same total, different 20.** `TWA80/TWS6` gained (NONE ->
 HOLDS, 0.8deg excursion); `TWA170/TWS10` lost (HOLDS -> NONE). A real trade,
 the same shape D1 itself produced on the hull (ADR 0032: "roughly doubles

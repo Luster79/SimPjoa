@@ -49,7 +49,7 @@ export function computeForces(state, controls, config) {
   const Mdamp = rollDampingMoment(state.p, config);
   const Mroll = Msail + Mrestore + Mcrew + Mdamp;
 
-  // Heave (S8, the 5th DOF, docs/work-order-2026-08-02-steering-and-
+  // Heave (S8, the 5th DOF, Archive/work-order-2026-08-02-steering-and-
   // sources.md): the sail's own vertical force component (aero.Fz, computed
   // since before S8 but never consumed) plus the ama's net buoyancy-minus-
   // weight contribution (stability.js amaVerticalForce) — the two forces
@@ -61,7 +61,7 @@ export function computeForces(state, controls, config) {
   const Famaz = amaVerticalForce(state.phi, config);
   const Fz = aero.Fz + Famaz;
 
-  // Pitch (L5, the 6th DOF, docs/work-order-2026-08-09-domkniecie-
+  // Pitch (L5, the 6th DOF, Archive/work-order-2026-08-09-domkniecie-
   // kryterium.md): the crew's fore-aft weight is the one control-driven
   // pitching moment this model has (the same status crewRollMoment has for
   // roll) — the hull's own hydrostatic restoring stiffness and damping are

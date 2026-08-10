@@ -1,4 +1,4 @@
-Coverage snapshot -- K2, docs/work-order-2026-08-09-kryterium-bez-wiosla.md
+Coverage snapshot -- K2, Archive/work-order-2026-08-09-kryterium-bez-wiosla.md
 node harness/coverage-no-oar.js  [+ --wide-search --static-screen]
 Date: 2026-08-09. Config: createConfig() default (PJOA FOLK). Reflects the
 package's final state after K1-K6, L1-L7 and M1-M3 (all three work-order
@@ -43,7 +43,7 @@ WHAT THIS DOES AND DOES NOT SAY. It is a measurement of the trim space, not a
 statement that the boat sails these courses in practice: holdsCourse freezes
 the trim for 300s, while the source manual's chapter III describes CONTINUOUS
 active trimming and prefaces the whole chapter with "stosowac z umiarem" (use
-with moderation). See L3 in docs/work-order-2026-08-09-domkniecie-kryterium.md
+with moderation). See L3 in Archive/work-order-2026-08-09-domkniecie-kryterium.md
 -- whether the criterion means frozen-trim or actively-trimmed is an open
 question for the owner, and the two are different properties.
 

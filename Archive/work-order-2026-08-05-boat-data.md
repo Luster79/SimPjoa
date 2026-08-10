@@ -86,7 +86,7 @@ identyczny wynik praktyczny — wybrano mniejszą, lepiej uzasadnioną zmianę).
 | `ama_buoyancy_kg` | 60.0 | **84.0** | ×1.40 (liniowo — przekrój ten sam, nie ×1.40³) |
 | `ama.wettedSurface` | 0.5 (literał) | `0.5 * (length/3.2)` | ta sama reguła, jako formuła |
 | `ama.residuaryPeakCr` | 0.006 (= kadłuba) | **0.0024** (×0.4) | osobno szacowany współczynnik |
-| `crew.posMax` | derywowane z `maxBuoyancy` | przeliczone automatycznie | T6, `docs/work-order-2026-08-05-sterownosc.md` |
+| `crew.posMax` | derywowane z `maxBuoyancy` | przeliczone automatycznie | T6, `Archive/work-order-2026-08-05-sterownosc.md` |
 
 `ama_mass_kg` (13 kg) **nie zmienione** — to jedyna zmierzona wartość ('pjoa.eu').
 Ama nadal krótsza od 5.0 m kadłuba (4.48 m).
@@ -169,7 +169,7 @@ funkcji trymu, bez nowego zera powstającego lokalnie w środku.
 ## Rekomendacja
 
 TWA155-165 zostaje udokumentowanym, strukturalnym ograniczeniem — analogicznie
-do `docs/work-order-2026-08-05-sterownosc.md` część IV (TWA160+ przed A+B).
+do `Archive/work-order-2026-08-05-sterownosc.md` część IV (TWA160+ przed A+B).
 Jedyny zmierzony lewar, który by to ruszył (`hull.massSway`), jest jawnie
 odłożony (koliduje z ADR 0018, decyzja użytkownika). Poza nim: `T1-T4` (rig +
 ama trim) i A+B (dane amy) wyczerpują mechanizmy dostępne bez (a) nowego

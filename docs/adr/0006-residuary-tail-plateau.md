@@ -12,7 +12,7 @@ so residuary resistance at high speed drops back to essentially
 friction-only.
 
 `harness/polar.js`'s steady-state settle gate had an independent bug
-(fixed here as P2, docs/work-order-2026-07-22.md): it accepted a boat as
+(fixed here as P2, Archive/work-order-2026-07-22.md): it accepted a boat as
 "settled" after 10 *consecutive* per-step deltas below a tight threshold,
 which a boat riding up the residuary hump's slower shoulder — genuinely
 still accelerating, just slowly — could satisfy long before actually
@@ -22,7 +22,7 @@ trailing-window spread check) let the polar sweep actually reach that
 branch, the polar's peak speed at TWS=6 jumped from ~4.4 m/s to ~7.6 m/s,
 resurfacing the exact 100-500x-style unboundedness ADR 0001 was written to
 eliminate, just on the falling side of the hump instead of a hard wall
-above it (see `docs/diagnostic-2026-07-22-residuary-hump.md` for the full
+above it (see `Archive/diagnostic-2026-07-22-residuary-hump.md` for the full
 numeric trace, including a plateau-value sweep from 0.05 to 0.25).
 
 A slender hull's residuary resistance falling all the way back to

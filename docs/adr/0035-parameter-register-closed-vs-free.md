@@ -1,7 +1,7 @@
 # ADR 0035 — Parameter register: closed by source vs. free in band
 
 *Date: 2026-08-09*
-*K6 of `docs/work-order-2026-08-09-kryterium-bez-wiosla.md`.*
+*K6 of `Archive/work-order-2026-08-09-kryterium-bez-wiosla.md`.*
 
 ## Context
 

@@ -1,8 +1,8 @@
 # Lista poprawek do wykonania
 
 *Last reviewed: 2026-07-22*
-*Źródła: `docs/review-2026-07-22-maturity.md` (punkty otwarte),
-`docs/review-2026-07-22-response.md`, `docs/diagnostic-2026-07-22-residuary-hump.md`.*
+*Źródła: `Archive/review-2026-07-22-maturity.md` (punkty otwarte),
+`Archive/review-2026-07-22-response.md`, `Archive/diagnostic-2026-07-22-residuary-hump.md`.*
 
 Jeden plik zbiera wszystko, co pozostaje do zrobienia. Numeracja `R*` odsyła do
 punktów review, `P*` to pozycje z diagnostyki fizyki. Każda pozycja ma
@@ -255,4 +255,4 @@ Wycofane: **R5** (patrz wyżej — przesłanka okazała się nieprawdziwa).
 - **R10 — lint/formater/typy.** Brak konfiguracji. Niezależne od fizyki,
   do zrobienia w dowolnym momencie.
 
-Dowody i pomiary: `docs/findings-2026-07-22-work-order.md`.
+Dowody i pomiary: `Archive/findings-2026-07-22-work-order.md`.

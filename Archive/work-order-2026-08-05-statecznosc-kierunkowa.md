@@ -143,7 +143,7 @@ podniesienie `massSway` odwraca cztery reguły sterowania z instrukcji.
 **Weryfikacja.** Notatka w findings z porównaniem do Clarke'a i wnioskiem
 „obronione / nieobronione", bez dotykania kodu.
 
-**Wynik (`docs/findings-2026-08-08-directional-stability.md`).** Obronione —
+**Wynik (`Archive/findings-2026-08-08-directional-stability.md`).** Obronione —
 ADR 0018 samo jest tym audytem i jego liczby wciąż się zgadzają: model niesie
 455 kg dodanej masy bocznej wobec ~1010 kg z regresji Clarke'a (mniej niż
 połowa, nie więcej), a łączny moment Munk+kadłub trzyma się stałych 0.65
@@ -184,7 +184,7 @@ tych trzech przesunięć — nie ma więc czego więcej sprawdzać. Niezerowe mo
 które model daje, zawsze dają się przypisać jednemu z tych trzech, uzasadnionych
 ADR-ami członów. Kod nietknięty.
 
-**Dowód razem z pełnym pomiarem D2-D3: `docs/findings-2026-08-08-directional-stability.md`.**
+**Dowód razem z pełnym pomiarem D2-D3: `Archive/findings-2026-08-08-directional-stability.md`.**
 
 ---
 
@@ -206,7 +206,7 @@ ADR-ami członów. Kod nietknięty.
 2. **D3** → weryfikacja: człon amy mieści się w niezależnej granicy. *(tanie)*
 3. **D2** → weryfikacja: notatka „obronione / nie", kod nietknięty. *(tanie)*
 4. **D1** → osobna runda, własna re-walidacja marginesów wywrotki na wzór
-   `docs/capsize-margins-2026-07-30.md`, regeneracja polara, przegląd każdej
+   `Archive/capsize-margins-2026-07-30.md`, regeneracja polara, przegląd każdej
    asercji sterowania. *(kosztowne, blokujące dla `S1a`/`S1b`/`C-A`/`C-B`/`C-C`)*
 
 **Odbiór całości:** `dM/dTWA > 0` na TWA90–175 przy trymie neutralnym —

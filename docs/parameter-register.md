@@ -2,7 +2,7 @@
 
 *Last reviewed: 2026-08-09*
 
-K6, `docs/work-order-2026-08-09-kryterium-bez-wiosla.md`. The project's
+K6, `Archive/work-order-2026-08-09-kryterium-bez-wiosla.md`. The project's
 success criterion (`docs/README.md`) grants a licence: physical
 characteristics may be manipulated "within a limited range — in particular
 where a characteristic is unknown or known only approximately." The project's

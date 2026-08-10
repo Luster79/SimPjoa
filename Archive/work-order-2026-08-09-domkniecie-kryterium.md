@@ -2,8 +2,8 @@
 
 *Last reviewed: 2026-08-10*
 *Wejście: kryterium sukcesu i jego zakres (`docs/README.md`), wykonanie K1-K6
-(`docs/work-order-2026-08-09-kryterium-bez-wiosla.md`, Część V), ADR 0034/0035/0036,
-snapshot `docs/coverage-no-oar-2026-08-09.txt`. Pomiary własne na stanie repo po K1-K6.*
+(`Archive/work-order-2026-08-09-kryterium-bez-wiosla.md`, Część V), ADR 0034/0035/0036,
+snapshot `Archive/coverage-no-oar-2026-08-09.txt`. Pomiary własne na stanie repo po K1-K6.*
 
 Numeracja `L*` (luki), nowa; nie koliduje z `K*`, `S*`, `R*`, `P*`, `F*`, `T*`
 ani `D*`. Konwencja jak w poprzednich work orderach: *Naprawa:*, **Odbiór:**,

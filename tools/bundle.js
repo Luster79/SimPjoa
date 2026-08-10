@@ -157,7 +157,7 @@ function currentCodeVersion() {
   }
 }
 
-// R2 (docs/work-order-2026-07-22.md): '+dirty' is honest but, built the
+// R2 (Archive/work-order-2026-07-22.md): '+dirty' is honest but, built the
 // ordinary way — commit source changes and the freshly rebuilt dist/ file
 // together in ONE commit — it is also PERMANENT: at the moment this script
 // runs, the dist/ file it is about to write is itself still uncommitted

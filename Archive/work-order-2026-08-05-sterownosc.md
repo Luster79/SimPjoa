@@ -251,7 +251,7 @@ the length ratio" w `example_proa_parameters.csv`, nie pomiarem. Policzone mimo
 to, wynikowe kąty wychodzą **rzędu 0,4–2°** — około dziesięciokrotnie mniej niż
 obecne 12°/10°, co skompresowałoby całą obwiednię przechyłu i wymagało
 ponownego przebiegu **każdego** scenariusza wywrotkowego (gust T6, T10, aback)
-— tej samej kampanii co `docs/capsize-margins-2026-07-30.md`. To osobna,
+— tej samej kampanii co `Archive/capsize-margins-2026-07-30.md`. To osobna,
 większa pozycja z własnymi kryteriami odbioru, nie mieści się w T5 i nie została
 zrobiona na wejściu tak niepewnym.
 
@@ -362,7 +362,7 @@ Jedyny pozostały, jawnie odłożony kierunek to **T5's derywacja
 release, a przez to cały budżet momentu (heelMoment żagla, zanurzenie amy,
 wszystko pochodne od `phi`). To NIE jest T5-rozmiaru poprawka: wymaga danych o
 zanurzeniu amy, których projekt nie ma, i pełnej kampanii re-walidacji
-marginesów wywrotki (na wzór `docs/capsize-margins-2026-07-30.md`) — commit
+marginesów wywrotki (na wzór `Archive/capsize-margins-2026-07-30.md`) — commit
 mógłby przesunąć **każdy** próg wywrotkowy w modelu (T6 gust, T10, scenariusz
 aback), nie tylko sterowność.
 

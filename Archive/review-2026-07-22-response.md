@@ -1,7 +1,7 @@
 # Odpowiedź na review dojrzałości z 2026-07-22
 
 *Last reviewed: 2026-07-22*
-*Dotyczy: `docs/review-2026-07-22-maturity.md`. Stan po commicie `59b589e`.*
+*Dotyczy: `Archive/review-2026-07-22-maturity.md`. Stan po commicie `59b589e`.*
 
 ---
 

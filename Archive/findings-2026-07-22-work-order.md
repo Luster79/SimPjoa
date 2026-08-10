@@ -1,4 +1,4 @@
-# Findings: docs/work-order-2026-07-22.md execution
+# Findings: Archive/work-order-2026-07-22.md execution
 
 Date: 2026-07-22
 
@@ -12,7 +12,7 @@ order's own "no urgency" framing; R5 is confirmed withdrawn and untouched.
 `simulateToSteady()`'s old gate (10 *consecutive* per-step deltas below a
 tight threshold, `maxSeconds=25`) discarded trims that were genuinely
 still accelerating but slowly, exactly as
-`docs/diagnostic-2026-07-22-residuary-hump.md` Result 5 found. Replaced
+`Archive/diagnostic-2026-07-22-residuary-hump.md` Result 5 found. Replaced
 with a 10s trailing-window spread check (`SETTLE_SPREAD=0.05` m/s,
 `maxSeconds=35`). Verified against the diagnostic's own TWA100/TWS6/
 sheet16/crewPos0.3 reproduction: now settles at t~29-31s at ~7.38 m/s,

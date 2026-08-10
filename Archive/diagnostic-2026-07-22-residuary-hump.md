@@ -138,7 +138,7 @@ This gate is independent of the drag model. Re-run under plateau 0.25, TWA 100
 / TWS 6 still discards 6.01 m/s as unsettled and accepts 4.47. The
 understatement shrinks from ~70 % to ~34 %; it does not go away.
 
-This is a fourth instance of point 15 in `docs/review-2026-07-22-maturity.md`
+This is a fourth instance of point 15 in `Archive/review-2026-07-22-maturity.md`
 ("the assertion suite does not detect real model changes"), and the sharpest
 one: the other three are assertions that *failed to fire*, whereas this is an
 assertion that was **promoted to green on a rationale measurement falsifies**.

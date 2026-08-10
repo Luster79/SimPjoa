@@ -8,7 +8,7 @@ import { scenarioSquall, scenarioShunt, scenarioAback, scenarioStop, scenarioThr
 import { computePolar, SWEEP_CI } from './harness/polar.js';
 import { toCSV } from './harness/export.js';
 
-// --fast (R7, docs/work-order-2026-07-22.md): skips every computePolar-
+// --fast (R7, Archive/work-order-2026-07-22.md): skips every computePolar-
 // backed assertion (see harness/asserts.js's `slow` param) and the CSV/
 // polar export below — both dominated by grid-search settle-to-steady
 // simulations, the slow part of the ~6min full run. Target <~20s, for a

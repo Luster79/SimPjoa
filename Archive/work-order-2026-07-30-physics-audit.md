@@ -34,7 +34,7 @@ Krytyka poniżej jest krytyką dobrego modelu.
 
 ## Protokół dla zmian ruszających polarę
 
-Obowiązuje ten sam protokół, co w `docs/work-order-2026-07-22.md`: bramka CI
+Obowiązuje ten sam protokół, co w `Archive/work-order-2026-07-22.md`: bramka CI
 porównuje `out/polar.csv` bajt w bajt, pozycje oznaczone **[rusza polarę]**
 z definicji wywalą ją raz. Przeglądasz diff, i jeśli jest zamierzony,
 commitujesz przeliczony plik razem ze zmianą.

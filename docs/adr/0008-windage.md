@@ -68,7 +68,7 @@ Defaults, as labelled band estimates in the same style as `lateralArea`:
   sail coefficients: 94.6 N windage against 13.9 N from the furled rig.
 - Windage is largest close-hauled (highest apparent wind), so upwind speeds
   drop; the measured amount is recorded in
-  `docs/findings-2026-07-30-physics-audit.md`.
+  `Archive/findings-2026-07-30-physics-audit.md`.
 - `out/polar.csv` regenerated, and the CI byte-gate fails once by design.
 - Direction verified: the force is exactly parallel to the apparent wind
   (cos = 1.0000 against the apparent-wind vector).

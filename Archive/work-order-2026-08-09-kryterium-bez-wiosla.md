@@ -318,7 +318,7 @@ C-C 1/2→0/2 (TWA140 miało dobre uśrednione tempo, ale nie zbiegało) — bez
 poluzowania progów.
 
 **K2** (`harness/coverage-no-oar.js`): działa jako raport, snapshot w
-`docs/coverage-no-oar-2026-08-09.txt`.
+`Archive/coverage-no-oar-2026-08-09.txt`.
 
 **K3** (`harness/asserts-course-change.js`): pierwszy pomiar „uzyskiwania"
 kursu. Po drodze złapany i naprawiony błąd w samej sondzie (stały
@@ -363,7 +363,7 @@ w każdym punkcie; fast suite 88/88 bez regresji; **pokrycie K2: 20/45 przed
 i po — ta sama liczba, inne 20 punktów** (TWA80/TWS6 zyskuje, TWA170/TWS10
 traci — prawdziwy handel, ten sam kształt co D1 na kadłubie).
 
-**K2, snapshot końcowy** (po K5, `docs/coverage-no-oar-2026-08-09.txt`):
+**K2, snapshot końcowy** (po K5, `Archive/coverage-no-oar-2026-08-09.txt`):
 **20/45 (44%)**. Wzorzec: TWA80-130 (reaching) i TWA170-180 (bliski
 fordewind, niska prędkość) trzymają szeroko na wszystkich trzech wiatrach;
 TWA40-70 (ostro) i TWA140-160 (głęboki/szeroki) **nie trzymają nigdzie** w
@@ -374,7 +374,7 @@ już pokazywały osobno.
 (`holdsCourse`), `harness/asserts-polar-helm.js` i `asserts-deep-course.js`
 (przepięte), `harness/asserts-course-change.js` (nowy), `harness/coverage-
 no-oar.js` (nowy), `core/hydro.js` (K5). Dokumentacja: ADR 0034/0035/0036,
-`docs/parameter-register.md`, `docs/coverage-no-oar-2026-08-09.txt`,
+`docs/parameter-register.md`, `Archive/coverage-no-oar-2026-08-09.txt`,
 aktualizacje `docs/README.md`/`CLAUDE.md`/`ARCHITECTURE_physics_core_EN.md`.
 Pełny `node run_tests.js` (finalny, po poprawce xfail w K3 — `end=1`
 bearing-away jest jedynym z sześciu kierunków/końców, który się trzyma, więc

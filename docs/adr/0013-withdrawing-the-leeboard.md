@@ -62,7 +62,7 @@ unchecked citation are the same defect.
 
 ## Consequences
 
-The measurements in `docs/findings-2026-08-02` stage 3b were real and are kept,
+The measurements in `Archive/findings-2026-08-02` stage 3b were real and are kept,
 retitled as what they are: what a leeboard-equipped boat would do, not what
 this one does. The board genuinely was a CLR control (66–82° of drift
 authority) and genuinely cost 7.6–14.8 % of speed. None of that was wrong; it

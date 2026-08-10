@@ -1,4 +1,4 @@
-Coverage snapshot -- K2/N1, docs/work-order-2026-08-10-blok-B.md
+Coverage snapshot -- K2/N1, Archive/work-order-2026-08-10-blok-B.md
 node harness/coverage-no-oar.js --wide-search  [--no-mast-shadow for config (b)]
 Date: 2026-08-10. Reflects the package's final state after K1-K6, L1-L7,
 M1-M3 and N1-N5 (blocks A and B of this date).
@@ -6,12 +6,12 @@ M1-M3 and N1-N5 (blocks A and B of this date).
 Grid: TWA 50-180 step 10 x TWS 4/6/10 (42 points). TWA < 50 is OUT OF SCOPE
 by owner decision -- deferred, not solved; see docs/README.md.
 
-This snapshot SUPERSEDES docs/coverage-no-oar-2026-08-09.txt. That file's
+This snapshot SUPERSEDES Archive/coverage-no-oar-2026-08-09.txt. That file's
 90% (38/42) undercounted, because --wide-search at the time REPLACED the
 polar-optimal sheet/brail with a coarse grid instead of adding to it
 (fixed) and because --static-screen (used to speed up that run) has since
 been found to produce false rejections outside the 3-point sample that
-validated it (see N1 in docs/work-order-2026-08-10-blok-B.md). Every
+validated it (see N1 in Archive/work-order-2026-08-10-blok-B.md). Every
 number below is a single-pass --wide-search run WITHOUT --static-screen --
 no union-of-searches trick needed this time, since the fixed wide search is
 already a superset of the narrow one.
@@ -89,7 +89,7 @@ Per-point detail, config (a) current:
 
 WHAT THIS DOES AND DOES NOT SAY. It is a measurement of the trim space, not
 a statement that the boat sails these courses in practice: holdsCourse
-freezes the trim for 300s. N3 (docs/work-order-2026-08-10-blok-B.md) tried
+freezes the trim for 300s. N3 (Archive/work-order-2026-08-10-blok-B.md) tried
 a second predicate with continuous, bounded trim correction and got 0/9 on
 the beat by a different failure mode (safe but wide excursion, not
 capsize) -- see that section for the two numbers side by side. Which

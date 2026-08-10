@@ -235,7 +235,7 @@ export function sailCoefficients(alpha, controls, config, deltaDeg = null) {
   const furl = brailLee * brailWind;
   const areaFactor = areaWindFactor * areaLeeFactor;
 
-  // Mast shadow (L4, docs/work-order-2026-08-09-domkniecie-kryterium.md):
+  // Mast shadow (L4, Archive/work-order-2026-08-09-domkniecie-kryterium.md):
   // sail.deltaMinDeg (ADR 0010) is the ROPE-REACH floor only -- whether the
   // sheet can physically pull the yard's clew in that far. On the PJOA FOLK
   // (8 m^2 sail, 5.0 m hull) that floor is exactly 0 (ADR 0021: "the spar no

@@ -606,7 +606,7 @@ either generic yacht theory, wind-tunnel data on model sails, or towing-tank
 data on other hulls.
 
 Measured by `harness/acceptance-manual.js` (a report, not a build gate — see
-its header for why). Full output: `docs/acceptance-manual-2026-08-03.txt`.
+its header for why). Full output: `Archive/acceptance-manual-2026-08-03.txt`.
 
 **12 PASS, 7 PARTIAL, 0 FAIL, 2 not representable.**
 

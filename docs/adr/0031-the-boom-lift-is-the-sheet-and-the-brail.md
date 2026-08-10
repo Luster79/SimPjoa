@@ -2,7 +2,7 @@
 
 *Date: 2026-08-05*
 *Withdraws `controls.boomLift`, added by T1
-(`docs/work-order-2026-08-05-sterownosc.md`). Corrected by the owner.*
+(`Archive/work-order-2026-08-05-sterownosc.md`). Corrected by the owner.*
 
 ## Context
 

@@ -507,7 +507,7 @@ function buildDefaultConfig(boat = 'default') {
       // 0.25 a full aft trim moves the CLR 0.625 m, i.e. an eighth of the
       // waterline, which is the upper end of what a crew shifting weight in a
       // 5 m canoe can plausibly do to the immersed lateral plane.
-      //   L5 (docs/work-order-2026-08-09-domkniecie-kryterium.md) gave the
+      //   L5 (Archive/work-order-2026-08-09-domkniecie-kryterium.md) gave the
       // boat the real pitch DOF this comment used to say did not exist —
       // this value is now re-anchored onto that DOF's own equilibrium angle
       // (config.pitch.thetaAtFullCrew) inside hydro.js's clrXPosition(),
@@ -517,7 +517,7 @@ function buildDefaultConfig(boat = 'default') {
       // sail/hull can also perturb, not a straight wire from the control.
       crewForeAftTrimCoeff: 0.25,
       crewTrimSign: 1,                     // +-1 — flips the crewPosX->CLR-shift direction; verified empirically (forward crew -> luff)
-      // heelClrShiftCoeff / heelClrSign (T3, docs/work-order-2026-08-05-
+      // heelClrShiftCoeff / heelClrSign (T3, Archive/work-order-2026-08-05-
       // sterownosc.md): the hull's own half of the heel-to-yaw coupling — see
       // hydro.js's stationWeights for the mechanism (a heeled V-hull's
       // lateral-plane distribution shifts fore-aft, the standard simplified
@@ -544,7 +544,7 @@ function buildDefaultConfig(boat = 'default') {
       // model has the rig half and not the hull half. **A partial model of a
       // cancelling pair has an essentially arbitrary sign.**
       //
-      // T3 (docs/work-order-2026-08-05-sterownosc.md) BUILT the missing hull
+      // T3 (Archive/work-order-2026-08-05-sterownosc.md) BUILT the missing hull
       // half — hydro.js's stationWeights, driven by hull.heelClrShiftCoeff/
       // heelClrSign — and re-ran the SAME matrix at all four sign
       // combinations of (heelClrSign, yawHeelSign), against the CURRENT
@@ -635,7 +635,7 @@ function buildDefaultConfig(boat = 'default') {
       // see core/hydro.js's amaDrag for why this, and not the form factor, is
       // the honest home for the ama's steering authority.
       //
-      // REVISED (docs/work-order-2026-08-05-boat-data.md) from equal to the
+      // REVISED (Archive/work-order-2026-08-05-boat-data.md) from equal to the
       // hull's own 0.006 down to 0.4x that (0.0024). The equal setting was
       // stated as "the conservative choice" precisely because it was not
       // measured; a longer, more slender float (this round's own ama.length
@@ -758,7 +758,7 @@ function buildDefaultConfig(boat = 'default') {
         if (sparLength <= p.boat_length_m) return 0;
         return Math.acos(p.boat_length_m / sparLength) * 180 / Math.PI;
       })(),
-      // mastShadowWidthDeg / mastShadowCLFactor (L4, docs/work-order-2026-08-
+      // mastShadowWidthDeg / mastShadowCLFactor (L4, Archive/work-order-2026-08-
       // 09-domkniecie-kryterium.md): see aero.js's sailCoefficients for the
       // mechanism and why ADR 0010 declined to add this term at the time
       // (this boat's deltaMinDeg=0 gives it a consumer that did not exist
@@ -846,7 +846,7 @@ function buildDefaultConfig(boat = 'default') {
       // luffing/yaw moment (-yCE*Fx in aero.js's yawMoment), which is the
       // mechanism the manual's downwind "carrot" technique relies on.
       //
-      // DERIVED (T2, docs/work-order-2026-08-05-sterownosc.md), not hand-set.
+      // DERIVED (T2, Archive/work-order-2026-08-05-sterownosc.md), not hand-set.
       // F4 already treats the brail as acting through AREA: at brailWind=1 the
       // working area falls to areaAtFullBrail (0.20) of the full sail. Under a
       // self-similar-shrink assumption -- the gathered working area is
@@ -928,7 +928,7 @@ function buildDefaultConfig(boat = 'default') {
       return {
         mass: CREW_MASS_KG,
         posMin: -0.3,
-        // posMax (T6, docs/work-order-2026-08-05-sterownosc.md): hydro.js's
+        // posMax (T6, Archive/work-order-2026-08-05-sterownosc.md): hydro.js's
         // amaDrag derives crewOnAma = crewPos*crew.mass/ama.maxBuoyancy, and
         // says outright that crewPos above ama.maxBuoyancy/crew.mass asks for
         // more than the float can carry, so it goes under. That ratio is
@@ -944,7 +944,7 @@ function buildDefaultConfig(boat = 'default') {
       };
     })(),
 
-    // --- Heave, the 5th DOF (S8, docs/work-order-2026-08-02-steering-and-
+    // --- Heave, the 5th DOF (S8, Archive/work-order-2026-08-02-steering-and-
     // sources.md) -----------------------------------------------------------
     // Fz (the sail's vertical force component from heel, aero.js) and the
     // ama's own net buoyancy-minus-weight when pressed or lifted (stability.js
@@ -958,13 +958,13 @@ function buildDefaultConfig(boat = 'default') {
     // calculation this project has no source for.
     heave: heaveResult,
 
-    // --- Pitch, the 6th DOF (L5, docs/work-order-2026-08-09-domkniecie-
+    // --- Pitch, the 6th DOF (L5, Archive/work-order-2026-08-09-domkniecie-
     // kryterium.md) --------------------------------------------------------
     // Fore-aft trim (crewPosX) has existed since the start only as a
     // phenomenological CLR shift in hydro.js's clrXPosition() -- hull.
     // crewForeAftTrimCoeff's own comment says outright "there is no pitch
     // DOF behind it... do not raise it further without a real pitch model
-    // to justify it." L2 (docs/work-order-2026-08-09-domkniecie-kryterium.md)
+    // to justify it." L2 (Archive/work-order-2026-08-09-domkniecie-kryterium.md)
     // found TWA140-160 is a genuine STIFFNESS deficit dominated by the
     // sail's own yaw moment, not an authority one -- exactly the kind of gap
     // a real trim DOF (changing wetted length / lateral-plane distribution
@@ -1027,7 +1027,7 @@ function buildDefaultConfig(boat = 'default') {
       // give a period inside 1.5-4 s and settle (|phi|<0.4deg) within 2-4
       // oscillation periods.
       //
-      // RE-MEASURED (T5, docs/work-order-2026-08-05-sterownosc.md) at the
+      // RE-MEASURED (T5, Archive/work-order-2026-08-05-sterownosc.md) at the
       // current (docs/adr/0021) stiffness, since these two predate that
       // re-parameterisation: an 8deg step-response probe gives a 3.00 s
       // period (target 1.5-4 s) settling in 2.29 oscillation periods (target
@@ -1060,7 +1060,7 @@ function buildDefaultConfig(boat = 'default') {
       // which would compress the whole roll envelope and require re-running
       // every capsize-margin scenario (T6's gust, T10, the aback scenario)
       // against a new operating point, the same "margin sweep run as a
-      // precondition" campaign docs/capsize-margins-2026-07-30.md was for.
+      // precondition" campaign Archive/capsize-margins-2026-07-30.md was for.
       // That is real work with its own acceptance criteria, not a T5-sized
       // item, and is not done here on an input this uncertain. What T5 DOES
       // fix is the config-level guard that would have caught the next silent
@@ -1169,7 +1169,7 @@ function buildDefaultConfig(boat = 'default') {
 // snapshot's absolute camber is already represented by the table itself.
 //
 // crew.posMax has the same problem for the same reason (T6,
-// docs/work-order-2026-08-05-sterownosc.md): it used to be a free 0-2 value,
+// Archive/work-order-2026-08-05-sterownosc.md): it used to be a free 0-2 value,
 // and is now derived from ama.maxBuoyancy/crew.mass and checked against it.
 // A recording made before that derivation existed can carry a posMax that
 // exceeds the ratio implied by the CURRENT boat (this fixture's own
@@ -1225,7 +1225,7 @@ export function validateConfig(config) {
   inRange(config.sail.brailTrimRange, 0.01, 0.99, 'sail.brailTrimRange');
   inRange(config.crew.posMin, -1, 0, 'crew.posMin');
   inRange(config.crew.posMax, 0, 2, 'crew.posMax');
-  // T6 (docs/work-order-2026-08-05-sterownosc.md): crew.posMax must not let
+  // T6 (Archive/work-order-2026-08-05-sterownosc.md): crew.posMax must not let
   // the crew ask the ama for more buoyancy than it has — see hydro.js's
   // amaDrag and crew.posMax's own comment above. Re-checked here, not just
   // set correctly by default, so a config patch that changes ama.maxBuoyancy
@@ -1251,7 +1251,7 @@ export function validateConfig(config) {
   inRange(config.crew.posXMax, 0, 1, 'crew.posXMax');
   if (!(config.stability.phiCapsizeDeg > config.stability.phiLiftoffDeg)) errs.push('stability.phiCapsizeDeg must be > phiLiftoffDeg');
   if (!(config.stability.phiCapsizeDeg > config.stability.phiSubmergeDeg)) errs.push('stability.phiCapsizeDeg must be > phiSubmergeDeg');
-  // T5 (docs/work-order-2026-08-05-sterownosc.md): a SANITY band, not a
+  // T5 (Archive/work-order-2026-08-05-sterownosc.md): a SANITY band, not a
   // precise derivation — see stability.phiLiftoffDeg's own comment for why a
   // tight geometric bound is not available. Ties phiLiftoffDeg/phiSubmergeDeg
   // to ama.length (a scaled, known quantity) rather than leaving them free of

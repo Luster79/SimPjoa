@@ -1,5 +1,5 @@
 // harness/asserts-hull-ama.js — split out of the former single-file
-// harness/asserts.js (R13, docs/work-order-2026-07-22.md). Verbatim body,
+// harness/asserts.js (R13, Archive/work-order-2026-07-22.md). Verbatim body,
 // line range 1945-2242 of the pre-split file; see git history
 // for that file's own per-check provenance comments, preserved below unchanged.
 import { readFileSync } from 'node:fs';
@@ -85,7 +85,7 @@ export function check_hull_ama(config, check, slow) {
     check('R7-4a: ama/hull drag ratio at max immersion is in [0.15,0.45] (re-derived R9-3 for the physical formFactor range)',
       maxRatio >= 0.15 && maxRatio <= 0.45, `ratio=${maxRatio.toFixed(3)}`);
 
-    // R15 (docs/work-order-2026-07-22.md): the ratio checks above are
+    // R15 (Archive/work-order-2026-07-22.md): the ratio checks above are
     // insensitive to a change that moves ama and hull drag by the same
     // factor (a ratio-only suite misses that entirely — the same class of
     // gap the review found with sail.area). A narrow absolute band on the
@@ -107,7 +107,7 @@ export function check_hull_ama(config, check, slow) {
     // fall. The R7-1 RATIO anchor this check is justified by is unchanged and
     // still satisfied -- see the two ratio checks above.
     // Re-anchored again [4.6,5.0] -> [4.9,5.3] for the boat-data campaign
-    // (docs/adr/0029, docs/work-order-2026-08-05-boat-data.md): ama length +
+    // (docs/adr/0029, Archive/work-order-2026-08-05-boat-data.md): ama length +
     // wetted surface x1.40 raises drag (4.81 -> 5.07 measured), only partly
     // offset by the accompanying residuaryPeakCr cut. Same re-finding of the
     // physical state ADR 0021 itself used, not a loosened claim -- width and

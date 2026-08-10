@@ -1,5 +1,5 @@
 // harness/asserts-polar-helm.js — split out of the former single-file
-// harness/asserts.js (R13, docs/work-order-2026-07-22.md). Verbatim body,
+// harness/asserts.js (R13, Archive/work-order-2026-07-22.md). Verbatim body,
 // line range 515-898 of the pre-split file; see git history
 // for that file's own per-check provenance comments, preserved below unchanged.
 import { integrate } from '../core/integrator.js';
@@ -55,7 +55,7 @@ export function check_polar_helm(config, check, slow) {
   // rather than block the build over an honestly-reported, unresolved
   // gap) — see ROUND10_data_integration_findings.md.
   //
-  // Closed for real by P1+P2 (docs/work-order-2026-07-22.md), not by any
+  // Closed for real by P1+P2 (Archive/work-order-2026-07-22.md), not by any
   // close-hauled-specific fix: bySpeed(40) is untouched by either change
   // (a slow beat, nowhere near the residuary hump), but globalMax was
   // wrong the whole time it stayed in-band — harness/polar.js's settle
@@ -195,7 +195,7 @@ export function check_polar_helm(config, check, slow) {
       const controls = { windDirFrom, windSpeed: row.tws, sheet: row.bestSheetAngle * DEG, rudder: 0,
         rudderUp: oarUp, brailLee: 0, brailWind: row.bestBrailWind, crewPos: row.bestCrewPos,
         crewPosX, tackX, stays, shuntRequest: false };
-      // K1 (docs/work-order-2026-08-09-kryterium-bez-wiosla.md): the release
+      // K1 (Archive/work-order-2026-08-09-kryterium-bez-wiosla.md): the release
       // window itself is unchanged (60s, round 10d's own H1 window) -- only
       // the predicate got narrower. holdsCourse() adds `converged` (the
       // drift in the window's last third must be at most a third of the
@@ -254,7 +254,7 @@ export function check_polar_helm(config, check, slow) {
       nSailing === shipped.length,
       `${nSailing}/${shipped.length} points still sailing, ${nCapsized} capsized -- ` +
       shipped.map((s) => `TWS${s.tws}/TWA${s.twa}:->TWA${s.twaAfter.toFixed(0)} v${(s.speedRatio * 100).toFixed(0)}%${s.converged ? '' : ' NOT-CONVERGED'}${s.capsized ? ' CAPSIZED' : ''}`).join(' ') +
-      ' -- measured with BOTH trim controls at neutral, which is what this line is for: it is the boat with the oar out of the water and nobody trimming it. What the trim controls can do about it is S1c below, which now holds 6/6 (T4, docs/work-order-2026-08-05-sterownosc.md) -- the claim this line used to carry, that no tack setting rescues any of them, was measured before the hull could weathercock and is false now. See docs/adr/0017',
+      ' -- measured with BOTH trim controls at neutral, which is what this line is for: it is the boat with the oar out of the water and nobody trimming it. What the trim controls can do about it is S1c below, which now holds 6/6 (T4, Archive/work-order-2026-08-05-sterownosc.md) -- the claim this line used to carry, that no tack setting rescues any of them, was measured before the hull could weathercock and is false now. See docs/adr/0017',
       'STEERING');
 
     // (b2) S1c -- the actual capability the manual describes, and the one the
@@ -264,7 +264,7 @@ export function check_polar_helm(config, check, slow) {
     // manual's rule I couples them (aft crew bears away, tack forward bears
     // away) and neither alone has the authority.
     //
-    // PROMOTED (T4, docs/work-order-2026-08-05-sterownosc.md): was 0/6 before
+    // PROMOTED (T4, Archive/work-order-2026-08-05-sterownosc.md): was 0/6 before
     // ADR 0017's hull strip integration, 3/6 after it (the three points that
     // still failed all failed at the same corner of the search — tack fully
     // forward, crew fully aft — an authority limit, not a stability one: at
@@ -314,7 +314,7 @@ export function check_polar_helm(config, check, slow) {
       nShippedHeld === shippedHolders.length,
       `${nShippedHeld}/${shippedHolders.length} points hold -- ` +
       shippedHolders.map((h) => `TWS${h.tws}/TWA${h.twa}:${h.found.length ? `tack=${h.found[0].t} crewX=${h.found[0].x} exc=${h.found[0].excursion.toFixed(1)}deg v=${(h.found[0].speedRatio * 100).toFixed(0)}%` : 'none'}`).join(' ') +
-      ' -- was 0/6 before the hull\'s side force was strip-integrated (docs/adr/0017), 3/6 after it, 6/6 since the ama gained its own lateral plane (T4), 4/6 since S8\'s heave-draft coupling changed the same hull hydrodynamics (docs/adr/0033). K1 (docs/work-order-2026-08-09) additionally requires the hold to be converging with a restoring moment, not just under the excursion band at 60s -- see this check\'s own comment',
+      ' -- was 0/6 before the hull\'s side force was strip-integrated (docs/adr/0017), 3/6 after it, 6/6 since the ama gained its own lateral plane (T4), 4/6 since S8\'s heave-draft coupling changed the same hull hydrodynamics (docs/adr/0033). K1 (Archive/work-order-2026-08-09) additionally requires the hold to be converging with a restoring moment, not just under the excursion band at 60s -- see this check\'s own comment',
       'STEERING');
 
     // (c) S2's payoff, and the reason S1a is left failing rather than
@@ -366,7 +366,7 @@ export function check_polar_helm(config, check, slow) {
     // estimated -- the boat has enough directional stability of its own for
     // the tack to trim against. TWA110, which had been the stubborn corner
     // through three separate attempts, holds at 0.2deg of excursion.
-    // K1 (docs/work-order-2026-08-09) re-measured this with the narrower
+    // K1 (Archive/work-order-2026-08-09) re-measured this with the narrower
     // converged+restoring predicate -- see the check's own detail line for
     // whether it still passes.
     check('S2: with rig trim alone (tack + stays), a rudder-free course hold exists at every operating point, converging with a restoring moment (round 10d H1 ceiling, 15deg/60s)',
@@ -475,7 +475,7 @@ export function check_polar_helm(config, check, slow) {
   // Round 10's promotion rationale ("the weaker Di Piazza-anchored sail no
   // longer generates enough drive anywhere in the polar to reach that
   // breakthrough regime ... the boat just doesn't reach it anymore at this
-  // sail power") was FALSIFIED by docs/diagnostic-2026-07-22-residuary-
+  // sail power") was FALSIFIED by Archive/diagnostic-2026-07-22-residuary-
   // hump.md Result 5: the boat did still reach the breakthrough regime the
   // whole time — harness/polar.js's settle gate (fixed as P2, docs/work-
   // order-2026-07-22.md) was discarding those still-accelerating trims as
@@ -503,7 +503,7 @@ export function check_polar_helm(config, check, slow) {
       `worstDrop=${(worstDrop * 100).toFixed(1)}% at twa=${worstTwa}`);
   }
 
-  // R15 (docs/work-order-2026-07-22.md): a narrow absolute band, anchored
+  // R15 (Archive/work-order-2026-07-22.md): a narrow absolute band, anchored
   // post-P1 — the review that prompted this item found a +2% sail.area
   // change moved 42 of 43 polar rows without tripping any assertion (only
   // the committed out/polar.csv byte-gate caught it, and that gate is a
