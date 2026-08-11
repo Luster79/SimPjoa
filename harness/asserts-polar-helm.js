@@ -418,7 +418,12 @@ export function check_polar_helm(config, check, slow) {
     // fast one": TWA160/TWS6 holds at 55 against an optimum near 84). Ordered
     // with the polar optimum first, then the sheet angles that have actually
     // won before, so the early exit pays off on the points that hold.
-    const S3_CREWPOS = [0, 0.3, 0.6, 1.0];
+    // S3_CREWPOS's top value is config.crew.posMax, not a bare 1.0 (O7,
+    // docs/work-order-2026-08-10-ostrzenie.md) -- posMax is where the crew's
+    // own weight sinks the ama outright and the UI already clamps every
+    // interactive control to it, so a search past it can report a holder the
+    // boat cannot actually be sailed at.
+    const S3_CREWPOS = [...new Set([0, 0.3, 0.6, Math.min(1.0, config.crew.posMax)])];
     const S3_TACK = [1, 0.5, -0.5, 0, -1];
     const S3_CREWX = [-1, -0.5, 0, 0.5, 1];
     const S3_STAYS = [1, -1, 0];

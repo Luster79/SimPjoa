@@ -253,7 +253,11 @@ function holdsCourseActiveTrim(config, controls, state, { windowSeconds = 300, c
 //   end-aware throughout: the ama does not relocate at a shunt, so it sits at
 // +y on end=+1 and -y on end=-1 and must stay to WINDWARD on both, making the
 // same physical situation TWA=+twa and TWA=-twa respectively (ADR 0039).
-const TRIM_CREWPOS = [0, 0.3, 0.6, 1.0];
+// TRIM_CREWPOS's top value is config.crew.posMax, not a bare 1.0 (O7,
+// docs/work-order-2026-08-10-ostrzenie.md): posMax is where the crew's own
+// weight sinks the ama outright, the UI already clamps every interactive
+// control to it, and a search that ignores it can return a trim that "holds"
+// only because nothing enforced the limit it was found under.
 const TRIM_TACKX = [1, 0.5, -0.5, 0, -1];
 const TRIM_CREWX = [-1, -0.5, 0, 0.5, 1];
 const TRIM_STAYS = [1, -1, 0];
@@ -266,8 +270,9 @@ function findHoldingTrim(config, twa, tws, end = 1, { windowSeconds = 300 } = {}
   const uniq = (xs) => [...new Set(xs)];
   const sheets = uniq([row.bestSheetAngle, 35, 20, 12, 55]);
   const brails = uniq([row.bestBrailWind, 0, 0.5]);
+  const crewPositions = uniq([0, 0.3, 0.6, Math.min(1.0, config.crew.posMax)]);
 
-  for (const sheetDeg of sheets) for (const brailWind of brails) for (const crewPos of TRIM_CREWPOS) {
+  for (const sheetDeg of sheets) for (const brailWind of brails) for (const crewPos of crewPositions) {
     let state = { t: 0, x: 0, y: 0, heading: heading0, u: 1.0, v: 0, r: 0, phi: 0, p: 0, z: 0, w: 0,
       delta: sheetDeg * DEG, end, amaLoad: 0, abackTimer: 0, capsized: false,
       shunt: { phase: 'none', progress: 0 } };

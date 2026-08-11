@@ -75,10 +75,15 @@ course.js`): **82/156 transitions (52.6%)**, TWA 50-180 step 10, TWS 4/6/10,
 both ends. The TWS6 pair O1 closed does hold, but the same pair does not hold
 at TWS4 — the 0.2-0.4deg margin O1 measured was a property of one wind, not a
 general result. Six transitions capsize (both ends agreeing), not yet
-diagnosed. Shunting with the oar shipped, previously passing, is now `xfail`
-too — a side effect of O1 separating two trims (`crewPos=0.3` holding vs.
-`crewPos=1` speed-optimal) that a table used to conflate; see the work
-order's O6/O7 for the open question and root cause.
+diagnosed. Shunting with the oar shipped, previously passing, went `xfail`
+when O1 separated two trims (`crewPos=0.3` holding vs. `crewPos=1`
+speed-optimal) that a table used to conflate; O7 found the root cause
+(`crew.posMax`, the point past which the crew's own weight sinks the ama, was
+advisory and three searches ignored it) and clipping the searches to it
+removed the capsize outright. O6's follow-up search confirmed the clipped
+limit is genuinely the fastest surviving repower target, not just a safer
+one — but the check stays `xfail`: 33-34% of speed against the check's 50%
+floor, a narrower gap than the capsize it replaced (ADR 0043).
 
 **Out of scope, unsolved:** TWA < 50, and whether a trim that holds heading
 while decaying to ~20% of its speed counts as holding at all.
@@ -154,12 +159,13 @@ Append-only. Never edit an old ADR; supersede it with a new one.
 | 0038 | Pitch is the sixth DOF (L5) -- same method as heave (S8): rigorous hydrostatic stiffness, tuned inertia/damping pair, crew weight as the only driving moment. Replaces `crewForeAftTrimCoeff`'s direct crewPosX-to-CLR wire with a real dynamic angle. K2 (narrow-search) coverage 20/42->21/42; S2 regressed 6/6->4/6 (reported, not retuned) -- L1's search-widening, not L5's new physics, turned out to be the larger lever on TWA140-160's coverage |
 | 0039 | The restoring probe omitted the hull, and the end mirror omitted the wind -- two measurement defects plus a harness audit. Withdraws L2's broad-reach stiffness diagnosis and 0034's `end=-1` asymmetry; adds `S3` (the criterion's own claim, both ends) and the search rewrite that took coverage to 42/42 in 20min. **Read it before trusting any "property of the boat" conclusion dated earlier** |
 | 0042 | Obtaining a course becomes a measured property (O2) -- `harness/coverage-obtain-course.js` gives the criterion's *obtaining* half its first coverage number across the whole grid (52.6%, 82/156 transitions), the way K2 already does for holding; withdraws the implicit generalisation from K3's one TWS6 pair, which does not hold at TWS4 |
+| 0043 | Crew-position search obeys its own advisory `crew.posMax` limit (O7), and the shunt's repower target is searched for speed rather than assumed (O6) -- the clip alone removes the shunt capsize K3 found; the search confirms the clipped limit IS the fastest surviving target, but the check stays `xfail` on a speed shortfall (33-34% vs. a 50% floor), not a capsize |
 
 ## Open work
 
 | File | What it covers |
 |---|---|
-| `work-order-2026-08-10-ostrzenie.md` | Obtaining a course — O1 closed the pointing-up pair the work order was named for (target-trim defect, no physics change); O2 measured the whole grid at 52.6% (ADR 0042). Open: O6/O7 (shunt repower target vs. the crew-position search limit) |
+| `work-order-2026-08-10-ostrzenie.md` | Obtaining a course — O1 closed the pointing-up pair the work order was named for (target-trim defect, no physics change); O2 measured the whole grid at 52.6% (ADR 0042); O6/O7 closed the shunt capsize and clipped the crew-position search to its own advisory limit (ADR 0043), leaving a narrower speed shortfall. Open: O3 (continuous-trim transit, now a margin question not a gap-closer), O4 (inactive) |
 
 A work order lives here while it is open and moves to `Archive/` when it is
 done. There is exactly one open at a time.

@@ -219,7 +219,7 @@ export function check_course_change(config, check, slow) {
     // the holding trim would silently change what this check measures.
     const sheet0 = from.trim.sheetDeg, crew0 = from.trim.crewPos, brail0 = from.trim.brailWind;
     const crewX0 = from.trim.crewPosX, tack0 = from.trim.tackX;
-    const sheetP = from.row.bestSheetAngle, crewP = from.row.bestCrewPos, brailP = from.row.bestBrailWind;
+    const sheetP = from.row.bestSheetAngle, brailP = from.row.bestBrailWind;
 
     // Coordinated depower: sheet out, brails off, crew amidships on both
     // axes, tack to neutral -- all on one ramp.
@@ -268,29 +268,52 @@ export function check_course_change(config, check, slow) {
     // tackX/crewPosX are boat-frame, active-bow-relative (docs/adr/0023), so
     // nothing needs to flip here; if that were wrong, this check would catch
     // it.
-    let capsizedRepower = false;
+    //   WHICH crewPos to repower onto is itself searched, not fixed at the
+    // polar's raw speed optimum (O6, docs/work-order-2026-08-10-ostrzenie.md).
+    // Four fixed targets were measured there and none survived without a
+    // trade: the speed optimum capsizes (M2's mechanism -- the crew's weight
+    // sinks the ama once there is no sail-heeling moment to lift it, a static
+    // problem the ramp length cannot rescue), the holding trim's own crewPos
+    // survives at 19% of speed. Owner decision (2026-08-11): search crewPos
+    // itself for the FASTEST target that does not capsize, rather than
+    // picking a fifth fixed point. Sheet/brail stay at the polar optimum
+    // (sheetP/brailP) throughout -- O6's own diagnosis is that crewPos, not
+    // sail trim, is the axis that sinks the ama, so this is a 1-D search on
+    // the axis actually responsible, not a blind grid. Every candidate is
+    // evaluated (not first-hit): unlike an EXISTENCE search, this is asking
+    // for a maximum, and O6's own two data points do not by themselves rule
+    // out a non-monotonic capsize boundary.
+    let best = null;
     if (completed && !state.capsized) {
-      const repowerSteps = Math.round(REPOWER_RAMP_SECONDS / dt);
-      for (let i = 0; i < repowerSteps; i++) {
-        const f = (i + 1) / repowerSteps;
-        state = integrate(state, { ...idle,
-          sheet: (88 + (sheetP - 88) * f) * DEG,
-          brailWind: brailP * f,
-          crewPos: crewP * f,
-        }, config, dt);
-        if (state.capsized) { capsizedRepower = true; break; }
+      const crewCandidates = [...new Set([config.crew.posMax, 0.7, 0.5, 0.3, 0.1, 0]
+        .map((c) => Math.min(c, config.crew.posMax)))];
+      for (const crewTarget of crewCandidates) {
+        let s = state;
+        const repowerSteps = Math.round(REPOWER_RAMP_SECONDS / dt);
+        let capsizedRepower = false;
+        for (let i = 0; i < repowerSteps; i++) {
+          const f = (i + 1) / repowerSteps;
+          s = integrate(s, { ...idle,
+            sheet: (88 + (sheetP - 88) * f) * DEG,
+            brailWind: brailP * f,
+            crewPos: crewTarget * f,
+          }, config, dt);
+          if (s.capsized) { capsizedRepower = true; break; }
+        }
+        if (capsizedRepower) continue;
+        const postControls = { ...idle, sheet: sheetP * DEG, brailWind: brailP, crewPos: crewTarget, shuntRequest: false };
+        const post = holdsCourse(config, postControls, s, { windowSeconds: 120 });
+        if (post.capsized) continue;
+        if (!best || post.speedRatio > best.post.speedRatio) best = { crewTarget, post };
       }
     }
-    // The hold continues on the powered trim the repower ramped to, fore-aft
-    // pair left at the zero the depower reached -- the construction M3/N4
-    // reasoned out, unchanged by O1.
-    const postControls = { ...idle, sheet: sheetP * DEG, brailWind: brailP, crewPos: crewP, shuntRequest: false };
-    const post = holdsCourse(config, postControls, state, { windowSeconds: 120 });
+    const capsizedRepower = !best;
+    const post = best ? best.post : { excursion: NaN, speedRatio: 0, converged: false, restoring: false, capsized: true };
 
     check(`K3: shunt with the oar shipped completes and the new course holds (from TWA90, end=${end})`,
       from.confirmed && slowed && completed && endFlipped && !capsizedRepower &&
       post.excursion <= 15 && post.speedRatio >= 0.5 && post.converged && post.restoring && !post.capsized,
-      `startHoldConfirmed=${from.confirmed} capsizedDuringDepowerRamp=${capsizedRamp} slowedBelowLockout=${slowed} shuntCompleted=${completed} endAfter=${state.end} (expected ${-end}) capsizedDuringRepower=${capsizedRepower} postExcursion=${post.excursion.toFixed(1)}deg converged=${post.converged} restoring=${post.restoring} speedRatio=${(post.speedRatio * 100).toFixed(0)}% capsized=${post.capsized} -- N4 (Archive/work-order-2026-08-10-blok-B.md): a 30s repower ramp capsized ~10s into the following hold, once the boat had picked up just enough speed for the sail's heeling moment to overtake the crew's still-building righting moment -- measured (scratch/n4_deadstop_diag.mjs) 30s fails, 40s survives, REPOWER_RAMP_SECONDS=45 for headroom. A genuine oar-free shunt: depower, shunt, repower, hold, all with rudderUp=true from the first step. DEMOTED TO xfail 2026-08-10, by O1 and nothing else -- no physics moved. The manoeuvre still works to the last step: no capsize on the depower ramp, lockout reached, end flipped, and the heading converged and restoring. What broke is an assumption this check could not previously see, because the two trims it depends on used to be one object: it DEPOWERS from the trim the boat is carrying and REPOWERS to the polar's speed optimum, and now that the carried trim is searched rather than tabled those are crewPos=0.3 and crewPos=1. The crew therefore ends up FURTHER out than they started, on a boat that is nearly stopped -- M2's own mechanism, the crew's weight pressing the ama under once there is no sail-heeling moment lifting it. The ramp length is NOT the variable: swept 30-200s against the new starting trim, the boat capsizes at every one of them (the post-hold excursion falls monotonically 10.3 -> 0.0deg as the ramp lengthens, and at 200s it goes over during the ramp itself), on both ends to the decimal. N4's own 30s-fails/40s-survives boundary was measured when the boat repowered to a trim it had been carrying; slowing the approach cannot rescue a DESTINATION that is not holdable, and crewPos=1 on a boat that is nearly stopped is not -- M2's mechanism, the crew's weight pressing the ama under with no sail-heeling moment to lift it, which is a static problem and not a rate one. Repowering to the HOLDING trim instead does survive (8.9deg, converged, restoring, no capsize) at 19% of speed. So the open question is which trim a sailor re-powers onto after a shunt, and the answer is not "the fastest one". See docs/work-order-2026-08-10-ostrzenie.md, O6`,
+      `startHoldConfirmed=${from.confirmed} capsizedDuringDepowerRamp=${capsizedRamp} slowedBelowLockout=${slowed} shuntCompleted=${completed} endAfter=${state.end} (expected ${-end}) capsizedDuringRepower=${capsizedRepower} repowerCrewPos=${best ? best.crewTarget.toFixed(2) : 'none survived'} postExcursion=${post.excursion.toFixed(1)}deg converged=${post.converged} restoring=${post.restoring} speedRatio=${(post.speedRatio * 100).toFixed(0)}% capsized=${post.capsized} -- O6 (docs/work-order-2026-08-10-ostrzenie.md): the repower target used to be fixed at the polar's raw speed optimum, which capsizes (M2's mechanism -- crewPos=1 on a nearly-stopped boat sinks the ama with no sail-heeling moment to lift it, a static problem the ramp length cannot rescue: swept 30-200s, capsizes at every length). Owner decision 2026-08-11: search crewPos for the fastest non-capsizing target instead of a fixed point`,
       'STEERING');
   }
 }

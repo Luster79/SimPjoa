@@ -3,7 +3,7 @@
 *Last reviewed: 2026-08-11*
 *Wejście: ADR 0039 (poprawka sondy momentu, lustro końca, audyt przyrządów),
 `docs/coverage-no-oar-2026-08-10b.txt` (42/42), kontrola `S3` (10/10, oba
-końce). Stan repo: O1 i O2 wykonane i zacommitowane.*
+końce). Stan repo: O1, O2, O6, O7 wykonane i zacommitowane.*
 
 Numeracja `O*`, nowa; nie koliduje z `N*`, `M*`, `L*`, `K*`, `S*`, `R*`, `P*`,
 `F*`, `T*` ani `D*`.
@@ -18,11 +18,12 @@ siatki, na predykacie surowszym, niż wymaga decyzja właściciela z 2026-08-10
 |---|---|---|---|
 | odpadanie TWA70→90 | 85,5° | 85,8° | zalicza |
 | **ostrzenie TWA90→70** | **79,6°** | **79,8°** | **zalicza — promowane z `xfail`** |
-| shunt bez wiosła | — | — | **spadło do `xfail`, patrz O6/O7** |
+| shunt bez wiosła | 33% prędkości | 34% prędkości | **`xfail` — wywrotka zniknęła (O6/O7), próg 50% prędkości nie** |
 
 Ostrzenie, dla którego to zlecenie powstało, **jest zamknięte i nie wymagało
-żadnej zmiany w fizyce**. W zamian O1 odsłonił dwie rzeczy w teście shuntu,
-opisane niżej. `/core` pozostaje nietknięte przez całe to zlecenie.
+żadnej zmiany w fizyce**. W zamian O1 odsłonił dwie rzeczy w teście shuntu;
+O6 i O7 rozstrzygnęły obie (poniżej). `/core` pozostaje nietknięte przez całe
+to zlecenie.
 
 **Uzyskiwanie kursu jako całość, po O2 (2026-08-11): 82/156 przejść (52,6%)**
 na siatce TWA 50-180/co 10°, TWS 4/6/10, oba końce — patrz O2 niżej. Para,
@@ -208,7 +209,7 @@ dokumencie jako opis metody, gdyby wróciła.
 
 *Zależności: po O1, O2, O3 — i tylko jeśli luka wróci.*
 
-### O6. Trym najszybszy i trym trzymający to dwie różne rzeczy — pytanie otwarte
+### O6. Trym najszybszy i trym trzymający to dwie różne rzeczy — WYKONANE 2026-08-11
 
 O1 rozdzielił dwa pojęcia, które wcześniej były jednym obiektem, bo tablica
 `HOLD_TRIM` mieszała je ze sobą. Przy TWA90/TWS6 optimum prędkościowe ma
@@ -272,7 +273,42 @@ trymu trzymającego — i odwrotnie.
 
 *Nakład: mały (pomiar progu rampy + lektura źródła). Zależności: po O1.*
 
-### O7. Wyszukiwanie przekracza własny limit pozycji załogi — ZNALEZIONE, ŚWIADOMIE NIETKNIĘTE
+**Decyzja właściciela (2026-08-11):** nie pytanie do źródła — cel odbudowy ma
+być **wyszukiwany pod względem prędkości, bez wywracania łodzi**, tak samo jak
+inne trymy w tym projekcie. Limit `crew.posMax` zostaje miękki (patrz O7).
+
+**Wykonanie.** Rampa odbudowy w kontroli shuntu (`asserts-course-change.js`)
+przestała celować w stały punkt (`from.row.bestCrewPos`). Zamiast tego
+przeszukuje `crewPos ∈ {posMax, 0,7, 0,5, 0,3, 0,1, 0}` — sheet/brail
+zostają na optimum polary (`sheetP`/`brailP`), bo diagnoza w tabeli wyżej
+wskazuje `crewPos`, nie żagiel, jako oś odpowiedzialną za mechanizm M2.
+Każdy kandydat jest **oceniany w całości** (bez przerwania na pierwszym
+trafieniu — to pytanie o maksimum, nie o istnienie), rampa + 120 s
+utrzymania, odrzucany przy wywrotce na dowolnym etapie; spośród ocalałych
+wygrywa najszybszy.
+
+**Wynik: wywrotka znika sama, przez O7.** Zanim wyszukiwanie ruszyło, samo
+przycięcie wyszukiwań polary do `posMax` (O7) już usunęło wywrotkę z tego
+punktu — `crewPos=0,933` zamiast `1,0` wystarcza. Wyszukiwanie O6, oceniając
+wszystkie sześć kandydatów, potwierdza to jako **maksimum**: `crewPos=0,933`
+jest zarówno najszybszym, jak i jedynym testowanym punktem bliskim granicy,
+który przeżywa — więc to wynik pomiaru, nie założenie. Kontrola **zostaje
+`xfail`**, ale z innego powodu niż wcześniej: bez wywrotki
+(`capsizedDuringRepower=false`, `capsized=false`, kurs zbieżny i
+przywracający), prędkość osiąga tylko **33-34%** wobec progu 50%.
+
+**Pytanie zamknięte, nowe węższe pozostaje otwarte.** „Na jaki trym wraca
+żeglarz" miało odpowiedź spekulatywną (cztery stałe cele, żaden nie
+przechodził) — teraz ma odpowiedź zmierzoną: najszybszy nieprzewracający trym
+w przeszukanym zakresie ISTNIEJE i to jest `crewPos≈posMax`, ale nawet on nie
+odzyskuje połowy prędkości. Czy da się odzyskać więcej — inną osią (sheet/
+brail zamiast crewPos), dłuższą rampą, albo czy 33-34% jest fizycznym
+sufitem tej sytuacji (łódka prawie stojąca, budująca prędkość od zera) — nie
+zmierzone w ramach O6. `/core` nietknięte przez całą pozycję.
+
+*Nakład: mały (kod), mały (pomiar). Zależności: po O1, O7 (wykonane oba).*
+
+### O7. Wyszukiwanie przekracza własny limit pozycji załogi — WYKONANE 2026-08-11
 
 Przyczyna źródłowa pod O6, znaleziona 2026-08-11 przy pytaniu właściciela
 „dlaczego załoga na burcie miałaby topić pływak".
@@ -302,20 +338,38 @@ jest wśród nich**, czyli dokładnie punkt, którego używa test shuntu. Stąd
 wywrotka przy odbudowie mocy: test celuje w pozycję, którą konfiguracja
 uznaje za niemożliwą, a rdzeń jej nie przycina.
 
-**Nietknięte decyzją właściciela (2026-08-11).** Przycięcie wyszukiwania do
-`crew.posMax` zmieniłoby prędkości polary w tych 8 punktach, a więc
-`out/polar.csv` i bramkę bajtową — to zmiana wyniku, nie tylko przyrządu.
-Zapisane, żeby nie zginęło.
+**Decyzja właściciela (2026-08-11)**, na obie części pytania naraz:
 
-Do rozstrzygnięcia, niezależnie od siebie:
+1. **przyciąć wyszukiwania do limitu** — tak. `crew.posMax` (0,933) zostaje
+   niezmieniony w wartości ("zostaw limit 93,3%"); trzy wyszukiwania, które go
+   ignorowały, teraz go respektują.
+2. **limit ma zostać miękki** — egzekwowany tylko przez UI, `/core`
+   pozostaje doradczy, świadomie nietknięty. Żadna zmiana w `core/stability.js`
+   ani `core/hydro.js` w ramach tej pozycji.
 
-1. czy przyciąć wyszukiwania (polara, `findHoldingTrim`, `S3`) do limitu;
-2. czy limit ma być **twardy w rdzeniu**, a nie doradczy — dziś każdy kod
-   pomijający interfejs może go przekroczyć, co się właśnie stało w trzech
-   miejscach naraz.
+**Wykonanie.** Trzy miejsca sprowadzone do jednego wzorca —
+`Math.min(1.0, config.crew.posMax)` jako górna wartość przeszukiwania
+zamiast literału `1.0`:
+- `harness/polar.js`: `CREW_POS_SEARCH` (stała) → `crewPosSearch(config)`
+  (funkcja, bo `posMax` zależy od wariantu łodzi);
+- `harness/asserts-helpers.js`: `TRIM_CREWPOS` w `findHoldingTrim`;
+- `harness/asserts-polar-helm.js`: `S3_CREWPOS` w `S3`.
 
-*Nakład: mały (kod), średni (przeliczenie polary). Zależności: niezależne;
-zamyka O6.*
+**Skutek: `out/polar.csv` zmienia się w 11 z 84 wierszy** (TWA50-130/TWS6,
+TWA40-50/TWS10) — nieco szerszy zasięg niż wstępnie oszacowane 8/42, bo to
+było oszacowanie, nie pomiar; teraz jest zmierzone. Wszystkie zmiany to
+niewielkie **spadki** prędkości (rząd 0,5-2%), spójne z odjęciem części
+hikingu powyżej `posMax`. Bramka bajtowa przeliczona i zacommitowana
+świadomie, zgodnie z konwencją `docs/README.md`.
+
+**Skutek uboczny, zmierzony natychmiast: wywrotka w kontroli shuntu (O6)
+znika przy samym tym przycięciu**, zanim O6's własne wyszukiwanie ruszyło —
+`crewPos=0,933` zamiast `1,0` już wystarcza, żeby ama nie poszła pod wodę na
+tyle, by przewrócić łódkę. Zobacz O6 po pełny wynik (kontrola zostaje `xfail`,
+ale teraz z powodu prędkości 33-34%, nie wywrotki).
+
+*Nakład: mały (kod), średni (przeliczenie polary) — oba wykonane. Zależności:
+niezależne; zamyka O6.*
 
 ### O5. Oba końce i cały zakres wiatru w każdej pozycji
 
@@ -338,9 +392,9 @@ przez cztery pozycje. O1 zamknął je od razu, więc plan przestawiony
 (2026-08-11):
 
 1. ~~**O1**~~ — **wykonane.** Ostrzenie zamknięte, kontrola promowana.
-2. **O7** — jedyna pozycja z ustaloną przyczyną i znanym zasięgiem (8/42
-   punktów). Zamyka też O6 i przywraca test shuntu. Wstrzymana decyzją
-   właściciela, nie brakiem wiedzy.
+2. ~~**O7**~~ — **wykonane.** Wyszukiwania przycięte do `crew.posMax`
+   (0,933), limit zostaje miękki (UI, nie `/core`) decyzją właściciela.
+   `out/polar.csv` przeliczony (11/84 wierszy, spadki 0,5-2%).
 3. ~~**O2**~~ — **wykonane.** Macierz przejść: 82/156 (52,6%), oba końce
    zgodne. Margines 0,2-0,4° z Części I potwierdzony jako właściwość
    jednego wiatru (TWS6), nie całości — patrz O2.
@@ -348,7 +402,10 @@ przez cztery pozycje. O1 zamknął je od razu, więc plan przestawiony
    O2 to pytanie zmienia zakres: nie „czy 79,6° ma zapas", tylko „czy trym
    ciągły podnosi 52,6%" — którego z 74 nieudanych przejść dotyczy, nie
    wiadomo bez pomiaru.
-5. **O6** — pytanie do źródła; rozstrzyga się razem z O7.
+5. ~~**O6**~~ — **wykonane.** Cel odbudowy mocy wyszukiwany pod względem
+   prędkości (decyzja właściciela); wywrotka zniknęła (przez O7 samo),
+   pozostaje węższa luka: 33-34% prędkości wobec progu 50%. Kontrola
+   nadal `xfail`, z innego powodu niż przed O6/O7.
 6. **O4** — nieaktywne, warunek nie zaszedł.
 
 Zasada bez zmian: **zatrzymać się w momencie, w którym kryterium jest
@@ -375,9 +432,12 @@ kandydatami na drogę do podniesienia tej liczby, jeśli właściciel zdecyduje,
   O2 jest raportem, nie bramką — 52,6% jest zmierzone i zapisane, ale czy i
   jak podnosić tę liczbę (O3? szersze wyszukiwanie? coś innego?) jest
   pytaniem otwartym, tak jak przy `coverage-no-oar.js` na starcie.
-- **Nie szukać celu odbudowy mocy, aż któryś przejdzie.** Zmierzono cztery
-  (O6) i długość rampy w zakresie 30-200 s. Piąty dobrany pod wynik byłby
-  strojeniem; przyczyna jest znana i opisana w O7.
+- ~~**Nie szukać celu odbudowy mocy, aż któryś przejdzie.**~~ Nieaktualne —
+  O6 wykonało wyszukiwanie decyzją właściciela, ale **oceniając każdego
+  kandydata, nie zatrzymując się na pierwszym, który przechodzi**: to pytanie
+  o maksimum prędkości bez wywrotki, nie o pierwsze trafienie. Wynik nadal
+  nie przechodzi (33-34% wobec progu 50%) — wyszukiwanie nie zostało dobrane
+  pod wynik, uczciwie go nie osiągnęło.
 
 ## Ryzyko
 
@@ -401,8 +461,8 @@ wierszu siatki przed puszczeniem całości.
 | ADR | temat | pozycja |
 |---|---|---|
 | — | O1 nie zmienił modelu — wynik zapisany w tym dokumencie i w komentarzach kontroli, bez ADR-a. Tak samo O3, gdyby powstało | O1, O3 |
-| następny wolny | „uzyskiwanie kursu staje się własnością mierzoną" — jeśli O2 powstanie jako narzędzie na prawach `coverage-no-oar.js` | O2 |
-| następny wolny | **jeśli O7 zostanie wykonane** — przycięcie wyszukiwań do `crew.posMax` zmienia raportowane prędkości polary w 8 punktach, a twardy limit w rdzeniu jest zmianą granicy modelu; jedno i drugie zasługuje na zapis decyzji | O7 |
+| 0042 | „uzyskiwanie kursu staje się własnością mierzoną" — macierz przejść, 52,6% | O2 |
+| 0043 | wyszukiwania przycięte do `crew.posMax` (limit zostaje miękki, UI-only), i cel odbudowy mocy po shuncie wyszukiwany pod względem prędkości zamiast zakładany — obie decyzje właściciela z 2026-08-11, przyczynowo powiązane (przycięcie usuwa wywrotkę, którą O6 diagnozowało) | O6, O7 |
 | następny wolny | tylko jeśli O4 doprowadzi do zmiany w `/core` | O4 |
 
 Numery 0040 i 0041 są zarezerwowane (deficyt napędu ostro wobec Di Piazzy;
