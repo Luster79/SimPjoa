@@ -3,7 +3,7 @@
 *Last reviewed: 2026-08-11*
 *Wejście: ADR 0039 (poprawka sondy momentu, lustro końca, audyt przyrządów),
 `docs/coverage-no-oar-2026-08-10b.txt` (42/42), kontrola `S3` (10/10, oba
-końce). Stan repo na `4d7215d` + niezacommitowane O1.*
+końce). Stan repo: O1 i O2 wykonane i zacommitowane.*
 
 Numeracja `O*`, nowa; nie koliduje z `N*`, `M*`, `L*`, `K*`, `S*`, `R*`, `P*`,
 `F*`, `T*` ani `D*`.
@@ -23,6 +23,10 @@ siatki, na predykacie surowszym, niż wymaga decyzja właściciela z 2026-08-10
 Ostrzenie, dla którego to zlecenie powstało, **jest zamknięte i nie wymagało
 żadnej zmiany w fizyce**. W zamian O1 odsłonił dwie rzeczy w teście shuntu,
 opisane niżej. `/core` pozostaje nietknięte przez całe to zlecenie.
+
+**Uzyskiwanie kursu jako całość, po O2 (2026-08-11): 82/156 przejść (52,6%)**
+na siatce TWA 50-180/co 10°, TWS 4/6/10, oba końce — patrz O2 niżej. Para,
+którą O1 zamknęło, trzyma; macierz pokazuje, że nie reprezentuje całości.
 
 ---
 
@@ -94,7 +98,7 @@ obiektem. Szczegóły w O6, przyczyna źródłowa w O7.
 
 *Nakład: mały (kod), średni (czas). Zależności: brak — pierwsza pozycja.*
 
-### O2. Uczynić „uzyskiwanie kursu" własnością mierzoną
+### O2. Uczynić „uzyskiwanie kursu" własnością mierzoną — WYKONANE 2026-08-11
 
 Dziś cała połowa kryterium wisi na **dwóch przejściach przy jednym wietrze**
 (TWA70↔90, TWS6). Dla utrzymania kursu projekt ma `harness/coverage-no-oar.js`
@@ -111,6 +115,50 @@ bramka budowania — ta sama zasada, co przy `coverage-no-oar.js`.
 
 *Nakład: średni. Zależności: po O1 (żeby macierz nie odziedziczyła tego samego
 defektu celu).*
+
+**Wykonanie.** `harness/coverage-obtain-course.js` — macierz przejść między
+sąsiednimi punktami siatki (TWA 50-180 co 10°, TWS 4/6/10, oba końce), w obie
+strony, na `findHoldingTrim()` (a więc bez ryzyka odziedziczenia defektu
+`HOLD_TRIM`, który O1 usunął). Metoda identyczna z `obtainCourse()` w `K3`:
+ze zbioru na trymie startowym, skok od razu na PEŁNY trym docelowy (wszystkie
+sterowania), bez wiosła przez całe przejście, predykat `holdsCourse` na 300s.
+
+**Koszt zmierzony przed puszczeniem całości** (Ryzyko, Część III): jeden wiersz
+(TWS6, end=+1, 13 punktów × 4 przejścia z brzegowymi wyjątkami = 26 przejść)
+zajął 783s. Sześć wierszy (3×TWS, 2×end) — 4856s (81 min). Zaakceptowane jako
+jednorazowy koszt raportu, nie bramki budowania.
+
+**Wynik: `docs/coverage-obtain-course-2026-08-11.txt`.**
+
+```
+COVERAGE: 82/156 transitions obtainable with the oar shipped throughout
+(K1's converged+restoring predicate), grid TWA 50-180 step 10, TWS 4/6/10,
+end 1/-1.
+```
+
+**52,6% (82/156).** Rozbicie: TWS4 20/52, TWS6 32/52, TWS10 30/52 — TWS6 (jedyny
+wiatr, na którym wcześniej mierzono) jest najlepszym z trzech, nie
+reprezentatywnym. `end=+1` i `end=-1` zgadzają się do 1 przejścia (41/78 na
+oba), co jest oczekiwanym potwierdzeniem lustra (`S3`, ADR 0039) — rozjazd
+między końcami byłby dziś sygnałem błędu w przyrządzie, nie fizyki (patrz O5).
+
+**Zastrzeżenie z Części I traci uzasadnienie tylko częściowo.** Sama para
+TWA70↔90/TWS6, dla której O1 powstało, trzyma na obu kierunkach i obu końcach
+(79,6-79,8°/85,5-85,8°) — to zalicza. Ale przy TWS4 ta sama para już nie trzyma
+w żadną stronę (`TWA70->TWA80: NONE`, `TWA80->TWA70: NONE`), a przy TWS10
+trzyma tylko w jedną stronę. **Margines 0,2-0,4° z Części I był prawdziwy dla
+jednego wiatru i nie uogólnia się** — macierz pokazuje, że „uzyskiwanie kursu"
+jako całość jest przy 52,6%, nie przy marginalnym zaliczeniu.
+
+**Sześć przejść kończy się wywrotką** (capsized=true, oba końce się zgadzają):
+TWA100→110 (TWS6), TWA80→70 i TWA160→170 (TWS10), na obu końcach. Trzy wzorce,
+nie jeden — potencjalnie trzy różne przyczyny, żadna jeszcze nie zdiagnozowana.
+Nie diagnozowane w ramach O2 (O2 mierzy, nie naprawia) — kandydat na kolejną
+pozycję, jeśli właściciel zdecyduje, że wywrotki na przejściu są w zakresie.
+
+**Kryterium akceptacji spełnione**: liczba zmierzona i zaraportowana, migawka
+per-punkt w `docs/coverage-obtain-course-2026-08-11.txt`, raport (nie bramka).
+`/core` nietknięte.
 
 ### O3. Przejście ciągłym trymem, nie skokiem — już nie jest potrzebne do zamknięcia luki
 
@@ -293,16 +341,22 @@ przez cztery pozycje. O1 zamknął je od razu, więc plan przestawiony
 2. **O7** — jedyna pozycja z ustaloną przyczyną i znanym zasięgiem (8/42
    punktów). Zamyka też O6 i przywraca test shuntu. Wstrzymana decyzją
    właściciela, nie brakiem wiedzy.
-3. **O2** — najwyższy priorytet z tych, które coś jeszcze mierzą: całe
-   twierdzenie o uzyskiwaniu kursu wisi dziś na jednej parze przejść przy
-   jednym wietrze, z marginesem 0,2-0,4°.
-4. **O3** — już nie do zamknięcia luki, tylko do poszerzenia marginesu.
+3. ~~**O2**~~ — **wykonane.** Macierz przejść: 82/156 (52,6%), oba końce
+   zgodne. Margines 0,2-0,4° z Części I potwierdzony jako właściwość
+   jednego wiatru (TWS6), nie całości — patrz O2.
+4. **O3** — już nie do zamknięcia luki, tylko do poszerzenia marginesu. Po
+   O2 to pytanie zmienia zakres: nie „czy 79,6° ma zapas", tylko „czy trym
+   ciągły podnosi 52,6%" — którego z 74 nieudanych przejść dotyczy, nie
+   wiadomo bez pomiaru.
 5. **O6** — pytanie do źródła; rozstrzyga się razem z O7.
 6. **O4** — nieaktywne, warunek nie zaszedł.
 
 Zasada bez zmian: **zatrzymać się w momencie, w którym kryterium jest
-spełnione.** Dla ostrzenia ten moment już nastąpił — O3 i O4 nie są długiem,
-tylko zapasem.
+spełnione.** Dla pojedynczej pary TWA70/90/TWS6 ten moment nastąpił po O1;
+dla „uzyskiwania kursu" jako całości O2 pokazał, że nie nastąpił — 52,6% nie
+jest zamknięciem. O3 i O4 nie są już tylko zapasem na wąski margines, tylko
+kandydatami na drogę do podniesienia tej liczby, jeśli właściciel zdecyduje,
+że to jest następny krok tego zlecenia.
 
 ## Czego nie robić
 
@@ -315,7 +369,12 @@ tylko zapasem.
   O1 zastąpił ją wyszukiwaniem.
 - **Nie ufać marginesowi 0,4°.** Wyszedł 79,6°/79,8°, czyli wynik na granicy.
   Podawany jako graniczny, nie jako komfortowe zaliczenie — patrz erratum
-  w Części I i priorytet O2.
+  w Części I. **Potwierdzone przez O2**: przy TWS4 ta sama para w ogóle nie
+  trzyma; margines był właściwością jednego wiatru, nie zapasem.
+- **Nie czytać 82/156 jako „luka do zamknięcia" bez decyzji właściciela.**
+  O2 jest raportem, nie bramką — 52,6% jest zmierzone i zapisane, ale czy i
+  jak podnosić tę liczbę (O3? szersze wyszukiwanie? coś innego?) jest
+  pytaniem otwartym, tak jak przy `coverage-no-oar.js` na starcie.
 - **Nie szukać celu odbudowy mocy, aż któryś przejdzie.** Zmierzono cztery
   (O6) i długość rampy w zakresie 30-200 s. Piąty dobrany pod wynik byłby
   strojeniem; przyczyna jest znana i opisana w O7.
