@@ -2,7 +2,7 @@
 // across the asserts-*.js check modules (R13, Archive/work-order-2026-07-22.md:
 // split out of the former single-file harness/asserts.js).
 import { integrate, computeForces } from '../core/integrator.js';
-import { headingHoldRudder } from './polar.js';
+import { computePolar, headingHoldRudder } from './polar.js';
 
 const DEG = Math.PI / 180;
 const HEADING0 = Math.PI / 2;
@@ -227,10 +227,75 @@ function holdsCourseActiveTrim(config, controls, state, { windowSeconds = 300, c
   };
 }
 
+// findHoldingTrim(config, twa, tws, end, { windowSeconds }) ->
+//   { trim, windDirFrom, state, row } | null
+//
+// O1 (docs/work-order-2026-08-10-ostrzenie.md): the ONE place that answers
+// "which trim holds this course, oar shipped". It exists because the answer
+// used to be a hand-maintained table -- `HOLD_TRIM` in
+// asserts-course-change.js, two TWAs, copied out of an S1c run -- and that
+// table went stale exactly the way ADR 0039 describes: S1c's search never
+// covered `crewPos` or `stays`, so the "holding trim" it recorded for TWA70
+// was not one. K3 then steered at it and reported the miss as a steering
+// limit of the boat. Measured 2026-08-10: aiming the same transit at a trim
+// this search finds reaches TWA79.6 (inside the +-10deg band) where the
+// table's trim reaches 83.3 (outside).
+//   So the table is generated, never written down. Any check that needs a
+// holding trim calls this; there is no second copy to go stale.
+//
+// Method and search order are coverage-no-oar.js's, for the same reason it
+// has them: this is an EXISTENCE question, so the two stages are interleaved
+// (60s screen, then the full window for anything that clears it) and it stops
+// at the first confirmed holder, with the axis order taken from what has
+// actually won before (stays=+1 30/39, tackX=+1 25/39, crewPosX=-1 20/39).
+// The sheet is an axis too -- ADR 0030's "a rudder-free holding trim need not
+// be the fast one", which S3's own first draft had to learn twice.
+//   end-aware throughout: the ama does not relocate at a shunt, so it sits at
+// +y on end=+1 and -y on end=-1 and must stay to WINDWARD on both, making the
+// same physical situation TWA=+twa and TWA=-twa respectively (ADR 0039).
+const TRIM_CREWPOS = [0, 0.3, 0.6, 1.0];
+const TRIM_TACKX = [1, 0.5, -0.5, 0, -1];
+const TRIM_CREWX = [-1, -0.5, 0, 0.5, 1];
+const TRIM_STAYS = [1, -1, 0];
+
+function findHoldingTrim(config, twa, tws, end = 1, { windowSeconds = 300 } = {}) {
+  const row = computePolar(config, { twsList: [tws], twaFrom: twa, twaTo: twa, step: 1 })[0];
+  if (!row || row.bestSpeed <= 0.3) return null;
+  const heading0 = end === 1 ? HEADING0 : HEADING0 + Math.PI;
+  const windDirFrom = heading0 + end * twa * DEG;
+  const uniq = (xs) => [...new Set(xs)];
+  const sheets = uniq([row.bestSheetAngle, 35, 20, 12, 55]);
+  const brails = uniq([row.bestBrailWind, 0, 0.5]);
+
+  for (const sheetDeg of sheets) for (const brailWind of brails) for (const crewPos of TRIM_CREWPOS) {
+    let state = { t: 0, x: 0, y: 0, heading: heading0, u: 1.0, v: 0, r: 0, phi: 0, p: 0, z: 0, w: 0,
+      delta: sheetDeg * DEG, end, amaLoad: 0, abackTimer: 0, capsized: false,
+      shunt: { phase: 'none', progress: 0 } };
+    const settle = { windDirFrom, windSpeed: tws, sheet: sheetDeg * DEG, rudder: 0, rudderUp: false,
+      brailLee: 0, brailWind, crewPos, crewPosX: 0, tackX: 0, stays: 0, shuntRequest: false };
+    for (let i = 0; i < Math.round(45 / config.dt); i++) {
+      settle.rudder = headingHoldRudder(state, heading0, config);
+      state = integrate(state, settle, config, config.dt);
+    }
+    for (const tackX of TRIM_TACKX) for (const crewPosX of TRIM_CREWX) for (const stays of TRIM_STAYS) {
+      const controls = { windDirFrom, windSpeed: tws, sheet: sheetDeg * DEG, rudder: 0, rudderUp: true,
+        brailLee: 0, brailWind, crewPos, crewPosX, tackX, stays, shuntRequest: false };
+      const screen = holdsCourse(config, controls, state, { windowSeconds: 60 });
+      if (!(screen.excursion <= 15 && screen.speedRatio >= 0.5 && !screen.capsized)) continue;
+      const full = holdsCourse(config, controls, state, { windowSeconds });
+      if (full.excursion <= 15 && full.speedRatio >= 0.5 && full.converged && full.restoring && !full.capsized) {
+        return { trim: { sheetDeg, brailWind, crewPos, tackX, crewPosX, stays }, controls,
+          windDirFrom, state, row, hold: full };
+      }
+    }
+  }
+  return null;
+}
+
 function finiteSeries(series) {
   return series.every((s) =>
     Number.isFinite(s.x) && Number.isFinite(s.y) && Number.isFinite(s.heading) &&
     Number.isFinite(s.u) && Number.isFinite(s.v) && Number.isFinite(s.r));
 }
 
-export { DEG, HEADING0, normalizeAngle, freshState, steeringOk, steeringDrift, yawMomentAtHeading, holdsCourse, holdsCourseActiveTrim, finiteSeries };
+export { DEG, HEADING0, normalizeAngle, freshState, steeringOk, steeringDrift, yawMomentAtHeading, holdsCourse, holdsCourseActiveTrim, findHoldingTrim, finiteSeries };

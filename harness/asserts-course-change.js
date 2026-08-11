@@ -22,18 +22,28 @@
 // symmetry checks ran their trim controls at neutral, where a sign error
 // multiplies zero and cannot be seen).
 import { integrate } from '../core/integrator.js';
-import { computePolar, headingHoldRudder } from './polar.js';
-import { DEG, HEADING0, holdsCourse } from './asserts-helpers.js';
+import { DEG, holdsCourse, findHoldingTrim } from './asserts-helpers.js';
 
-// Trims S1c currently finds hold TWA70/TWA90 at TWS6 (Archive/work-order-
-// 2026-08-09's own full-suite measurement). Not re-searched here: S1c is
-// already the authority on which trims hold at these two points, and
-// re-deriving them again would double this file's own cost for no new
-// information.
-const HOLD_TRIM = {
-  70: { tackX: 1, crewPosX: -0.25 },
-  90: { tackX: 1, crewPosX: -1 },
-};
+// The holding trims are GENERATED, not written down (O1,
+// docs/work-order-2026-08-10-ostrzenie.md). This file used to carry a
+// hand-maintained `HOLD_TRIM` table copied out of an S1c run, and it went
+// stale in the way ADR 0039 documents: S1c's search covered neither `crewPos`
+// nor `stays`, so what it recorded as TWA70's holding trim did not hold TWA70.
+// K3 then steered at it and scored the miss as a steering limit of the boat.
+// Measured before this change, same start and same wind: the table's trim
+// reached TWA83.3 (outside the +-10deg band), a searched one reached 79.6
+// (inside). The two differ mostly in the crew's LATERAL position -- crewPos=1,
+// the speed optimum, against 0.3.
+//   `findHoldingTrim` (asserts-helpers.js) is now the single place that
+// answers "which trim holds this course", so there is no second copy to age.
+// Memoised per (twa, end): the search is not cheap and this file asks for the
+// same four combinations repeatedly.
+const trimCache = new Map();
+function holdingTrimFor(config, twa, tws, end) {
+  const key = `${twa}/${tws}/${end}`;
+  if (!trimCache.has(key)) trimCache.set(key, findHoldingTrim(config, twa, tws, end, { windowSeconds: 120 }));
+  return trimCache.get(key);
+}
 
 function twaOf(windDirFrom, heading) {
   const a = (((windDirFrom - heading) / DEG) % 360 + 360) % 360;
@@ -48,10 +58,6 @@ export function check_course_change(config, check, slow) {
   if (!slow) return;
   const tws = 6;
   const dt = config.dt;
-
-  function polarTrim(twa) {
-    return computePolar(config, { twsList: [tws], twaFrom: twa, twaTo: twa, step: 1 })[0];
-  }
 
   // heldState: settle under the autopilot (rudder available, as every other
   // check in this package does to reach a realistic starting attitude), then
@@ -85,47 +91,39 @@ export function check_course_change(config, check, slow) {
   // the sign puts the ama to LEEWARD on end=-1, which capsizes during the
   // settle — the old code had the side right and only the angle wrong.
   function heldState(twa, end) {
-    const row = polarTrim(twa);
-    const heading0 = end === 1 ? HEADING0 : HEADING0 + Math.PI;
-    const windDirFrom = heading0 + end * twa * DEG;
-    let state = { t: 0, x: 0, y: 0, heading: heading0, u: 1.0, v: 0, r: 0, phi: 0, p: 0, z: 0, w: 0,
-      delta: row.bestSheetAngle * DEG, end, amaLoad: 0, abackTimer: 0, capsized: false,
-      shunt: { phase: 'none', progress: 0 } };
-    const settleControls = { windDirFrom, windSpeed: tws, sheet: row.bestSheetAngle * DEG, rudder: 0,
-      rudderUp: false, brailLee: 0, brailWind: row.bestBrailWind, crewPos: row.bestCrewPos,
-      crewPosX: 0, tackX: 0, shuntRequest: false };
-    for (let i = 0; i < Math.round(45 / dt); i++) {
-      settleControls.rudder = headingHoldRudder(state, heading0, config);
-      state = integrate(state, settleControls, config, dt);
-    }
-    const trim = HOLD_TRIM[twa];
-    const holdControls = { windDirFrom, windSpeed: tws, sheet: row.bestSheetAngle * DEG, rudder: 0,
-      rudderUp: true, brailLee: 0, brailWind: row.bestBrailWind, crewPos: row.bestCrewPos,
-      crewPosX: trim.crewPosX, tackX: trim.tackX, shuntRequest: false };
-    const confirm = holdsCourse(config, holdControls, state, { windowSeconds: 120 });
-    const confirmed = confirm.excursion <= 15 && confirm.speedRatio >= 0.5 && confirm.converged && confirm.restoring && !confirm.capsized;
-    return { state: confirm.finalState, windDirFrom, row, holdControls, confirmed };
+    const found = holdingTrimFor(config, twa, tws, end);
+    if (!found) return { state: null, windDirFrom: null, confirmed: false, trim: null, holdControls: null };
+    return { state: found.hold.finalState, windDirFrom: found.windDirFrom,
+      row: found.row, trim: found.trim, holdControls: found.controls, confirmed: true };
   }
 
   // obtainCourse: from an already-confirmed hold at fromTwa, switch DIRECTLY
-  // to toTwa's holding trim (sheet/brail/crewPos from its own polar optimum,
-  // tackX/crewPosX from HOLD_TRIM) with no further rudder input at any point,
-  // and ask whether the boat both reaches toTwa+-10deg and then holds it —
-  // one continuous 300s window, so holdsCourse's own convergence check (last
-  // third of the window vs the first) is exactly "did it get there and stop
-  // moving", reused unmodified.
+  // to toTwa's own holding trim -- every control of it, sheet and brail and
+  // crew lateral position included, not just the fore-aft pair the old table
+  // carried -- with no further rudder input at any point, and ask whether the
+  // boat both reaches toTwa+-10deg and then holds it. One continuous 300s
+  // window, so holdsCourse's own convergence check (last third of the window
+  // vs the first) is exactly "did it get there and stop moving".
+  //   The destination trim is taken as CONTROL VALUES and applied in the
+  // starting state's own wind frame: a transit changes the boat's course, not
+  // the wind, so `from.windDirFrom` is the one that governs throughout.
   function obtainCourse(fromTwa, toTwa, end) {
     const from = heldState(fromTwa, end);
-    const toRow = polarTrim(toTwa);
-    const toTrim = HOLD_TRIM[toTwa];
-    const toControls = { windDirFrom: from.windDirFrom, windSpeed: tws, sheet: toRow.bestSheetAngle * DEG,
-      rudder: 0, rudderUp: true, brailLee: 0, brailWind: toRow.bestBrailWind, crewPos: toRow.bestCrewPos,
-      crewPosX: toTrim.crewPosX, tackX: toTrim.tackX, shuntRequest: false };
+    const to = holdingTrimFor(config, toTwa, tws, end);
+    if (!from.confirmed || !to) {
+      return { fromConfirmed: from.confirmed, toTrimFound: Boolean(to), twaReached: NaN,
+        reachedTarget: false, converged: false, restoring: false, capsized: false,
+        speedRatio: 0, excursion: NaN };
+    }
+    const t = to.trim;
+    const toControls = { windDirFrom: from.windDirFrom, windSpeed: tws, sheet: t.sheetDeg * DEG,
+      rudder: 0, rudderUp: true, brailLee: 0, brailWind: t.brailWind, crewPos: t.crewPos,
+      crewPosX: t.crewPosX, tackX: t.tackX, stays: t.stays, shuntRequest: false };
     const attempt = holdsCourse(config, toControls, from.state, { windowSeconds: 300 });
     const twaReached = twaOf(from.windDirFrom, attempt.finalState.heading);
     const reachedTarget = Math.abs(twaReached - toTwa) <= 10;
     return {
-      fromConfirmed: from.confirmed, twaReached, reachedTarget,
+      fromConfirmed: from.confirmed, toTrimFound: true, twaReached, reachedTarget,
       converged: attempt.converged, restoring: attempt.restoring, capsized: attempt.capsized,
       speedRatio: attempt.speedRatio, excursion: attempt.excursion,
     };
@@ -151,8 +149,8 @@ export function check_course_change(config, check, slow) {
     const pointUp = obtainCourse(90, 70, end);
     check(`K3: pointing up (TWA90 -> TWA70, TWS6, end=${end}) reached under trim alone with the oar shipped throughout, and holds`,
       pointUp.fromConfirmed && pointUp.reachedTarget && pointUp.converged && pointUp.restoring && !pointUp.capsized,
-      `startHoldConfirmed=${pointUp.fromConfirmed} reached TWA${pointUp.twaReached.toFixed(1)} (target 70+-10, excursion from start ${pointUp.excursion.toFixed(1)}deg) converged=${pointUp.converged} restoring=${pointUp.restoring} speedRatio=${(pointUp.speedRatio * 100).toFixed(0)}% capsized=${pointUp.capsized}`,
-      'STEERING');
+      `startHoldConfirmed=${pointUp.fromConfirmed} reached TWA${pointUp.twaReached.toFixed(1)} (target 70+-10, excursion from start ${pointUp.excursion.toFixed(1)}deg) converged=${pointUp.converged} restoring=${pointUp.restoring} speedRatio=${(pointUp.speedRatio * 100).toFixed(0)}% capsized=${pointUp.capsized} -- PROMOTED out of xfail 2026-08-11 by O1, with no physics change: this reached 83.3deg against a 70+-10 band for as long as the destination came from the hand-maintained HOLD_TRIM table, and reaches 79.6/79.8deg on the two ends once the destination is the trim a search shows actually holds TWA70. The margin against the 80deg ceiling is 0.2-0.4deg and this is one wind (TWS6), so treat it as closed-but-narrow: docs/work-order-2026-08-10-ostrzenie.md O2 exists to widen it into a transit matrix rather than leaving the claim resting here`,
+      null);
   }
 
   // Shunt with the oar shipped -----------------------------------------
@@ -209,9 +207,19 @@ export function check_course_change(config, check, slow) {
   const REPOWER_RAMP_SECONDS = 45;
   for (const end of [1, -1]) {
     const from = heldState(90, end);
-    const row = polarTrim(90);
     let state = from.state;
-    const sheet0 = row.bestSheetAngle, crew0 = row.bestCrewPos, brail0 = row.bestBrailWind;
+    // Two different trims, and O1 is why they have to be named separately.
+    // The DEPOWER ramp starts from whatever the boat is actually carrying --
+    // the holding trim -- because ramping away from a trim it is not on would
+    // begin with a step. The REPOWER ramp returns to the POWERED trim, the
+    // polar's own speed optimum, which is what this check has always restored
+    // and what "przyciagamy zagiel, by sie wydal i pociagnal" describes.
+    // Before O1 these were the same object and one pair of variables served
+    // both; they are not the same object, and reading the repower target off
+    // the holding trim would silently change what this check measures.
+    const sheet0 = from.trim.sheetDeg, crew0 = from.trim.crewPos, brail0 = from.trim.brailWind;
+    const crewX0 = from.trim.crewPosX, tack0 = from.trim.tackX;
+    const sheetP = from.row.bestSheetAngle, crewP = from.row.bestCrewPos, brailP = from.row.bestBrailWind;
 
     // Coordinated depower: sheet out, brails off, crew amidships on both
     // axes, tack to neutral -- all on one ramp.
@@ -223,8 +231,8 @@ export function check_course_change(config, check, slow) {
         sheet: (sheet0 + (88 - sheet0) * f) * DEG,
         brailWind: brail0 * (1 - f),
         crewPos: crew0 * (1 - f),
-        crewPosX: -1 * (1 - f),
-        tackX: 1 * (1 - f),
+        crewPosX: crewX0 * (1 - f),
+        tackX: tack0 * (1 - f),
       }, config, dt);
       if (state.capsized) { capsizedRamp = true; break; }
     }
@@ -266,20 +274,23 @@ export function check_course_change(config, check, slow) {
       for (let i = 0; i < repowerSteps; i++) {
         const f = (i + 1) / repowerSteps;
         state = integrate(state, { ...idle,
-          sheet: (88 + (sheet0 - 88) * f) * DEG,
-          brailWind: brail0 * f,
-          crewPos: crew0 * f,
+          sheet: (88 + (sheetP - 88) * f) * DEG,
+          brailWind: brailP * f,
+          crewPos: crewP * f,
         }, config, dt);
         if (state.capsized) { capsizedRepower = true; break; }
       }
     }
-    const postControls = { ...idle, sheet: sheet0 * DEG, brailWind: brail0, crewPos: crew0, shuntRequest: false };
+    // The hold continues on the powered trim the repower ramped to, fore-aft
+    // pair left at the zero the depower reached -- the construction M3/N4
+    // reasoned out, unchanged by O1.
+    const postControls = { ...idle, sheet: sheetP * DEG, brailWind: brailP, crewPos: crewP, shuntRequest: false };
     const post = holdsCourse(config, postControls, state, { windowSeconds: 120 });
 
     check(`K3: shunt with the oar shipped completes and the new course holds (from TWA90, end=${end})`,
       from.confirmed && slowed && completed && endFlipped && !capsizedRepower &&
       post.excursion <= 15 && post.speedRatio >= 0.5 && post.converged && post.restoring && !post.capsized,
-      `startHoldConfirmed=${from.confirmed} capsizedDuringDepowerRamp=${capsizedRamp} slowedBelowLockout=${slowed} shuntCompleted=${completed} endAfter=${state.end} (expected ${-end}) capsizedDuringRepower=${capsizedRepower} postExcursion=${post.excursion.toFixed(1)}deg converged=${post.converged} restoring=${post.restoring} speedRatio=${(post.speedRatio * 100).toFixed(0)}% capsized=${post.capsized} -- N4 (Archive/work-order-2026-08-10-blok-B.md): a 30s repower ramp capsized ~10s into the following hold, once the boat had picked up just enough speed for the sail's heeling moment to overtake the crew's still-building righting moment -- measured (scratch/n4_deadstop_diag.mjs) 30s fails, 40s survives, REPOWER_RAMP_SECONDS=45 for headroom. A genuine oar-free shunt: depower, shunt, repower, hold, all with rudderUp=true from the first step`,
-      null);
+      `startHoldConfirmed=${from.confirmed} capsizedDuringDepowerRamp=${capsizedRamp} slowedBelowLockout=${slowed} shuntCompleted=${completed} endAfter=${state.end} (expected ${-end}) capsizedDuringRepower=${capsizedRepower} postExcursion=${post.excursion.toFixed(1)}deg converged=${post.converged} restoring=${post.restoring} speedRatio=${(post.speedRatio * 100).toFixed(0)}% capsized=${post.capsized} -- N4 (Archive/work-order-2026-08-10-blok-B.md): a 30s repower ramp capsized ~10s into the following hold, once the boat had picked up just enough speed for the sail's heeling moment to overtake the crew's still-building righting moment -- measured (scratch/n4_deadstop_diag.mjs) 30s fails, 40s survives, REPOWER_RAMP_SECONDS=45 for headroom. A genuine oar-free shunt: depower, shunt, repower, hold, all with rudderUp=true from the first step. DEMOTED TO xfail 2026-08-10, by O1 and nothing else -- no physics moved. The manoeuvre still works to the last step: no capsize on the depower ramp, lockout reached, end flipped, and the heading converged and restoring. What broke is an assumption this check could not previously see, because the two trims it depends on used to be one object: it DEPOWERS from the trim the boat is carrying and REPOWERS to the polar's speed optimum, and now that the carried trim is searched rather than tabled those are crewPos=0.3 and crewPos=1. The crew therefore ends up FURTHER out than they started, on a boat that is nearly stopped -- M2's own mechanism, the crew's weight pressing the ama under once there is no sail-heeling moment lifting it. The ramp length is NOT the variable: swept 30-200s against the new starting trim, the boat capsizes at every one of them (the post-hold excursion falls monotonically 10.3 -> 0.0deg as the ramp lengthens, and at 200s it goes over during the ramp itself), on both ends to the decimal. N4's own 30s-fails/40s-survives boundary was measured when the boat repowered to a trim it had been carrying; slowing the approach cannot rescue a DESTINATION that is not holdable, and crewPos=1 on a boat that is nearly stopped is not -- M2's mechanism, the crew's weight pressing the ama under with no sail-heeling moment to lift it, which is a static problem and not a rate one. Repowering to the HOLDING trim instead does survive (8.9deg, converged, restoring, no capsize) at 19% of speed. So the open question is which trim a sailor re-powers onto after a shunt, and the answer is not "the fastest one". See docs/work-order-2026-08-10-ostrzenie.md, O6`,
+      'STEERING');
   }
 }
