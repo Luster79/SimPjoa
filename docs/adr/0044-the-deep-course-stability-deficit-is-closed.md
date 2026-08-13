@@ -72,11 +72,39 @@ The mechanism, and it is consistent across three independent readings:
   TWA150: the ama's yaw moment runs 7.8 → 65.0 N·m across `crewPos` 0 → 0.6 and
   falls to 0 at `crewPos = 0.933` (the ama flies). The asymmetry is structural,
   not a coefficient.
-- `sail.yceBrailShift` (≈0.553) makes the carrot *shrink* the sail's lateral CE
+- ~~`sail.yceBrailShift` (≈0.553) makes the carrot *shrink* the sail's lateral CE
   arm, which weakens `−yCE * Fx` — the one bear-away path that survives downwind
   because it scales with drive force rather than side force. This is a free
   parameter working against the source's stated intent and is the first thing to
-  re-derive.
+  re-derive.~~
+
+> **ERRATUM, same day (2026-08-13). The bullet above is WRONG and is
+> withdrawn.** It inverted the sign of the `−yCE * Fx` term. The sail hangs to
+> leeward (ADR 0024), so that term is a **luffing** moment, and shrinking the
+> lateral arm *reduces* it — which is precisely the carrot's bear-away
+> mechanism, exactly as `sail.yceBrailShift`'s own config comment states and as
+> T2 measured when deriving it. `yceBrailShift` is also **derived**
+> (`1 − sqrt(areaAtFullBrail)` under a self-similar-shrink assumption), not a
+> free parameter, so it is not available for re-picking either.
+>
+> Measured directly (TWA150, TWS6, sheet 55, everything else neutral, carrot
+> swept alone):
+>
+> | brailWind | 0.0 | 0.2 | 0.4 | 0.6 | 0.8 | 1.0 |
+> |---|---|---|---|---|---|---|
+> | settled TWA | 58.1 | 59.4 | 61.4 | 64.5 | 70.0 | 78.0 |
+> | total yaw moment [N·m] | 82.4 | 62.6 | 39.0 | 25.0 | 11.5 | 2.6 |
+>
+> **The carrot works**: it bears away 20° and drives the luffing moment from
+> 82.4 N·m to 2.6. What it cannot do is push that moment *below* zero — and
+> that is the finding this ADR should have recorded in place of the withdrawn
+> bullet. Both of the boat's downwind yaw moments (the sail's leeward CE acting
+> on drive force, and the ama's drag on its `spacing` lever) are **luffing**,
+> and each can be reduced toward zero but not reversed. The boat therefore has
+> no source of positive bear-away moment on deep courses at all, which is what
+> caps bear-away authority at ~4° from TWA150 while luffing authority runs to
+> 117°. The asymmetry is structural — a consequence of the ama being on one
+> side — and is not reachable by tuning any coefficient.
 
 **`yawHeelSign` / `heelClrSign` are NOT the fix here** and should not be reopened
 for this purpose: at TWA170 the settled heel is 0.21°, so any `sin(phi)` term
