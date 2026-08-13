@@ -37,7 +37,7 @@ whether the project is licensed to move it without new source evidence.
 
 | Constant | Source |
 |---|---|
-| `hull.length`, `hull.beam`, `hull.displacement`, `ama.length`, `ama.maxBuoyancy`, `ama.mass`, `ama.spacing`, `sail.area`, `sail.apexAngleDeg`, `sail.CEheight` | `data/example_proa_parameters.csv` — the PJOA FOLK (ADR 0021) |
+| `hull.length`, `hull.beam`, `hull.displacement`, `ama.mass`, `ama.spacing`, `sail.area`, `sail.apexAngleDeg`, `sail.CEheight` | `data/example_proa_parameters.csv` — the PJOA FOLK (ADR 0021). **`sail.area` = 8 m² is measured** ("Crab law sail: 8 sqm"), and the same line names 10 m² as an option and 12 m² as a former rig — those are source-named VARIANTS of the real boat, not free values, so simulating one is a boat change to be declared, not a tuning |
 | `hull.draft` | Derived from beam + displacement + V-section geometry (ADR 0022) |
 | `hull.csV2A/B`, `csV1A/B`, `csBlendStartDeg/EndDeg` | Fit to Flay, Irwin & Viola 2025 towing-tank data (ADR 0004) |
 | `hull.residuaryPeakCr` (hull), `residuaryFrPeak`, `residuaryTailPlateau` shape | Slender-hull residuary model, bounded to the acceptance sweep (ADR 0001, 0006) |
@@ -75,6 +75,7 @@ whether the project is licensed to move it without new source evidence.
 | `hull.crossFlowDragCoeff` | 1.1 | Bluff-body cross-flow range | — |
 | `hull.sailingFreeReliefPeak/…Deg` | 1.0, 8/12/24deg | Qualitative reproduction only — Flay's Fig 15 has no fittable curve | — |
 | `hull.lead` | 0.06*L | **Explicitly not to be re-picked** (knife-edge window, see its own comment) — value at `tackX=0` only, made moot by ADR 0011's tack control | Do not touch under K4/K5 |
+| **`ama.length`, `ama.maxBuoyancy`** | 4.48 m, 84 kg | **NOT PUBLISHED** — moved here from CLOSED on 2026-08-13, where they had been listed against `example_proa_parameters.csv` in contradiction of that file's own annotation ("NOT PUBLISHED - scaled from the whole-boat length ratio") and of ADR 0029 ("nothing published constrains the ama's own length or displacement"). ADR 0029 then revised them ×1.40 to close the downwind hold gap, which is a move only a FREE parameter licenses — the register was the one document that should have said so and said the opposite. Measured 2026-08-13: scaling them 0.6–1.4× moves bear-away authority from TWA150 by 0.6° total (158.5→159.1), i.e. this is not the deep-course lever it was taken for | ADR 0029, 0044 |
 | `ama.wettedSurface` base (0.5 m² @ 3.2 m) | — | Scaled estimate | ADR 0021 |
 | **`ama.residuaryPeakCr`** | 0.4x hull's | Revised once already (ADR 0015→ work-order-08-05); no independent measurement | K5 touches this indirectly |
 | `ama.formFactor` | 1.2 | ITTC/Prohaska mid-range — **DO NOT raise to buy steering authority** (explicit prior-incident guard, see its own comment) | — |
