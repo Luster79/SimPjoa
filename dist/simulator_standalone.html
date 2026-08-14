@@ -1248,6 +1248,26 @@ function buildDefaultConfig(boat = 'default') {
       // --- Sheet constraint -------------------------------------------------
       yardSwingRateDegPerSec: 90,             // tunable — max slew rate for state.delta relaxing toward its equilibrium; a swinging yard, not a teleport (60-120deg/s band)
       deltaMaxReleaseDeg: 90,                 // the sheet limit is released to this during a shunt's ease/transfer/swap phases, then closes back to the commanded controls.sheet once 'sheet' starts hauling it in
+      // sheetMaxDeg: how far OUT the sheet can let the yard swing, i.e. the
+      // ceiling on `delta`. Was a hardcoded 90 (Math.PI/2) in sheet.js until
+      // 2026-08-14, with no stated justification -- and 90deg is exactly where
+      // sin(delta), and with it the leeward lateral CE arm that generates the
+      // deep-course LUFFING moment, is at its MAXIMUM. The model was holding
+      // the yard at the worst possible angle for bearing away and calling the
+      // result a property of the boat.
+      //   A crab claw's yard swings forward of the beam on a deep run; nothing
+      // in the rig stops it at square. Raising this ceiling is not new physics,
+      // it removes an artificial stop from physics already present: past 90deg
+      // cos(delta) changes sign so the CE swings FORWARD (lee helm) while
+      // sin(delta) shrinks the luffing arm.
+      //   MEASURED (docs/adr/0045), bear-away ceiling from a TWA150 hold at
+      // TWS6, both ends: 90 -> 159.1deg, 110 -> 178.7, 120 -> 179.7, 130 ->
+      // 179.7, 150 -> 179.5. The result is a PLATEAU from 110 to 150, not a
+      // knife edge, so no conclusion here rests on the exact figure; 120 is a
+      // round value inside it. The true stop is a rigging question about where
+      // the yard fouls the shroud or the mast, which no source in the project
+      // answers -- if one ever does, this is the constant to set from it.
+      sheetMaxDeg: 120,
       floggingCDFactor: 0.15,                 // tunable — extra parasite drag while luffing (delta held below the sheet limit by the wind, not by the sheet), as a fraction of CD0; 0.1-0.2 band
       // --- CE geometry ------------------------------------------------------
       // tackXFraction is UI-RENDERING-ONLY: ui/app.js draws the mast/tack at
@@ -3381,7 +3401,18 @@ function deltaAlign(state, controls) {
 // is still free to push the yard inside deltaMin — that is the
 // luffing/backwinded regime the header describes.
 function effectiveDeltaMax(state, controls, config) {
-  const commanded = clamp(Math.abs(controls.sheet ?? 0), 0, Math.PI / 2);
+  // sheetMaxDeg: how far OUT the sheet can let the yard swing. Default 90 --
+  // the value this clamp carried as a hardcoded Math.PI/2 until it was made
+  // configurable (2026-08-13) -- so the default run is bit-identical.
+  //   It is a real physical question, not a guard: on a deep course a crab
+  // claw's yard swings FORWARD of the beam, and a hard 90deg stop forbids the
+  // rig position the manual's own deep-course recipe describes. Past 90deg
+  // cos(delta) changes sign, so the CE swings FORWARD (lee helm) while
+  // sin(delta) shrinks the lateral arm that produces the deep-course luffing
+  // moment -- both of which act to bear the boat away. See the sweep in
+  // docs/adr/0045.
+  const sheetMax = (config.sail.sheetMaxDeg ?? 90) * DEG__b7;
+  const commanded = clamp(Math.abs(controls.sheet ?? 0), 0, sheetMax);
   const phase = state.shunt?.phase;
   if (phase === 'ease' || phase === 'transfer' || phase === 'swap') {
     return config.sail.deltaMaxReleaseDeg * DEG__b7;
@@ -4106,14 +4137,14 @@ const MS_TO_KN = 1.9438;
 // recording's codeVersion is meaningful (harness/replay.js warns on
 // mismatch) for a downloaded bundle without requiring a build step for
 // plain `python3 -m http.server` development.
-const CODE_VERSION = "ba50799";
+const CODE_VERSION = "890c5f9";
 // BUILD_TIME: same pattern as CODE_VERSION above — tools/bundle.js
 // replaces this with the COMMIT's timestamp (not wall-clock build time),
 // so it stays stable across re-bundling the same commit and always
 // matches CODE_VERSION's hash. Shown in the bottom-right version footer
 // so a bug report/recording can be tied to an exact, dated build without
 // having to separately ask "which commit was this."
-const BUILD_TIME = "2026-08-11T15:42:58+02:00";
+const BUILD_TIME = "2026-08-14T08:30:29+02:00";
 
 // ---------------------------------------------------------------------
 // i18n — EN/PL. Static labels are marked with data-i18n="key" in
@@ -4488,6 +4519,11 @@ function updateBrailZoneUI() {
 function updateSheetRangeUI() {
   const minDeg = Math.ceil(dims.sail.deltaMinDeg ?? 0);
   sliders.sheet.min = String(minDeg);
+  // The UPPER bound comes from CONFIG for the same reason the lower one does
+  // (docs/adr/0045): the yard swings forward of the beam on a deep run, and a
+  // slider frozen at 90 would hide the deep-course capability the core gained
+  // -- the control would exist in the physics and not on screen.
+  sliders.sheet.max = String(Math.round(dims.sail.sheetMaxDeg ?? 90));
   if (controls.sheet < minDeg * DEG__b12) {
     controls.sheet = minDeg * DEG__b12;
     sliders.sheet.value = String(minDeg);
@@ -4728,8 +4764,8 @@ function applyContinuousKeys(dt) {
   const rudderRate = 2.2; // units/sec (-1..1 range)
   const crewRate = 0.5; // fraction/sec
 
-  if (keys.has('ArrowRight')) controls.sheet = clamp__b12(controls.sheet + sheetRate * dt, 0, 90 * DEG__b12);
-  if (keys.has('ArrowLeft')) controls.sheet = clamp__b12(controls.sheet - sheetRate * dt, 0, 90 * DEG__b12);
+  if (keys.has('ArrowRight')) controls.sheet = clamp__b12(controls.sheet + sheetRate * dt, 0, (dims.sail.sheetMaxDeg ?? 90) * DEG__b12);
+  if (keys.has('ArrowLeft')) controls.sheet = clamp__b12(controls.sheet - sheetRate * dt, 0, (dims.sail.sheetMaxDeg ?? 90) * DEG__b12);
   if (keys.has('KeyQ')) controls.brailLee = clamp__b12(controls.brailLee + brailRate * dt, 0, 1);
   if (keys.has('KeyZ')) controls.brailLee = clamp__b12(controls.brailLee - brailRate * dt, 0, 1);
   if (keys.has('KeyW')) controls.brailWind = clamp__b12(controls.brailWind + brailRate * dt, 0, 1);
