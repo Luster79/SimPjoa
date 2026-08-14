@@ -54,7 +54,18 @@ export function deltaAlign(state, controls) {
 // is still free to push the yard inside deltaMin — that is the
 // luffing/backwinded regime the header describes.
 export function effectiveDeltaMax(state, controls, config) {
-  const commanded = clamp(Math.abs(controls.sheet ?? 0), 0, Math.PI / 2);
+  // sheetMaxDeg: how far OUT the sheet can let the yard swing. Default 90 --
+  // the value this clamp carried as a hardcoded Math.PI/2 until it was made
+  // configurable (2026-08-13) -- so the default run is bit-identical.
+  //   It is a real physical question, not a guard: on a deep course a crab
+  // claw's yard swings FORWARD of the beam, and a hard 90deg stop forbids the
+  // rig position the manual's own deep-course recipe describes. Past 90deg
+  // cos(delta) changes sign, so the CE swings FORWARD (lee helm) while
+  // sin(delta) shrinks the lateral arm that produces the deep-course luffing
+  // moment -- both of which act to bear the boat away. See the sweep in
+  // docs/adr/0045.
+  const sheetMax = (config.sail.sheetMaxDeg ?? 90) * DEG;
+  const commanded = clamp(Math.abs(controls.sheet ?? 0), 0, sheetMax);
   const phase = state.shunt?.phase;
   if (phase === 'ease' || phase === 'transfer' || phase === 'swap') {
     return config.sail.deltaMaxReleaseDeg * DEG;

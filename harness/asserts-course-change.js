@@ -39,10 +39,113 @@ import { DEG, holdsCourse, findHoldingTrim } from './asserts-helpers.js';
 // Memoised per (twa, end): the search is not cheap and this file asks for the
 // same four combinations repeatedly.
 const trimCache = new Map();
-function holdingTrimFor(config, twa, tws, end) {
-  const key = `${twa}/${tws}/${end}`;
-  if (!trimCache.has(key)) trimCache.set(key, findHoldingTrim(config, twa, tws, end, { windowSeconds: 120 }));
+function holdingTrimFor(config, twa, tws, end, excursionMax = 15) {
+  const key = `${twa}/${tws}/${end}/${excursionMax}`;
+  if (!trimCache.has(key)) trimCache.set(key, findHoldingTrim(config, twa, tws, end, { windowSeconds: 120, excursionMax }));
   return trimCache.get(key);
+}
+
+// O8/O9 (docs/work-order-2026-08-10-ostrzenie.md): the two checks above ask
+// for ONE grid step (TWA70<->90). These ask for the criterion's actual claim —
+// a LONG course change, TWA90 out to TWA45 and to TWA180 — and they ask it the
+// way a sailor would sail it: progressively, re-trimming through intermediate
+// courses, never touching the oar. The owner ruled on 2026-08-10 that
+// continuous re-trimming is legitimate, so a staged walk is the honest test of
+// "can this course be obtained"; a single jump across 45deg or 90deg is a
+// harder question that nothing in the source asks for.
+//   Each leg switches to the trim that holds ITS OWN waypoint and carries it
+// for LEG_SECONDS, then the walk moves on. Waypoints are the 10deg grid.
+// Destination trims are found with excursionMax=10, not the default 15: a
+// trim allowed to settle 15deg off its nominal course is not a waypoint, it is
+// a detour, and chaining nine of those measures drift rather than steering
+// (the TWA100 finding, 2026-08-12 — see findHoldingTrim's own comment).
+//   The wind frame is the STARTING one throughout: a transit changes the
+// boat's course, not the wind, so every leg's trim is applied as control
+// VALUES in `from.windDirFrom`, exactly as obtainCourse does.
+//
+// TRIM RATE, not waypoint density, is what a leg can capsize on -- measured
+// 2026-08-12, three pre-registered variants of the TWA90->150 walk at TWS6:
+//   step transitions, 10deg waypoints -> capsizes on the TWA110 leg
+//   step transitions,  5deg waypoints -> capsizes on the TWA110 leg (same place)
+//   ramped transitions, 10deg waypoints -> reaches TWA151.3 and holds, v=100%
+// Halving the course step changed nothing because it does not halve the TRIM
+// step: every waypoint's trim comes from an INDEPENDENT search over a discrete
+// grid (crewPosX in {-1,-0.5,0,0.5,1}, stays in {-1,0,1}), so waypoints 2deg
+// apart were handed trims identical in some places and a FULL +-1 jump on
+// crewPosX and stays in others -- measured directly. An instantaneous +-1
+// crewPosX change is the crew teleporting stem to stern, which is not a control
+// input the boat has; the ramp is what makes the input physical.
+//   EVERY leg is ramped, with no step-size threshold. A first draft ramped only
+// transitions above one grid notch, to stay construction-compatible with the
+// step-transition checks above; measured 2026-08-12, that is wrong. The
+// TWA100->TWA110 leg moves ONE control by 0.3 (crewPos 0.3 -> 0, everything
+// else identical) and capsizes the boat when stepped, while the same leg ramped
+// survives. There is no small-enough instantaneous trim change: the crew cannot
+// teleport 0.3 of the way to the ama any more than they can teleport all of it,
+// so the rule is a rate limit on every control, not a special case for big
+// moves. Simpler, and it is the construction variant B of the 2026-08-12
+// measurement used -- chosen before the result was known, not after.
+//   RAMP_SECONDS is NOT a tuned threshold, and that was measured rather than
+// assumed. Sweeping it over the TWA90->150 walk (TWS6, end=+1): 0s capsizes on
+// the TWA110 leg; 5, 10, 15, 20, 30, 45, 60, 90 and 120s ALL reach TWA151.3 and
+// hold at 100-102% speed. Every non-zero value works, including one far too
+// fast for a real crew, so what the boat objects to is the DISCONTINUITY, not
+// the rate -- and no result here rests on the particular number. 60s is kept as
+// a plausible timescale for a crew to reposition, not because it is a boundary.
+const LEG_SECONDS = 120;
+const RAMP_SECONDS = 60;
+
+function waypointsBetween(fromTwa, toTwa) {
+  const step = toTwa > fromTwa ? 10 : -10;
+  const wps = [];
+  for (let t = fromTwa + step; step > 0 ? t < toTwa : t > toTwa; t += step) wps.push(t);
+  wps.push(toTwa);
+  return wps;
+}
+
+function walkToCourse(config, fromTwa, toTwa, tws, end) {
+  const dt = config.dt;
+  const from = holdingTrimFor(config, fromTwa, tws, end);
+  if (!from) return { startConfirmed: false, legs: [], twaReached: NaN, final: null };
+  const windDirFrom = from.windDirFrom;
+  let state = from.hold.finalState;
+  const legs = [];
+  let lastControls = null;
+  let carried = from.trim;
+  const controlsOf = (t) => ({ windDirFrom, windSpeed: tws, sheet: t.sheetDeg * DEG, rudder: 0,
+    rudderUp: true, brailLee: 0, brailWind: t.brailWind, crewPos: t.crewPos,
+    crewPosX: t.crewPosX, tackX: t.tackX, stays: t.stays, shuntRequest: false });
+  for (const wp of waypointsBetween(fromTwa, toTwa)) {
+    const t = holdingTrimFor(config, wp, tws, end, 10);
+    if (!t) { legs.push({ wp, found: false }); break; }
+    const steps = Math.round(RAMP_SECONDS / dt);
+    for (let i = 0; i < steps; i++) {
+      const f = (i + 1) / steps;
+      const mix = {};
+      for (const k of ['sheetDeg', 'brailWind', 'crewPos', 'crewPosX', 'tackX', 'stays']) {
+        mix[k] = carried[k] + (t.trim[k] - carried[k]) * f;
+      }
+      state = integrate(state, controlsOf(mix), config, dt);
+      if (state.capsized) break;
+    }
+    if (state.capsized) {
+      legs.push({ wp, found: true, reached: twaOf(windDirFrom, state.heading), capsized: true, onRamp: true });
+      break;
+    }
+    const controls = controlsOf(t.trim);
+    const leg = holdsCourse(config, controls, state, { windowSeconds: LEG_SECONDS });
+    state = leg.finalState;
+    lastControls = controls;
+    carried = t.trim;
+    legs.push({ wp, found: true, reached: twaOf(windDirFrom, state.heading),
+      capsized: leg.capsized, v: leg.speedRatio });
+    if (leg.capsized) break;
+  }
+  // Judge the arrival on the destination trim over one full window, K1's own
+  // predicate — the same bar every other course-hold check in this package uses.
+  const final = lastControls ? holdsCourse(config, lastControls, state, { windowSeconds: 300 }) : null;
+  return { startConfirmed: true, legs,
+    twaReached: final ? twaOf(windDirFrom, final.finalState.heading) : NaN, final };
 }
 
 function twaOf(windDirFrom, heading) {
@@ -151,6 +254,30 @@ export function check_course_change(config, check, slow) {
       pointUp.fromConfirmed && pointUp.reachedTarget && pointUp.converged && pointUp.restoring && !pointUp.capsized,
       `startHoldConfirmed=${pointUp.fromConfirmed} reached TWA${pointUp.twaReached.toFixed(1)} (target 70+-10, excursion from start ${pointUp.excursion.toFixed(1)}deg) converged=${pointUp.converged} restoring=${pointUp.restoring} speedRatio=${(pointUp.speedRatio * 100).toFixed(0)}% capsized=${pointUp.capsized} -- PROMOTED out of xfail 2026-08-11 by O1, with no physics change: this reached 83.3deg against a 70+-10 band for as long as the destination came from the hand-maintained HOLD_TRIM table, and reaches 79.6/79.8deg on the two ends once the destination is the trim a search shows actually holds TWA70. The margin against the 80deg ceiling is 0.2-0.4deg and this is one wind (TWS6), so treat it as closed-but-narrow: docs/work-order-2026-08-10-ostrzenie.md O2 exists to widen it into a transit matrix rather than leaving the claim resting here`,
       null);
+  }
+
+  // O8/O9: long course changes, walked -----------------------------------
+  // TWA45 is OUTSIDE the criterion's declared scope (TWA < 50 excluded by
+  // owner decision 2026-08-09, docs/README.md). O8 is measured at the owner's
+  // request anyway and reported on its own terms; a failure here is NOT a
+  // regression against the stated criterion, and the scope line does not move
+  // because this check exists.
+  for (const end of [1, -1]) {
+    const up = walkToCourse(config, 90, 45, tws, end);
+    const upOk = up.startConfirmed && up.final && Math.abs(up.twaReached - 45) <= 10 &&
+      up.final.converged && up.final.restoring && !up.final.capsized && up.final.speedRatio >= 0.5;
+    check(`O8: TWA90 -> TWA45 walked oar-free through the 10deg grid, arrives in band and holds (TWS6, end=${end})`,
+      upOk,
+      `startHoldConfirmed=${up.startConfirmed} legs=[${up.legs.map((l) => l.found ? `${l.wp}:${l.reached.toFixed(0)}${l.capsized ? (l.onRamp ? '/CAPSIZED-ON-RAMP' : '/CAPSIZED') : ''}` : `${l.wp}:NO-TRIM`).join(' ')}] reached TWA${up.twaReached.toFixed(1)} (target 45+-10) ${up.final ? `converged=${up.final.converged} restoring=${up.final.restoring} speedRatio=${(up.final.speedRatio * 100).toFixed(0)}% capsized=${up.final.capsized}` : 'no leg completed'} -- OUT OF DECLARED SCOPE: the criterion excludes TWA<50 (owner, 2026-08-09); measured at the owner's request 2026-08-12 and PASSING on both ends at full speed, which says the exclusion is more conservative than the boat needs, NOT that the scope line moved. Moving it is an owner decision and this check does not make it`,
+      null);
+
+    const down = walkToCourse(config, 90, 180, tws, end);
+    const downOk = down.startConfirmed && down.final && Math.abs(down.twaReached - 180) <= 10 &&
+      down.final.converged && down.final.restoring && !down.final.capsized && down.final.speedRatio >= 0.5;
+    check(`O9: TWA90 -> TWA180 walked oar-free through the 10deg grid, arrives in band and holds (TWS6, end=${end})`,
+      downOk,
+      `startHoldConfirmed=${down.startConfirmed} legs=[${down.legs.map((l) => l.found ? `${l.wp}:${l.reached.toFixed(0)}${l.capsized ? (l.onRamp ? '/CAPSIZED-ON-RAMP' : '/CAPSIZED') : ''}` : `${l.wp}:NO-TRIM`).join(' ')}] reached TWA${down.twaReached.toFixed(1)} (target 180+-10) ${down.final ? `converged=${down.final.converged} restoring=${down.final.restoring} speedRatio=${(down.final.speedRatio * 100).toFixed(0)}% capsized=${down.final.capsized}` : 'no leg completed'} -- measured 2026-08-12, both ends agreeing. The walk reaches TWA151.3 converged, restoring, at 100% speed and then STALLS at the TWA170 waypoint for want of a trim, NOT a capsize: findHoldingTrim (excursionMax=10) finds nothing that holds TWA170 within 10deg, because the only holder the project knows there settles 13.8deg off nominal (docs/coverage-no-oar-2026-08-10b.txt, TWA170/TWS6: exc=13.8deg v=59%). So the downwind blocker is the ABSENCE of a tightly-holding trim at TWA160-180, which is the same region C-A/C-B/C-C are xfail in, and not the TWA110 capsize an earlier draft of this check reported -- that one was an artifact of stepping the trim instantaneously and disappeared once every leg was ramped`,
+      'STEERING');
   }
 
   // Shunt with the oar shipped -----------------------------------------

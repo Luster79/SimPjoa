@@ -431,6 +431,11 @@ function updateBrailZoneUI() {
 function updateSheetRangeUI() {
   const minDeg = Math.ceil(dims.sail.deltaMinDeg ?? 0);
   sliders.sheet.min = String(minDeg);
+  // The UPPER bound comes from CONFIG for the same reason the lower one does
+  // (docs/adr/0045): the yard swings forward of the beam on a deep run, and a
+  // slider frozen at 90 would hide the deep-course capability the core gained
+  // -- the control would exist in the physics and not on screen.
+  sliders.sheet.max = String(Math.round(dims.sail.sheetMaxDeg ?? 90));
   if (controls.sheet < minDeg * DEG) {
     controls.sheet = minDeg * DEG;
     sliders.sheet.value = String(minDeg);
@@ -671,8 +676,8 @@ function applyContinuousKeys(dt) {
   const rudderRate = 2.2; // units/sec (-1..1 range)
   const crewRate = 0.5; // fraction/sec
 
-  if (keys.has('ArrowRight')) controls.sheet = clamp(controls.sheet + sheetRate * dt, 0, 90 * DEG);
-  if (keys.has('ArrowLeft')) controls.sheet = clamp(controls.sheet - sheetRate * dt, 0, 90 * DEG);
+  if (keys.has('ArrowRight')) controls.sheet = clamp(controls.sheet + sheetRate * dt, 0, (dims.sail.sheetMaxDeg ?? 90) * DEG);
+  if (keys.has('ArrowLeft')) controls.sheet = clamp(controls.sheet - sheetRate * dt, 0, (dims.sail.sheetMaxDeg ?? 90) * DEG);
   if (keys.has('KeyQ')) controls.brailLee = clamp(controls.brailLee + brailRate * dt, 0, 1);
   if (keys.has('KeyZ')) controls.brailLee = clamp(controls.brailLee - brailRate * dt, 0, 1);
   if (keys.has('KeyW')) controls.brailWind = clamp(controls.brailWind + brailRate * dt, 0, 1);

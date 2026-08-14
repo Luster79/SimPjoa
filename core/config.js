@@ -814,6 +814,26 @@ function buildDefaultConfig(boat = 'default') {
       // --- Sheet constraint -------------------------------------------------
       yardSwingRateDegPerSec: 90,             // tunable — max slew rate for state.delta relaxing toward its equilibrium; a swinging yard, not a teleport (60-120deg/s band)
       deltaMaxReleaseDeg: 90,                 // the sheet limit is released to this during a shunt's ease/transfer/swap phases, then closes back to the commanded controls.sheet once 'sheet' starts hauling it in
+      // sheetMaxDeg: how far OUT the sheet can let the yard swing, i.e. the
+      // ceiling on `delta`. Was a hardcoded 90 (Math.PI/2) in sheet.js until
+      // 2026-08-14, with no stated justification -- and 90deg is exactly where
+      // sin(delta), and with it the leeward lateral CE arm that generates the
+      // deep-course LUFFING moment, is at its MAXIMUM. The model was holding
+      // the yard at the worst possible angle for bearing away and calling the
+      // result a property of the boat.
+      //   A crab claw's yard swings forward of the beam on a deep run; nothing
+      // in the rig stops it at square. Raising this ceiling is not new physics,
+      // it removes an artificial stop from physics already present: past 90deg
+      // cos(delta) changes sign so the CE swings FORWARD (lee helm) while
+      // sin(delta) shrinks the luffing arm.
+      //   MEASURED (docs/adr/0045), bear-away ceiling from a TWA150 hold at
+      // TWS6, both ends: 90 -> 159.1deg, 110 -> 178.7, 120 -> 179.7, 130 ->
+      // 179.7, 150 -> 179.5. The result is a PLATEAU from 110 to 150, not a
+      // knife edge, so no conclusion here rests on the exact figure; 120 is a
+      // round value inside it. The true stop is a rigging question about where
+      // the yard fouls the shroud or the mast, which no source in the project
+      // answers -- if one ever does, this is the constant to set from it.
+      sheetMaxDeg: 120,
       floggingCDFactor: 0.15,                 // tunable — extra parasite drag while luffing (delta held below the sheet limit by the wind, not by the sheet), as a fraction of CD0; 0.1-0.2 band
       // --- CE geometry ------------------------------------------------------
       // tackXFraction is UI-RENDERING-ONLY: ui/app.js draws the mast/tack at

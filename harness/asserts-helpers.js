@@ -262,14 +262,37 @@ const TRIM_TACKX = [1, 0.5, -0.5, 0, -1];
 const TRIM_CREWX = [-1, -0.5, 0, 0.5, 1];
 const TRIM_STAYS = [1, -1, 0];
 
-function findHoldingTrim(config, twa, tws, end = 1, { windowSeconds = 300 } = {}) {
+//   excursionMax (O8/O9, same work order): how far from the NOMINAL course a
+// trim may settle and still count as holding it. Default 15 is holdsCourse's
+// own band and every caller before O8 used it implicitly. It is deliberately
+// available to tighten, because 15 is WIDER than the +-10deg band a transit is
+// judged against, so a trim can be certified as "holds TWA100" while sitting
+// at 88.7 -- measured 2026-08-12, and it is why the transit matrix scores
+// TWA100 as unreachable from either neighbour. (This search settles at the
+// nominal TWA under the autopilot before releasing the oar, so `excursion` IS
+// |achieved - nominal| here; the two are the same number.) Passing 10 asks the
+// stricter question "which trim holds THIS course", not "which trim holds
+// something within 15deg of it".
+function findHoldingTrim(config, twa, tws, end = 1, { windowSeconds = 300, excursionMax = 15 } = {}) {
   const row = computePolar(config, { twsList: [tws], twaFrom: twa, twaTo: twa, step: 1 })[0];
   if (!row || row.bestSpeed <= 0.3) return null;
   const heading0 = end === 1 ? HEADING0 : HEADING0 + Math.PI;
   const windDirFrom = heading0 + end * twa * DEG;
   const uniq = (xs) => [...new Set(xs)];
-  const sheets = uniq([row.bestSheetAngle, 35, 20, 12, 55]);
-  const brails = uniq([row.bestBrailWind, 0, 0.5]);
+  // Deep sheet angles appended (2026-08-14, docs/adr/0045): once the yard's
+  // 90deg stop became config.sail.sheetMaxDeg, the angles past square are real
+  // trim positions and the deep-course holders live there -- a list topping out
+  // at 55 cannot see them, and O9 stalled at TWA170 for exactly that reason
+  // while the boat could already reach TWA179. Appended, not reordered, so the
+  // first-hit exit still finds the same trims it always did wherever those
+  // already win; only points with no shallow-sheet holder pay for the extra.
+  const sheetMax = config.sail.sheetMaxDeg ?? 90;
+  const sheets = uniq([row.bestSheetAngle, 35, 20, 12, 55, 70, 85, 100, 115].filter((d) => d <= sheetMax));
+  // The carrot at FULL travel is in the list because the manual prescribes it
+  // for exactly these courses, and the polar optimum it is seeded from is 0 on
+  // deep rows -- so without this the search never tried the source's own
+  // deep-course setting. 0.75 fills the gap that left between 0.5 and 1.
+  const brails = uniq([row.bestBrailWind, 0, 0.5, 0.75, 1]);
   const crewPositions = uniq([0, 0.3, 0.6, Math.min(1.0, config.crew.posMax)]);
 
   for (const sheetDeg of sheets) for (const brailWind of brails) for (const crewPos of crewPositions) {
@@ -285,10 +308,14 @@ function findHoldingTrim(config, twa, tws, end = 1, { windowSeconds = 300 } = {}
     for (const tackX of TRIM_TACKX) for (const crewPosX of TRIM_CREWX) for (const stays of TRIM_STAYS) {
       const controls = { windDirFrom, windSpeed: tws, sheet: sheetDeg * DEG, rudder: 0, rudderUp: true,
         brailLee: 0, brailWind, crewPos, crewPosX, tackX, stays, shuntRequest: false };
+      // The 60s screen stays at the LOOSER of the two bounds on purpose: it is
+      // a cheap pre-filter on a partial window, and a trim that ends inside
+      // excursionMax may still be outside it at 60s. Over-rejecting here would
+      // silently lose holders; over-keeping only costs a full test.
       const screen = holdsCourse(config, controls, state, { windowSeconds: 60 });
-      if (!(screen.excursion <= 15 && screen.speedRatio >= 0.5 && !screen.capsized)) continue;
+      if (!(screen.excursion <= Math.max(excursionMax, 15) && screen.speedRatio >= 0.5 && !screen.capsized)) continue;
       const full = holdsCourse(config, controls, state, { windowSeconds });
-      if (full.excursion <= 15 && full.speedRatio >= 0.5 && full.converged && full.restoring && !full.capsized) {
+      if (full.excursion <= excursionMax && full.speedRatio >= 0.5 && full.converged && full.restoring && !full.capsized) {
         return { trim: { sheetDeg, brailWind, crewPos, tackX, crewPosX, stays }, controls,
           windDirFrom, state, row, hold: full };
       }
