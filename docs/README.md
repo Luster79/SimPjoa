@@ -65,7 +65,7 @@ with is *stricter* than the criterion requires, since the owner has ruled
 matters is a course that cannot be held — so the figure is a floor.
 
 **Obtaining a course: measured at 52.6%, not the single pair it used to rest
-on.** `work-order-2026-08-10-ostrzenie.md`'s O1 replaced `K3`'s hardcoded
+on.** `Archive/work-order-2026-08-10-ostrzenie.md`'s O1 replaced `K3`'s hardcoded
 `HOLD_TRIM` (a stale `S1c` snapshot that never searched `crewPos` or `stays`)
 with a search (`findHoldingTrim()`, `harness/asserts-helpers.js`); pointing up
 (TWA90→70, TWS6) now reaches 79.6/79.8deg on both ends, inside the ±10deg
@@ -168,7 +168,7 @@ Append-only. Never edit an old ADR; supersede it with a new one.
 | File | What it covers |
 |---|---|
 | `findings-2026-08-15-deep-course-gap.md` | Why TWA180 is holdable but unreachable oar-free: the trim→equilibrium map is DISCONTINUOUS. Two disjoint deep-trim families (equilibria 159.6 and ~175-180) with no trim placing an equilibrium in TWA160-175. Refutes eight other candidate causes with numbers, and carries the method warning about narrow control grids |
-| `work-order-2026-08-10-ostrzenie.md` | Obtaining a course — O1 closed the pointing-up pair the work order was named for (target-trim defect, no physics change); O2 measured the whole grid at 52.6% (ADR 0042); O6/O7 closed the shunt capsize and clipped the crew-position search to its own advisory limit (ADR 0043), leaving a narrower speed shortfall. Open: O3 (continuous-trim transit, now a margin question not a gap-closer), O4 (inactive) |
+| `work-order-2026-08-15-pelny-wiatr.md` | The deep-course gap. TWA180 is holdable but unreachable: the trim→equilibrium map is discontinuous (families at 159.6 and ~175-180, nothing between). W1 re-opens ADR 0032's TWA162-174 trade with reachability as the criterion; W2-W7 are instrument clean-ups and one owner decision |
 
 A work order lives here while it is open and moves to `Archive/` when it is
 done. There is exactly one open at a time.
