@@ -74,6 +74,29 @@ constant to set from it.
   reversed from TWA150's family, and previously nonexistent because the sheet
   could not get there.
 
+> **ERRATUM 2026-08-15 — the headline table measures HOLDING, not obtaining.**
+> The "bear-away ceiling from a TWA150 hold" table above was produced by
+> settling the boat under the AUTOPILOT at TWA150 with the candidate trim
+> already set, then shipping the oar. That is a hold-and-release measurement.
+> It is NOT a transit, and this ADR presented it as one.
+>
+> The real figure, measured properly (from a confirmed oar-free hold at TWA150,
+> ramped, no rudder at any point, 1296 trims): **the transit ceiling is
+> TWA159.6 — against 159.1 before this change. Essentially unchanged.**
+>
+> What the change genuinely bought is HOLDING capability: trims holding within
+> 10deg went TWA170 1->6 and TWA180 18->42, and the best TWA180 holder now sits
+> at 0.3deg excursion / 97% speed. The target trim `sheet=110` could not exist
+> before the clamp was lifted, so the fix was necessary — it was just not
+> sufficient, and "159.1 -> 179.7" must not be read as reachability.
+>
+> Measured after the correction: TWA180 is holdable but **not reachable**.
+> ~20 transit variants (step; ramps 5-480s; staged in several orders including
+> the manual's own; via intermediate trims; without settling; from starts at
+> TWA110-170) all land at 100-111deg. The deep and reaching equilibria are
+> separate attractors and every control path from the reaching side is captured
+> by the reaching one. The dead band is TWA160-170.
+
 ## Consequences
 
 - `findHoldingTrim` (`harness/asserts-helpers.js`) had to be widened twice to

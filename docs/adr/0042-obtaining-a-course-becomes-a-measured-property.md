@@ -61,6 +61,23 @@ TWA80->70 and TWA160->170 (TWS10). Three distinct operating points, not
 diagnosed here — O2's job was to measure, not to root-cause. Candidates for
 a follow-up position if the owner decides transit capsizes are in scope.
 
+> **ERRATUM 2026-08-15 — 82/156 was understated by a tolerance mismatch.**
+> The destination trims were certified by `findHoldingTrim` at its default
+> 15deg tolerance while the transit was judged against a +-10deg band, so the
+> matrix repeatedly aimed at trims that settle up to 15deg off their nominal
+> course and then scored the miss as a failed transit. Diagnosed at TWA100
+> (2026-08-12): the loose search returned a trim settling at 88.7 which fails
+> from both neighbours, while an on-target trim reaches 104.2 and holds from
+> both.
+>
+> Re-measured with the two tolerances matched (`excursionMax: 10`):
+> **115/156 (73.7%)**, against the 82/156 (52.6%) reported below.
+>
+> The contributions of the two changes made since — the matched tolerance and
+> ADR 0045's sheet ceiling — were **not separated**; that would need a run at
+> the old 90deg ceiling with the new tolerance. Do not attribute the gain to
+> either one alone.
+
 ## Consequences
 
 - `docs/coverage-obtain-course-2026-08-11.txt` is the first committed

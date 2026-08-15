@@ -93,7 +93,15 @@ function main() {
       // sheetBrailPairs, applied to whole points instead of trim axes.
       const holds = new Map();
       for (const twa of TWA_LIST) {
-        const found = findHoldingTrim(config, twa, tws, end, { windowSeconds: 120 });
+        // excursionMax 10, not the default 15 (2026-08-14). A destination trim is
+        // judged against a +-10deg band by the transit below, so certifying it
+        // with a 15deg tolerance lets the search return a trim that "holds" the
+        // course while settling 15deg away from it -- and the transit then
+        // fails on a target that was wrong by construction. Measured at TWA100
+        // (2026-08-12): the trim the loose search returned settles at 88.7 and
+        // fails from both neighbours, while an on-target one reaches 104.2 and
+        // holds from both. The two tolerances have to be the same number.
+        const found = findHoldingTrim(config, twa, tws, end, { windowSeconds: 120, excursionMax: 10 });
         holds.set(twa, found);
         const elapsed = ((Date.now() - t0) / 1000).toFixed(0);
         console.log(`[${elapsed}s] end=${end} TWS${tws} TWA${twa}: holding trim ${found ? 'FOUND' : 'NONE'}`);
