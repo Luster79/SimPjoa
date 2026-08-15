@@ -167,6 +167,7 @@ Append-only. Never edit an old ADR; supersede it with a new one.
 
 | File | What it covers |
 |---|---|
+| `findings-2026-08-15-deep-course-gap.md` | Why TWA180 is holdable but unreachable oar-free: the trim→equilibrium map is DISCONTINUOUS. Two disjoint deep-trim families (equilibria 159.6 and ~175-180) with no trim placing an equilibrium in TWA160-175. Refutes eight other candidate causes with numbers, and carries the method warning about narrow control grids |
 | `work-order-2026-08-10-ostrzenie.md` | Obtaining a course — O1 closed the pointing-up pair the work order was named for (target-trim defect, no physics change); O2 measured the whole grid at 52.6% (ADR 0042); O6/O7 closed the shunt capsize and clipped the crew-position search to its own advisory limit (ADR 0043), leaving a narrower speed shortfall. Open: O3 (continuous-trim transit, now a margin question not a gap-closer), O4 (inactive) |
 
 A work order lives here while it is open and moves to `Archive/` when it is
