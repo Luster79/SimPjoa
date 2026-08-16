@@ -408,6 +408,40 @@ function buildDefaultConfig(boat = 'default') {
       windageArea: 1.5,                    // m^2 — BEAM-ON projected area; tunable estimate, same status as lateralArea (scaled by the length ratio squared, ADR 0021)
       windageAreaFrontal: 0.41,            // m^2 — END-ON area (bow, mast section, one crew); windageForce interpolates on sin^2 of the apparent-wind angle (scaled, ADR 0021)
       windageCD: 0.85,
+      // windageCrewAreaFraction (W1, Archive/work-order-2026-08-15-pelny-wiatr.md):
+      // ADR 0008's own "Alternatives rejected" section named this exact
+      // refinement ("modelling windage per component... would also give a
+      // windage yaw moment. Not justified at this level of calibration...
+      // recorded here as the obvious next refinement if windage is ever
+      // anchored to measurement") and left it undone for lack of a consumer.
+      // The deep-course reachability gap is that consumer: every yaw term the
+      // boat has scales with leeway or heel, both near zero at TWA162-174
+      // (ADR 0032, ADR 0044), but windage's own Fy is driven by APPARENT WIND
+      // ANGLE, which does not vanish there. Splitting the single lumped area
+      // into a crew share (which moves with crewPosX, the manual's own deep-
+      // course control -- "push crew as far aft as possible... this will let
+      // the canoe weathervane downwind", Basic-of-sailing-Micronesian-way
+      // ch. V) and an everything-else share (hull topsides + mast/spars +
+      // platform, centred at the CG) gives windage a real, physically
+      // grounded lever arm without inventing a new force. 0.6/1.8 = 0.333 is
+      // ADR 0008's own beam-on breakdown (crew ~0.6 of 1.8 m^2 total); kept
+      // as one ratio for both beam-on and frontal area, since the frontal
+      // breakdown was described (bow/mast/crew, three roughly equal items)
+      // but never itemised with numbers. Estimate, not measured -- same
+      // status as hull.lead / sail.ceSwingFraction (aero.js's own comment).
+      windageCrewAreaFraction: 0.6 / 1.8,
+      // windageYawSign: a sign flip, same convention as hull.ceLeverSign /
+      // hull.yawHeelSign / hull.crewTrimSign -- the geometry above is
+      // unambiguous about WHICH lever arm moves with crewPosX, but not about
+      // the OVERALL sign of the resulting moment relative to this codebase's
+      // yaw convention, which is more reliably read off a direct measurement
+      // than re-derived from the frame algebra by hand (see this project's
+      // own "measure it, do not read it" lesson, docs/README.md). Measured
+      // (docs/adr/0047): release trials at TWA155-175 (family A trim,
+      // crewPosX=-1, TWS6, end=1) settle at TWA160.0 at -1 against 159.1 at
+      // +1 -- weak (the term is small, see the ADR) but consistent in the
+      // manual's own direction: crew aft bears away further, not less.
+      windageYawSign: -1,
       wettedSurface: 2.5,                  // m^2 — tunable estimate (slender canoe hull; scaled by the length ratio squared, ADR 0021)
       // Cf is not a stored constant — hydro.js computes it per call from the
       // ITTC-57 model-ship line at the instantaneous Reynolds number

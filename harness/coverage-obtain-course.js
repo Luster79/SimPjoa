@@ -45,6 +45,15 @@ for (let twa = 50; twa <= 180; twa += 10) DEFAULT_TWA_LIST.push(twa);
 const DEFAULT_TWS_LIST = [4, 6, 10];
 const DEFAULT_END_LIST = [1, -1];
 
+// --old-ceiling (W3, Archive/work-order-2026-08-15-pelny-wiatr.md): the errata
+// to ADR 0042 found 115/156 against the originally reported 82/156, but two
+// things changed between the two runs at once -- the excursionMax=10
+// tolerance match (already the default below) and ADR 0045's sheetMaxDeg
+// lift (90 -> 120) -- and nobody had split which one bought how much. This
+// flag pins sheetMaxDeg back to the pre-0045 90deg stop so a run with it set
+// measures "old ceiling, new tolerance" in isolation.
+const OLD_CEILING = process.argv.includes('--old-ceiling');
+
 const twaArg = process.argv.find((a) => a.startsWith('--twa='));
 const TWA_LIST = twaArg ? twaArg.slice('--twa='.length).split(',').map(Number) : DEFAULT_TWA_LIST;
 const twsArg = process.argv.find((a) => a.startsWith('--tws='));
@@ -79,7 +88,7 @@ function obtainCourse(config, from, to, tws) {
 }
 
 function main() {
-  const config = createConfig();
+  const config = createConfig(OLD_CEILING ? { sail: { sheetMaxDeg: 90 } } : undefined);
   const t0 = Date.now();
   let heldTransitions = 0, totalTransitions = 0;
   const rows = [];
@@ -128,7 +137,7 @@ function main() {
     }
   }
 
-  console.log(`\nCOVERAGE: ${heldTransitions}/${totalTransitions} transitions obtainable with the oar shipped throughout (K1's converged+restoring predicate), grid TWA ${TWA_LIST[0]}-${TWA_LIST[TWA_LIST.length - 1]} step 10, TWS ${TWS_LIST.join('/')}, end ${END_LIST.join('/')}.`);
+  console.log(`\nCOVERAGE: ${heldTransitions}/${totalTransitions} transitions obtainable with the oar shipped throughout (K1's converged+restoring predicate), grid TWA ${TWA_LIST[0]}-${TWA_LIST[TWA_LIST.length - 1]} step 10, TWS ${TWS_LIST.join('/')}, end ${END_LIST.join('/')}.${OLD_CEILING ? ' [--old-ceiling: sheetMaxDeg pinned to 90, pre-ADR-0045]' : ''}`);
   console.log('\nPer-transition detail:');
   for (const r of rows) {
     const detail = !r.result.fromFound ? 'no holding trim at start'

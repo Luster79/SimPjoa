@@ -1,6 +1,6 @@
 # docs/ — index
 
-*Last reviewed: 2026-08-11*
+*Last reviewed: 2026-08-15*
 
 `ARCHITECTURE_physics_core_EN.md` in the repo root is the context map for the
 code. This file is the map for everything in `docs/`.
@@ -54,28 +54,49 @@ Two consequences bind the work:
   unknown coefficients inside a defensible band; it is not a licence to
   re-pick a value until an assertion agrees — see the conventions below.
 
-### Where it stands (2026-08-10)
+### Where it stands (2026-08-15)
 
-**Holding a course: covered.** `harness/coverage-no-oar.js` finds a
-rudder-free holding trim at all 42 in-scope grid points
-(`coverage-no-oar-2026-08-10b.txt`), and `S3` confirms it on both ends at TWS6
-across the reach and deep bands. The frozen-trim predicate this is measured
-with is *stricter* than the criterion requires, since the owner has ruled
-(2026-08-10) that continuous re-trimming is acceptable and the failure that
-matters is a course that cannot be held — so the figure is a floor.
+**Holding a course: covered, re-verified under the raised sheet ceiling.**
+`harness/coverage-no-oar.js --wide-search` finds a rudder-free holding trim at
+all 42 in-scope grid points (`coverage-no-oar-2026-08-15.txt`), and `S3`
+confirms it on both ends at TWS6 across the reach and deep bands. The
+frozen-trim predicate this is measured with is *stricter* than the criterion
+requires, since the owner has ruled (2026-08-10) that continuous re-trimming
+is acceptable and the failure that matters is a course that cannot be held —
+so the figure is a floor. The 2026-08-10 snapshot this figure used to rest on
+predated five physics ADRs (0032, 0036, 0038, 0044, 0045) and a sheet grid
+that topped out at 75deg; W2 (`Archive/work-order-2026-08-15-pelny-wiatr.md`)
+re-ran it under the current model and widened grid — first attempt found
+40/42 (two points needed sheet=15, below the widened grid's own floor), fixed
+by matching the grid to `findHoldingTrim`'s own list; the re-run confirms
+42/42 unchanged, now genuinely current rather than carried forward.
 
-**Obtaining a course: measured at 52.6%, not the single pair it used to rest
-on.** `Archive/work-order-2026-08-10-ostrzenie.md`'s O1 replaced `K3`'s hardcoded
-`HOLD_TRIM` (a stale `S1c` snapshot that never searched `crewPos` or `stays`)
-with a search (`findHoldingTrim()`, `harness/asserts-helpers.js`); pointing up
-(TWA90→70, TWS6) now reaches 79.6/79.8deg on both ends, inside the ±10deg
-band, promoted out of `xfail`. O2 then generalised that one pair into a
-transit matrix over the whole grid (ADR 0042, `harness/coverage-obtain-
-course.js`): **82/156 transitions (52.6%)**, TWA 50-180 step 10, TWS 4/6/10,
-both ends. The TWS6 pair O1 closed does hold, but the same pair does not hold
-at TWS4 — the 0.2-0.4deg margin O1 measured was a property of one wind, not a
-general result. Six transitions capsize (both ends agreeing), not yet
-diagnosed. Shunting with the oar shipped, previously passing, went `xfail`
+**Obtaining a course: 115/156 (73.7%)**, not 82/156. `Archive/work-order-
+2026-08-10-ostrzenie.md`'s O1 replaced `K3`'s hardcoded `HOLD_TRIM` (a stale
+`S1c` snapshot that never searched `crewPos` or `stays`) with a search
+(`findHoldingTrim()`, `harness/asserts-helpers.js`); pointing up (TWA90→70,
+TWS6) now reaches 79.6/79.8deg on both ends, inside the ±10deg band, promoted
+out of `xfail`. O2 then generalised that one pair into a transit matrix over
+the whole grid (ADR 0042, `harness/coverage-obtain-course.js`): originally
+**82/156 (52.6%)**. ADR 0042's own errata found this understated by a
+tolerance mismatch (destination trims certified at 15deg, transits judged
+against ±10deg) and re-measured at **115/156 (73.7%)** with the two matched —
+but that run changed two things at once (the tolerance AND ADR 0045's sheet
+ceiling). W3 (same work order) split them: a run pinned to the OLD sheet
+ceiling (90deg) with the matched tolerance ALSO gives 115/156
+(`coverage-obtain-course-old-ceiling-2026-08-15.txt`) — since raising the
+ceiling can only add candidate trims, this is conclusive: the entire
+82→115 gain is the tolerance match, and ADR 0045's sheet ceiling contributes
+ZERO net transitions to this matrix (it still matters elsewhere — see ADR
+0045 and ADR 0046 below). The TWS6 pointing-up pair O1 closed does hold, but
+the same pair does not hold at TWS4 — the 0.2-0.4deg margin O1 measured was a
+property of one wind, not a general result. Six transitions capsize (both
+ends agreeing); W6 (same work order) re-checked all six under a RAMPED trim
+change instead of ADR 0042's instant switch — four resolve (TWA100→110/TWS6,
+TWA80→70/TWS10, both ends: pure step-artifacts, the same class O2's own O1
+note found for the TWA90 pointing-up pair), two do not (TWA160→170/TWS10,
+both ends — the same TWA160-175 band the deep-course gap findings and ADR
+0046 independently flag, see below). Shunting with the oar shipped, previously passing, went `xfail`
 when O1 separated two trims (`crewPos=0.3` holding vs. `crewPos=1`
 speed-optimal) that a table used to conflate; O7 found the root cause
 (`crew.posMax`, the point past which the crew's own weight sinks the ama, was
@@ -84,6 +105,19 @@ removed the capsize outright. O6's follow-up search confirmed the clipped
 limit is genuinely the fastest surviving repower target, not just a safer
 one — but the check stays `xfail`: 33-34% of speed against the check's 50%
 floor, a narrower gap than the capsize it replaced (ADR 0043).
+
+**TWA160-175: a real gap, not (yet) excluded.** `findings-2026-08-15-deep-
+course-gap.md` measured the trim→equilibrium map as discontinuous there — a
+reach-side family ceilinged at TWA159.6 and a deep-side family starting
+~TWA175, nothing holding an equilibrium between them. ADR 0046 and ADR 0047
+each re-confirmed it independently under a wide, ramped, state-aware search
+before any physics was added, and ADR 0047's windage yaw moment (the one
+mechanism in the budget that does not fade with leeway there) measures two
+orders of magnitude too small to close it. Unlike TWA < 50 below, this band
+is **not yet added to the criterion's scope exclusion** — that is an open
+owner decision, informed by the manual's own troubleshooting section ending
+in "steer with a paddle" for exactly this failure (ADR 0047), not made by
+either ADR.
 
 **Out of scope, unsolved:** TWA < 50, and whether a trim that holds heading
 while decaying to ~20% of its speed counts as holding at all.
@@ -162,13 +196,22 @@ Append-only. Never edit an old ADR; supersede it with a new one.
 | 0045 | **The yard could not swing past the beam** — `core/sheet.js` clamped the sheet to a hardcoded 90deg, exactly where the leeward CE arm that makes the deep-course luffing moment is MAXIMAL. Now `sail.sheetMaxDeg` (120; plateau 110-150, not tuned). Bear-away ceiling from TWA150: **159.1 -> 179.7deg**, both ends; TWA170 holders 1->6, TWA180 18->42; `out/polar.csv` byte-identical and 102/102 unchanged. Refutes five other candidate causes (ama size, sail area, crew to leeward, heel-yaw pair, carrot). **`coverage-no-oar`'s 42/42 and ADR 0042's 82/156 predate this and are lower bounds** |
 | 0044 | The deep-course stability deficit is CLOSED -- supersedes ADR 0028's closing diagnosis (its paddle withdrawal and manual reading stand). `dM/dpsi` is restoring at every TWA to the dead run (−19.2 at TWA90 to −8.7 at TWA180); what remains is an authority ASYMMETRY (from TWA150 the boat luffs 117deg and bears away 4deg), because every fore-aft control acts through `xCE*Fy` and the settled leeway at TWA170 is 1.34deg. **Read it before citing 0028's "remaining work"** |
 | 0043 | Crew-position search obeys its own advisory `crew.posMax` limit (O7), and the shunt's repower target is searched for speed rather than assumed (O6) -- the clip alone removes the shunt capsize K3 found; the search confirms the clipped limit IS the fastest surviving target, but the check stays `xfail` on a speed shortfall (33-34% vs. a 50% floor), not a capsize |
+| 0046 | A walk asks what is reachable, not just what holds (W5) -- `findReachableTrim` (asserts-helpers.js) replaces `findHoldingTrim` for every waypoint after a walk's start, evaluating each candidate by RAMPING it in from the boat's actual current state rather than settling fresh at the target. O9 (TWA90->TWA180) now stalls honestly AT the TWA170 waypoint (151.3deg final) instead of passing through it and failing only on the last leg (ADR 0045's TWA64) -- confirms, by a second independent instrument, that `findings-2026-08-15-deep-course-gap.md`'s TWA160-175 gap survives a wide, ramped, state-aware search |
+| 0047 | Windage gets a yaw moment, and the deep-course gap stays open (W1) -- gives `windageForce()` (ADR 0008) the yaw-moment lever ADR 0008 itself named and declined; the one term in the budget driven by apparent wind angle rather than leeway, so it survives TWA162-174 where every other term fades. Measured at 1-3 N*m against a 16-90 N*m luffing budget -- correctly signed, two orders of magnitude too small; a ninth candidate cause refuted. Real trade found and kept: `K3`'s pointing-up check (TWA90->TWA70) regressed out of its ±10deg band and is demoted to `xfail:STEERING`, because the same term is strongest exactly where apparent wind is strongest (close-hauled/reaching) and weakest where this ADR needed it (deep). **W1 closes: the gap is real, not a search artifact or a missing coefficient** |
 
 ## Open work
 
-| File | What it covers |
-|---|---|
-| `findings-2026-08-15-deep-course-gap.md` | Why TWA180 is holdable but unreachable oar-free: the trim→equilibrium map is DISCONTINUOUS. Two disjoint deep-trim families (equilibria 159.6 and ~175-180) with no trim placing an equilibrium in TWA160-175. Refutes eight other candidate causes with numbers, and carries the method warning about narrow control grids |
-| `work-order-2026-08-15-pelny-wiatr.md` | The deep-course gap. TWA180 is holdable but unreachable: the trim→equilibrium map is discontinuous (families at 159.6 and ~175-180, nothing between). W1 re-opens ADR 0032's TWA162-174 trade with reachability as the criterion; W2-W7 are instrument clean-ups and one owner decision |
+None currently — `work-order-2026-08-15-pelny-wiatr.md` closed and moved to
+`Archive/` (with its findings document, `findings-2026-08-15-deep-course-
+gap.md`): the deep-course gap (TWA180 holdable but unreachable oar-free,
+trim→equilibrium map discontinuous at TWA160-175) was confirmed real, not a
+grid artifact, by two independent wide/ramped re-searches (ADR 0046), and W1
+tried the one leeway-independent mechanism in the budget (windage's yaw
+moment, ADR 0047) — correctly grounded, two orders of magnitude too small,
+with a real trade elsewhere (`K3` pointing-up demoted to `xfail`). TWA160-175
+stands as a documented model limit, same status as TWA<50; whether to add it
+to the success criterion's scope exclusion is an open owner decision, not a
+physics one — see "Where it stands" above.
 
 A work order lives here while it is open and moves to `Archive/` when it is
 done. There is exactly one open at a time.

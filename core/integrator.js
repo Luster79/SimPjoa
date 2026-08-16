@@ -37,7 +37,7 @@ export function computeForces(state, controls, config) {
 
   const Fx = aero.Fx + resist + side.Fx + drag.Fx + rudder.Fx + windage.Fx;
   const Fy = aero.Fy + side.Fy + drag.Fy + rudder.Fy + windage.Fy;
-  const M = aero.yawMoment + side.yawMoment + rudder.yawMoment + drag.yawMoment;
+  const M = aero.yawMoment + side.yawMoment + rudder.yawMoment + drag.yawMoment + windage.yawMoment;
 
   // Roll: sail heel (the boat-frame, end-aware heelMoment converted to the
   // physical-frame roll sign via *end — heelMoment*end<0 is the normal,
@@ -82,7 +82,7 @@ export function computeForces(state, controls, config) {
       hullSide: { Fx: side.Fx, Fy: side.Fy, yawMoment: side.yawMoment },
       amaDrag: { Fx: drag.Fx, Fy: drag.Fy, yawMoment: drag.yawMoment },
       rudder: { Fx: rudder.Fx, Fy: rudder.Fy, yawMoment: rudder.yawMoment },
-      windage: { Fx: windage.Fx, Fy: windage.Fy },
+      windage: { Fx: windage.Fx, Fy: windage.Fy, yawMoment: windage.yawMoment },
       roll: { Msail, Mrestore, Mcrew, Mdamp, Mroll },
       heave: { Fsail: aero.Fz, Fama: Famaz, Fz },
       pitch: { Mcrew: Mpitch },

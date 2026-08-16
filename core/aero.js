@@ -291,7 +291,7 @@ export function sailCoefficients(alpha, controls, config, deltaDeg = null) {
   return { CL: sign * CLf, CD: CDf, alphaSailor: alphaAbsRad, areaFactor };
 }
 
-// windageForce(state, controls, config) -> { Fx, Fy } in the boat frame.
+// windageForce(state, controls, config) -> { Fx, Fy, yawMoment } in the boat frame.
 //
 // The boat's own above-water air drag — hull topsides, crew, mast, spars
 // (docs/adr/0008). Without it the sail's own residual CD stands in for the
@@ -310,9 +310,9 @@ export function sailCoefficients(alpha, controls, config, deltaDeg = null) {
 // than in the resistance term.
 export function windageForce(state, controls, config) {
   const { windageArea, windageAreaFrontal, windageCD } = config.hull;
-  if (!windageArea || !windageCD) return { Fx: 0, Fy: 0 };
+  if (!windageArea || !windageCD) return { Fx: 0, Fy: 0, yawMoment: 0 };
   const aw = apparentWind(state, controls);
-  if (aw.speed < 1e-6) return { Fx: 0, Fy: 0 };
+  if (aw.speed < 1e-6) return { Fx: 0, Fy: 0, yawMoment: 0 };
   // The exposed area depends on which way the air meets the boat: end-on it
   // sees a bow, a mast section and a crew member; beam-on it sees the whole
   // topside. Interpolating on sin^2 of the apparent-wind angle is the usual
@@ -324,7 +324,27 @@ export function windageForce(state, controls, config) {
   const q = 0.5 * config.rho_air * areaEff * windageCD * aw.speed;
   // q already carries one power of speed; multiplying by the velocity
   // COMPONENTS below supplies the second and the direction at once.
-  return { Fx: q * aw.vx, Fy: q * aw.vy };
+  const Fx = q * aw.vx, Fy = q * aw.vy;
+
+  // yawMoment (W1, Archive/work-order-2026-08-15-pelny-wiatr.md; see
+  // config.hull.windageCrewAreaFraction's own comment for the full
+  // justification): ADR 0008 lumped windage into one area with no lever arm.
+  // Splitting the crew's own share of it onto crewPosX's fore-aft position
+  // (the SAME boat-frame convention crewPitchMoment uses, stability.js) gives
+  // windage a real yaw moment — the one term in the whole moment budget whose
+  // driving force (Fy here) comes from APPARENT WIND ANGLE rather than hull
+  // leeway, so it does not fade out in the TWA162-174 band where leeway does
+  // (ADR 0032, ADR 0044). The "everything else" share (hull topsides,
+  // mast/spars, platform) is left at the CG, x=0, contributing nothing to
+  // this term — it is not zero physically, just not separately estimated;
+  // see the config comment for why crew-only is the one component worth
+  // splitting out.
+  const crewFraction = config.hull.windageCrewAreaFraction ?? 0;
+  const xCrew = (controls.crewPosX ?? 0) * (config.hull.length / 2);
+  const windageYawSign = config.hull.windageYawSign ?? 1;
+  const yawMoment = windageYawSign * crewFraction * xCrew * Fy;
+
+  return { Fx, Fy, yawMoment };
 }
 
 // sailForces(state, controls, config)

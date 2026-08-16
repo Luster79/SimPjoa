@@ -90,3 +90,29 @@ conclusions reached committed ADRs before being caught.
 **Every scan in this area should state the swept range of every control axis
 and justify each omission.** A result is otherwise a statement about the grid,
 not about the boat.
+
+> **ERRATUM 2026-08-15 — the gap survives a wide, ramped, state-aware
+> re-search, and a ninth candidate cause is refuted.**
+>
+> `Archive/work-order-2026-08-15-pelny-wiatr.md` (W1) re-measured this gap with
+> two independent instruments before adding any physics, per its own risk
+> section: `findReachableTrim`'s ramped, full-grid walk (ADR 0046) stalls
+> honestly at the TWA170 waypoint on both ends (151.3deg final), and a direct
+> ramped re-check of the six ADR 0042 capsize transitions confirms
+> TWA160->170/TWS10 still fails on both ends under the same widened search.
+> The gap is not a grid artifact.
+>
+> A ninth candidate was checked and refuted: **windage's own yaw moment**
+> (ADR 0047 gives `windageForce()` one, split between a crew-position lever
+> and a CG-centred everything-else share — the one force in the budget driven
+> by apparent wind angle rather than leeway, so it does not fade in this
+> band). Measured at 0.4-2.6 N·m against a 16-90 N·m luffing budget across
+> TWA160-175 — correctly signed (verified against the manual's own claim that
+> crew aft "lets the canoe weathervane downwind"), two orders of magnitude too
+> small. Kept in `/core` as a genuine physics completion; does not close this
+> gap.
+>
+> The manual's own troubleshooting section for "Canoe cannot be made to sail
+> downwind" (ch. V) ends its recipe with the paddle — noted as context for
+> whether TWA160-175 belongs in the success criterion's scope (the owner's
+> call, `docs/README.md`), not acted on here.

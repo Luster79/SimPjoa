@@ -324,10 +324,82 @@ function findHoldingTrim(config, twa, tws, end = 1, { windowSeconds = 300, excur
   return null;
 }
 
+// findReachableTrim(config, fromState, windDirFrom, carried, tws, end,
+//   targetTwa, { rampSeconds, windowSeconds, excursionMax }) -> same shape as
+//   findHoldingTrim (trim/controls/hold), or null.
+//
+// W5 (Archive/work-order-2026-08-15-pelny-wiatr.md): findHoldingTrim answers
+// "does SOME trim hold this course", settling from a FRESH state parked at
+// the target heading -- the right question for a coverage grid (coverage-
+// no-oar.js, coverage-obtain-course.js), the wrong one for a multi-leg walk.
+// A trim independently found that way can be a physically impossible ask
+// from wherever the boat actually is mid-walk: ADR 0045 found exactly this
+// at TWA180 -- the independently-chosen trim, applied from the TWA160 state,
+// rounds the boat up to 64deg instead of bearing away further, because the
+// destination trim was never asked whether it is reachable from the boat's
+// actual state, only whether it holds once already there.
+//   This asks the question a walk needs: from THIS state, carrying THIS
+// trim, is there a candidate that -- ramped in over rampSeconds, the same
+// physical-rate argument asserts-course-change.js's O8/O9 comment makes for
+// why every control change has to ramp -- reaches targetTwa within
+// excursionMax and then holds it. Same candidate grid and search order as
+// findHoldingTrim (an existence question, first-hit early exit), but every
+// candidate is tried by RAMPING from the caller's actual state and trim
+// instead of settling fresh from a standing start.
+function findReachableTrim(config, fromState, windDirFrom, carried, tws, end, targetTwa,
+  { rampSeconds = 60, windowSeconds = 300, excursionMax = 10 } = {}) {
+  const dt = config.dt;
+  const row = computePolar(config, { twsList: [tws], twaFrom: targetTwa, twaTo: targetTwa, step: 1 })[0];
+  if (!row || row.bestSpeed <= 0.3) return null;
+  const uniq = (xs) => [...new Set(xs)];
+  const sheetMax = config.sail.sheetMaxDeg ?? 90;
+  const sheets = uniq([row.bestSheetAngle, 35, 20, 12, 55, 70, 85, 100, 115].filter((d) => d <= sheetMax));
+  const brails = uniq([row.bestBrailWind, 0, 0.5, 0.75, 1]);
+  const crewPositions = uniq([0, 0.3, 0.6, Math.min(1.0, config.crew.posMax)]);
+  const reachedTwaOf = (heading) => {
+    const a = (((windDirFrom - heading) / DEG) % 360 + 360) % 360;
+    return a > 180 ? 360 - a : a;
+  };
+  const controlsOf = (t) => ({ windDirFrom, windSpeed: tws, sheet: t.sheetDeg * DEG, rudder: 0,
+    rudderUp: true, brailLee: 0, brailWind: t.brailWind, crewPos: t.crewPos,
+    crewPosX: t.crewPosX, tackX: t.tackX, stays: t.stays, shuntRequest: false });
+
+  for (const sheetDeg of sheets) for (const brailWind of brails) for (const crewPos of crewPositions) {
+    for (const tackX of TRIM_TACKX) for (const crewPosX of TRIM_CREWX) for (const stays of TRIM_STAYS) {
+      const target = { sheetDeg, brailWind, crewPos, crewPosX, tackX, stays };
+      let state = fromState;
+      const steps = Math.round(rampSeconds / dt);
+      let capsizedRamp = false;
+      for (let i = 0; i < steps; i++) {
+        const f = (i + 1) / steps;
+        const mix = {};
+        for (const k of ['sheetDeg', 'brailWind', 'crewPos', 'crewPosX', 'tackX', 'stays']) {
+          mix[k] = carried[k] + (target[k] - carried[k]) * f;
+        }
+        state = integrate(state, controlsOf(mix), config, dt);
+        if (state.capsized) { capsizedRamp = true; break; }
+      }
+      if (capsizedRamp) continue;
+      const controls = controlsOf(target);
+      // Same two-stage discipline as findHoldingTrim: a cheap 60s screen,
+      // full window only for what clears it.
+      const screen = holdsCourse(config, controls, state, { windowSeconds: 60 });
+      const screenReached = reachedTwaOf(screen.finalState.heading);
+      if (!(Math.abs(screenReached - targetTwa) <= Math.max(excursionMax, 15) && screen.speedRatio >= 0.5 && !screen.capsized)) continue;
+      const full = holdsCourse(config, controls, state, { windowSeconds });
+      const reached = reachedTwaOf(full.finalState.heading);
+      if (Math.abs(reached - targetTwa) <= excursionMax && full.speedRatio >= 0.5 && full.converged && full.restoring && !full.capsized) {
+        return { trim: target, controls, reached, hold: full };
+      }
+    }
+  }
+  return null;
+}
+
 function finiteSeries(series) {
   return series.every((s) =>
     Number.isFinite(s.x) && Number.isFinite(s.y) && Number.isFinite(s.heading) &&
     Number.isFinite(s.u) && Number.isFinite(s.v) && Number.isFinite(s.r));
 }
 
-export { DEG, HEADING0, normalizeAngle, freshState, steeringOk, steeringDrift, yawMomentAtHeading, holdsCourse, holdsCourseActiveTrim, findHoldingTrim, finiteSeries };
+export { DEG, HEADING0, normalizeAngle, freshState, steeringOk, steeringDrift, yawMomentAtHeading, holdsCourse, holdsCourseActiveTrim, findHoldingTrim, findReachableTrim, finiteSeries };

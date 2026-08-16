@@ -1,7 +1,7 @@
 # Lista poprawek — pełny wiatr: równowagi, których nie da się osiągnąć
 
 *Last reviewed: 2026-08-15*
-*Wejście: `docs/findings-2026-08-15-deep-course-gap.md` (przyczyna nieosiągalności
+*Wejście: `Archive/findings-2026-08-15-deep-course-gap.md` (przyczyna nieosiągalności
 TWA160-175), ADR 0044 (wycofanie diagnozy 0028), ADR 0045 + errata (bariera rei,
 i czego naprawdę nie naprawiła), errata do ADR 0042 (82→115 po dopasowaniu
 tolerancji). Stan repo: `417380b`, wypchnięte.*

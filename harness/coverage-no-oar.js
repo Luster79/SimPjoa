@@ -75,10 +75,33 @@ const WIDE_SEARCH = process.argv.includes('--wide-search');
 // the union (TWA 50/60/70/130, all TWS6) sit at exactly that wind, so before
 // treating them as a property of the boat, widen the resolution that is the
 // known weak point: every 10deg from 15 to 85, not three values.
+//   Both grids topped out at 85/75 (W2, docs/work-order-2026-08-15-pelny-
+// wiatr.md): they predate ADR 0045's `sail.sheetMaxDeg` (default 120), which
+// lifted the yard's hardcoded 90deg stop, and the deep-course holders sit at
+// sheet~100-110 -- past what either grid could ever try. Built from
+// `config.sail.sheetMaxDeg` now (see sheetTrialsFor below), the same fix
+// `findHoldingTrim` (asserts-helpers.js) already applied to its own list.
 const DENSE_SHEET = process.argv.includes('--dense-sheet');
-const SHEET_TRIALS = DENSE_SHEET
-  ? Array.from({ length: 8 }, (_, i) => 15 + i * 10)  // 15,25,...,85
-  : [35, 55, 75];
+function sheetTrialsFor(config) {
+  const sheetMax = config.sail.sheetMaxDeg ?? 90;
+  if (DENSE_SHEET) {
+    const trials = [];
+    for (let d = 15; d <= sheetMax; d += 10) trials.push(d);
+    if (trials[trials.length - 1] !== sheetMax) trials.push(sheetMax);
+    return trials;
+  }
+  // [35,55,75,100,115] (this file's first W2 draft) still missed TWA120/130
+  // at TWS6 -- measured 2026-08-15: both need sheet=15, found only by
+  // --dense-sheet, and neither point held at any of the five default trials.
+  // That is the same "16-36deg reaching sheets missing" defect --dense-sheet
+  // was built to catch, reappearing because the default list was widened at
+  // the top (for ADR 0045) without re-checking the bottom. Matched to
+  // findHoldingTrim's own list (asserts-helpers.js) instead of re-deriving a
+  // third one -- that list already carries the same two lessons (shallow
+  // reaching sheets AND the raised deep ceiling) and is the one the rest of
+  // the package trusts.
+  return [12, 20, 35, 55, 70, 85, 100, 115].filter((d) => d <= sheetMax);
+}
 const BRAIL_TRIALS = [0, 0.5, 1.0];
 const twaArg = process.argv.find((a) => a.startsWith('--twa='));
 const TWA_LIST = twaArg ? twaArg.slice('--twa='.length).split(',').map(Number) : DEFAULT_TWA_LIST;
@@ -156,6 +179,7 @@ const NO_MAST_SHADOW = process.argv.includes('--no-mast-shadow');
 
 function main() {
   const config = createConfig(NO_MAST_SHADOW ? { sail: { mastShadowCLFactor: 0 } } : undefined);
+  const SHEET_TRIALS = sheetTrialsFor(config);
   const rows = [];
   let held = 0, total = 0;
   const t0 = Date.now();
@@ -275,7 +299,7 @@ function main() {
     }
   }
 
-  console.log(`\nCOVERAGE: ${held}/${total} points hold a course with the oar shipped, permanently (K1's converged+restoring predicate).${WIDE_SEARCH ? ' [--wide-search: sheet+brail included]' : ''}${DENSE_SHEET ? ' [--dense-sheet: 15-85deg step 10]' : ''}${STATIC_SCREEN ? ` [--static-screen: ${nStaticRejected} trials rejected without integrating]` : ''}`);
+  console.log(`\nCOVERAGE: ${held}/${total} points hold a course with the oar shipped, permanently (K1's converged+restoring predicate).${WIDE_SEARCH ? ' [--wide-search: sheet+brail included]' : ''}${DENSE_SHEET ? ` [--dense-sheet: 15-${config.sail.sheetMaxDeg ?? 90}deg step 10]` : ''}${STATIC_SCREEN ? ` [--static-screen: ${nStaticRejected} trials rejected without integrating]` : ''}`);
   if (VALIDATE_SCREEN) {
     console.log(`\nSTATIC SCREEN VALIDATION: ${nValidateChecked} trials the screen would reject were run in full; ` +
       `${nValidateFalseReject} of them would have PASSED (false rejections).`);
