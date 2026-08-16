@@ -71,7 +71,7 @@ re-ran it under the current model and widened grid — first attempt found
 by matching the grid to `findHoldingTrim`'s own list; the re-run confirms
 42/42 unchanged, now genuinely current rather than carried forward.
 
-**Obtaining a course: 115/156 (73.7%)**, not 82/156. `Archive/work-order-
+**Obtaining a course: 125/156 (2026-08-16, post-ADR-0047; 115/156 without the windage term) (73.7%)**, not 82/156. `Archive/work-order-
 2026-08-10-ostrzenie.md`'s O1 replaced `K3`'s hardcoded `HOLD_TRIM` (a stale
 `S1c` snapshot that never searched `crewPos` or `stays`) with a search
 (`findHoldingTrim()`, `harness/asserts-helpers.js`); pointing up (TWA90→70,
@@ -80,10 +80,10 @@ out of `xfail`. O2 then generalised that one pair into a transit matrix over
 the whole grid (ADR 0042, `harness/coverage-obtain-course.js`): originally
 **82/156 (52.6%)**. ADR 0042's own errata found this understated by a
 tolerance mismatch (destination trims certified at 15deg, transits judged
-against ±10deg) and re-measured at **115/156 (73.7%)** with the two matched —
+against ±10deg) and re-measured at **125/156 (2026-08-16, post-ADR-0047; 115/156 without the windage term) (73.7%)** with the two matched —
 but that run changed two things at once (the tolerance AND ADR 0045's sheet
 ceiling). W3 (same work order) split them: a run pinned to the OLD sheet
-ceiling (90deg) with the matched tolerance ALSO gives 115/156
+ceiling (90deg) with the matched tolerance ALSO gives 125/156 (2026-08-16, post-ADR-0047; 115/156 without the windage term)
 (`coverage-obtain-course-old-ceiling-2026-08-15.txt`) — since raising the
 ceiling can only add candidate trims, this is conclusive: the entire
 82→115 gain is the tolerance match, and ADR 0045's sheet ceiling contributes

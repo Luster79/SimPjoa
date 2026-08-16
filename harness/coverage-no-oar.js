@@ -178,7 +178,15 @@ function settledState(config, twa, tws, sheetDeg, brailWind, crewPos) {
 const NO_MAST_SHADOW = process.argv.includes('--no-mast-shadow');
 
 function main() {
-  const config = createConfig(NO_MAST_SHADOW ? { sail: { mastShadowCLFactor: 0 } } : undefined);
+  // --boat=old scores the PRE-ADR-0029 boat (data/proa_parameters_old.csv:
+  // ama 3.2 m / 60 kgf instead of 4.48 / 84). ADR 0029 raised those x1.40 to
+  // close the downwind gap; the gap is still there (docs/findings-2026-08-15-
+  // deep-course-gap.md), so whether the revision bought anything at all is a
+  // live question and this flag is how to ask it.
+  const boatArg = process.argv.find((a) => a.startsWith('--boat='));
+  const patch = NO_MAST_SHADOW ? { sail: { mastShadowCLFactor: 0 } } : {};
+  if (boatArg) patch.boat = boatArg.slice('--boat='.length);
+  const config = createConfig(Object.keys(patch).length ? patch : undefined);
   const SHEET_TRIALS = sheetTrialsFor(config);
   const rows = [];
   let held = 0, total = 0;

@@ -134,6 +134,25 @@ where it is not wanted and weakest exactly where this work order wanted it.
 > costs the pointing-up check outright plus 12.2deg of the bearing-away
 > margin. The keep decision recorded below was taken with the pointing-up
 > regression on the table but NOT this margin figure.
+>
+> **CORRECTION, same day, and it reverses the sign of this ledger.** The above
+> weighed the term on K3 alone — two hand-picked points at TWS6. The transit
+> matrix had not been re-run on the post-0047 core; the 115/156 in ADR 0042's
+> erratum predates this ADR. Re-run 2026-08-16
+> (`docs/coverage-obtain-course-2026-08-16.txt`): **125/156**, against 115/156
+> without the term. **15 transitions gained, 5 lost, net +10.**
+>
+> The gains cluster where K3 does not look: destination TWA130 (6) and TWA140
+> (4), at TWS4 (9 of 15) and TWS10 (6) — **none at TWS6**, which is the only
+> wind K3 tests. The losses are TWA150->140 (TWS4, both ends), TWA140->150
+> (TWS10, both ends) and TWA80->70 (TWS10, one end).
+>
+> So on the criterion's own grid-scale measure the term is a clear net gain
+> (73.7% -> 80.1% of transitions), and the keep decision is better supported
+> than either this erratum's first half or the ADR's original "no other
+> assertion moved" made it look. What remains true: both TWS6 transit checks
+> are now failing or near their band edge, and K3 is no longer a fair summary
+> of this half of the criterion — the matrix is.
 
 `harness/asserts-course-change.js`'s K3 pointing-up check is demoted back to
 `xfail:STEERING` (was already a narrow 0.2-0.4deg margin on one wind before
