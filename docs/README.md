@@ -115,9 +115,7 @@ before any physics was added, and ADR 0047's windage yaw moment (the one
 mechanism in the budget that does not fade with leeway there) measures two
 orders of magnitude too small to close it. Unlike TWA < 50 below, this band
 is **not yet added to the criterion's scope exclusion** — that is an open
-owner decision, informed by the manual's own troubleshooting section ending
-in "steer with a paddle" for exactly this failure (ADR 0047), not made by
-either ADR.
+owner decision, not made by either ADR.
 
 **Out of scope, unsolved:** TWA < 50, and whether a trim that holds heading
 while decaying to ~20% of its speed counts as holding at all.

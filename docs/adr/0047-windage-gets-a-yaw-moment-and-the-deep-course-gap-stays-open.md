@@ -40,11 +40,8 @@ not to do" and this project's own paid-for lesson about ungrounded physics):
 
 1. **The manual** (`docs/sources/Basic-of-sailing-Micronesian-way-6_3EN.pdf`,
    ch. V, "Canoe cannot be made to sail downwind") prescribes carrot + crew
-   as far aft as possible ("this will let the canoe weathervane downwind") +
-   paddle. The paddle in the manual's own troubleshooting recipe is itself
-   evidence this transition is not always trim-only on the real boat — noted
-   here, not acted on; the success criterion's scope is the owner's call, not
-   this ADR's.
+   as far aft as possible ("this will let the canoe weathervane downwind").
+   That is the whole of what it prescribes for this case.
 2. **`core/aero.js`'s `yawMoment` formula** (`ceLeverSign*(xCE*Fy - yCE*Fx) +
    yawMomentHeel`): every term was checked for a leeway-independent driver.
    `yCE = -end*halfChordEffY*sin(delta) + yRake` has a structurally fixed sign
@@ -139,9 +136,7 @@ revert, given the term is small but real everywhere it acts, not wrong.
 now twice-confirmed-under-wide-search, twice-source-checked limit of the
 current model, not a missing coefficient or a search artifact. Whether the
 success criterion's scope should exclude this band (the way TWA<50 already
-is, `docs/README.md`) is the owner's decision, not this ADR's — the manual's
-own paddle fallback in exactly this failure mode is relevant evidence for
-that decision, recorded here, not acted on.
+is, `docs/README.md`) is the owner's decision, not this ADR's.
 
 ## What this does not settle
 
@@ -156,9 +151,16 @@ that decision, recorded here, not acted on.
   the sign was determined by measurement. Re-deriving `windageArea` itself
   against real data (ADR 0008's own standing "if windage is ever anchored to
   measurement" condition) is a separate, unstarted piece of work.
-- The manual's own paddle fallback for "canoe cannot be made to sail
-  downwind" was read, not measured against this model — it is cited as
-  context for the owner's scope decision, not as a physics finding.
+> **ERRATUM 2026-08-16 (owner).** Three passages of this ADR claimed the
+> manual offers a paddle as its fallback for "canoe cannot be made to sail
+> downwind", and cited that as evidence bearing on the criterion's scope.
+> **That claim was false and has been deleted, not struck through, so it
+> cannot be quoted again.** The manual's paddle passage is unrelated to deep
+> courses; the connection was inferred from nothing but adjacency in the text.
+> This is the THIRD instance of that exact error in this project — ADR 0028 is
+> titled "The manual does not prescribe the paddle downwind" and already
+> documents two. Nothing else in this ADR rests on it: the windage measurement,
+> its refutation, and the K3 re-anchoring are all independent.
 
 ## Consequences
 
