@@ -116,6 +116,25 @@ same crew-lever term that measures 1-3 N·m at TWA170 (negligible against a
 60-90 N·m budget) is large enough at TWA70-90 to move a previously
 in-band settled trim out of it. The term is structurally strongest exactly
 where it is not wanted and weakest exactly where this work order wanted it.
+> **ERRATUM 2026-08-16 — "no other assertion moved" is true of verdicts and
+> misleading about margins.** K3's BEARING-AWAY check (TWA70->TWA90, TWS6)
+> still passes, but its settled course moved **85.5/85.8 -> 97.7/97.9deg**
+> against a 90+-10 band: its margin to the ceiling collapsed from 14.5deg to
+> **2.3deg**. Both of the criterion's TWS6 transit checks are therefore now
+> either failing or inside noise of their band edge, which is materially worse
+> than "one check demoted" reads.
+>
+> Attribution is exact, measured 2026-08-16: with `hull.windageCrewAreaFraction`
+> set to 0 and nothing else changed, both checks return to their pre-0047
+> values (bearing away 85.5, pointing up 79.6, both in band). One config field
+> reverts the whole regression.
+>
+> Full ledger of this term, for whoever revisits the keep-or-revert call:
+> it buys **+0.9deg** where it was aimed (family-A ceiling 159.1 -> 160.0) and
+> costs the pointing-up check outright plus 12.2deg of the bearing-away
+> margin. The keep decision recorded below was taken with the pointing-up
+> regression on the table but NOT this margin figure.
+
 `harness/asserts-course-change.js`'s K3 pointing-up check is demoted back to
 `xfail:STEERING` (was already a narrow 0.2-0.4deg margin on one wind before
 this change — see the check's own updated comment). No other assertion moved
