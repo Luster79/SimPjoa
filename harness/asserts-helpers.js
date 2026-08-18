@@ -396,10 +396,42 @@ function findReachableTrim(config, fromState, windDirFrom, carried, tws, end, ta
   return null;
 }
 
+// rampTrim (R4, docs/work-order-2026-08-16-osiagalnosc.md): ramp from the trim
+// the boat is CARRYING into a GIVEN target trim over rampSeconds, and return
+// the state that leaves the boat in. No search -- the destination trim is the
+// caller's, already chosen.
+//
+// This exists because `findReachableTrim` does two things at once, ramping AND
+// searching, so a run that improves on the stepped matrix cannot say which of
+// the two bought the improvement. Isolating the ramp answers that, and in
+// particular says how many of the matrix's transition capsizes are pure step
+// artifacts (W6 measured 2 of 6 on the ADR 0042 set; the current set is 7 on a
+// different core and has not been split).
+//
+// The same ramp loop is written inline inside `findReachableTrim` above.
+// Deliberately NOT deduplicated in this round: that function is the instrument
+// ADR 0046's numbers were measured with, and rewriting it mid-measurement
+// would make those numbers non-reproducible for the sake of tidiness. Fold the
+// two together once this work order's measurements are closed.
+function rampTrim(config, fromState, carried, target, controlsOf, rampSeconds = 60) {
+  const steps = Math.round(rampSeconds / config.dt);
+  let state = fromState;
+  for (let i = 0; i < steps; i++) {
+    const f = (i + 1) / steps;
+    const mix = {};
+    for (const k of ['sheetDeg', 'brailWind', 'crewPos', 'crewPosX', 'tackX', 'stays']) {
+      mix[k] = carried[k] + (target[k] - carried[k]) * f;
+    }
+    state = integrate(state, controlsOf(mix), config, config.dt);
+    if (state.capsized) return { state, capsized: true };
+  }
+  return { state, capsized: false };
+}
+
 function finiteSeries(series) {
   return series.every((s) =>
     Number.isFinite(s.x) && Number.isFinite(s.y) && Number.isFinite(s.heading) &&
     Number.isFinite(s.u) && Number.isFinite(s.v) && Number.isFinite(s.r));
 }
 
-export { DEG, HEADING0, normalizeAngle, freshState, steeringOk, steeringDrift, yawMomentAtHeading, holdsCourse, holdsCourseActiveTrim, findHoldingTrim, findReachableTrim, finiteSeries };
+export { DEG, HEADING0, normalizeAngle, freshState, steeringOk, steeringDrift, yawMomentAtHeading, holdsCourse, holdsCourseActiveTrim, findHoldingTrim, findReachableTrim, rampTrim, finiteSeries };

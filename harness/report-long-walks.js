@@ -50,8 +50,14 @@ function twaOf(windDirFrom, heading) {
   return a > 180 ? 360 - a : a;
 }
 
-function waypointsBetween(fromTwa, toTwa) {
-  const step = toTwa > fromTwa ? 10 : -10;
+// stepDeg defaults to 10, the grid O8/O9 have always walked. R1/R2 (docs/
+// work-order-2026-08-16-osiagalnosc.md) need the SAME walk at a finer step --
+// if the basin at a waypoint is narrower than the step, a 10deg walk cannot
+// enter it while a 2deg one can -- so the step is a parameter here rather than
+// a second copy of the walk in another file (O1 already found what happens to
+// a hand-copied question).
+function waypointsBetween(fromTwa, toTwa, stepDeg = 10) {
+  const step = toTwa > fromTwa ? stepDeg : -stepDeg;
   const wps = [];
   for (let t = fromTwa + step; step > 0 ? t < toTwa : t > toTwa; t += step) wps.push(t);
   wps.push(toTwa);
@@ -63,7 +69,7 @@ function waypointsBetween(fromTwa, toTwa) {
 // holds, the same convention K3's obtainCourse uses. Every waypoint AFTER
 // that is asked with findReachableTrim: reachable from here, not just
 // holdable in the abstract.
-function walkToCourse(config, fromTwa, toTwa, tws, end) {
+function walkToCourse(config, fromTwa, toTwa, tws, end, stepDeg = 10) {
   const from = findHoldingTrim(config, fromTwa, tws, end, { windowSeconds: 120 });
   if (!from) return { startConfirmed: false, legs: [], twaReached: NaN, final: null };
   const windDirFrom = from.windDirFrom;
@@ -71,7 +77,7 @@ function walkToCourse(config, fromTwa, toTwa, tws, end) {
   const legs = [];
   let lastControls = null;
   let carried = from.trim;
-  for (const wp of waypointsBetween(fromTwa, toTwa)) {
+  for (const wp of waypointsBetween(fromTwa, toTwa, stepDeg)) {
     const found = findReachableTrim(config, state, windDirFrom, carried, tws, end, wp,
       { rampSeconds: RAMP_SECONDS, windowSeconds: LEG_SECONDS, excursionMax: 10 });
     if (!found) { legs.push({ wp, found: false }); break; }
@@ -109,4 +115,8 @@ function main() {
   }
 }
 
-main();
+// Guarded so probe-fine-walk.js (R2) can import walkToCourse without paying
+// for O8/O9's own ~66min run as an import side effect.
+if (import.meta.url === `file://${process.argv[1]}`) main();
+
+export { walkToCourse, waypointsBetween };
