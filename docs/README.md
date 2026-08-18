@@ -1,6 +1,6 @@
 # docs/ — index
 
-*Last reviewed: 2026-08-15*
+*Last reviewed: 2026-08-18*
 
 `ARCHITECTURE_physics_core_EN.md` in the repo root is the context map for the
 code. This file is the map for everything in `docs/`.
@@ -54,7 +54,7 @@ Two consequences bind the work:
   unknown coefficients inside a defensible band; it is not a licence to
   re-pick a value until an assertion agrees — see the conventions below.
 
-### Where it stands (2026-08-15)
+### Where it stands (2026-08-18)
 
 **Holding a course: covered, re-verified under the raised sheet ceiling.**
 `harness/coverage-no-oar.js --wide-search` finds a rudder-free holding trim at
@@ -116,6 +116,38 @@ mechanism in the budget that does not fade with leeway there) measures two
 orders of magnitude too small to close it. Unlike TWA < 50 below, this band
 is **not yet added to the criterion's scope exclusion** — that is an open
 owner decision, not made by either ADR.
+
+**2026-08-18 correction (ADR 0048): the gap is a stability defect, not a
+missing equilibrium, and the 42/42 / 125/156 figures above are overstated.**
+`docs/work-order-2026-08-16-osiagalnosc.md`'s basin probe
+(`harness/probe-basin.js`) found that TWA160-175 does contain a fixed point —
+but at TWA170/TWS4 its basin of attraction is **under 1deg wide**, a saddle
+between two real attractors rather than a holdable course; the nearby TWA155
+and TWA170 grid certifications turn out to be one wider attractor (152.0 /
+159.6) borrowed across the ±10deg tolerance, not independent holds.
+`docs/findings-2026-08-16-stability-not-balance.md` then ruled out a missing
+moment as the cause — the oar-moment deficit needed to balance the boat is
+≤1.2 N·m against a 20-40 N·m budget at every course in the band — and instead
+found strong static restoring stiffness (dM/dψ down to −44 N·m/deg) coexisting
+with dynamic escape from the same point. Continuation from both sides
+re-measures the empty band as **[162.3, 174.4], 12deg** — narrower than the
+old [160,175] framing on the reach side, unbounded-looking on the deep side —
+with family A (sail+hull+ama balance) folding at its TWA162.26 ceiling and
+family B (hull-dominated, sail contributing almost nothing) not reachable
+below TWA174.44. **Why static restoring and dynamic escape coexist is open**:
+a sheet-grid discontinuity and a dead heel-authority channel were both
+measured and refuted as explanations; no third hypothesis has been tested.
+Inserting the oar stationary — in the water, at zero deflection, never
+steered — closes most of the band (`harness/probe-holds-freely.js --oar=in`),
+consistent with the boat having no second lateral-plane appendage since the
+leeboard's removal (ADR 0012/0013) and the oar being ~16x the hull's yaw
+stiffness per m² — a plausible account, not yet a proof of the mechanism.
+Because `holdsCourse`'s `restoring` predicate (dM/dψ < 0, `harness/asserts-
+helpers.js`) cannot distinguish a wide attractor from a sub-degree saddle, the
+coverage figures above that rest on it — `coverage-no-oar`'s 42/42 and
+`coverage-obtain-course`'s 125/156, including its `holding trim FOUND` at
+TWA170 — are overstated. ADR 0048 does not change the predicate, so the
+correction stands as a caveat on those numbers, not a revision of them.
 
 **Out of scope, unsolved:** TWA < 50, and whether a trim that holds heading
 while decaying to ~20% of its speed counts as holding at all.
@@ -196,20 +228,31 @@ Append-only. Never edit an old ADR; supersede it with a new one.
 | 0043 | Crew-position search obeys its own advisory `crew.posMax` limit (O7), and the shunt's repower target is searched for speed rather than assumed (O6) -- the clip alone removes the shunt capsize K3 found; the search confirms the clipped limit IS the fastest surviving target, but the check stays `xfail` on a speed shortfall (33-34% vs. a 50% floor), not a capsize |
 | 0046 | A walk asks what is reachable, not just what holds (W5) -- `findReachableTrim` (asserts-helpers.js) replaces `findHoldingTrim` for every waypoint after a walk's start, evaluating each candidate by RAMPING it in from the boat's actual current state rather than settling fresh at the target. O9 (TWA90->TWA180) now stalls honestly AT the TWA170 waypoint (151.3deg final) instead of passing through it and failing only on the last leg (ADR 0045's TWA64) -- confirms, by a second independent instrument, that `findings-2026-08-15-deep-course-gap.md`'s TWA160-175 gap survives a wide, ramped, state-aware search |
 | 0047 | Windage gets a yaw moment, and the deep-course gap stays open (W1) -- gives `windageForce()` (ADR 0008) the yaw-moment lever ADR 0008 itself named and declined; the one term in the budget driven by apparent wind angle rather than leeway, so it survives TWA162-174 where every other term fades. Measured at 1-3 N*m against a 16-90 N*m luffing budget -- correctly signed, two orders of magnitude too small; a ninth candidate cause refuted. Real trade found and kept: `K3`'s pointing-up check (TWA90->TWA70) regressed out of its ±10deg band and is demoted to `xfail:STEERING`, because the same term is strongest exactly where apparent wind is strongest (close-hauled/reaching) and weakest where this ADR needed it (deep). **W1 closes: the gap is real, not a search artifact or a missing coefficient** |
+| 0048 | The TWA170 "hold" is a sub-degree saddle, and K1 cannot tell the difference -- corrects ADR 0046's existence claim (an equilibrium DOES exist in TWA160-175) while confirming its operational conclusion (the walk still cannot reach it); re-measures the empty band by continuation from both sides as [162.3, 174.4], 12deg. `holdsCourse`'s `restoring` predicate certifies a sub-degree-wide saddle the same way it certifies a wide attractor, so the 42/42 and 125/156 coverage figures that rest on it are overstated until the predicate changes -- not done by this ADR. Why strong static restoring coexists with dynamic escape is left open |
 
 ## Open work
 
-None currently — `work-order-2026-08-15-pelny-wiatr.md` closed and moved to
-`Archive/` (with its findings document, `findings-2026-08-15-deep-course-
-gap.md`): the deep-course gap (TWA180 holdable but unreachable oar-free,
-trim→equilibrium map discontinuous at TWA160-175) was confirmed real, not a
-grid artifact, by two independent wide/ramped re-searches (ADR 0046), and W1
-tried the one leeway-independent mechanism in the budget (windage's yaw
-moment, ADR 0047) — correctly grounded, two orders of magnitude too small,
-with a real trade elsewhere (`K3` pointing-up demoted to `xfail`). TWA160-175
-stands as a documented model limit, same status as TWA<50; whether to add it
-to the success criterion's scope exclusion is an open owner decision, not a
-physics one — see "Where it stands" above.
+**One open: `docs/work-order-2026-08-16-osiagalnosc.md`** — opened when the
+2026-08-16 transit-matrix run (`holding trim FOUND` on all six TWA170 rows)
+contradicted ADR 0046's claim that no equilibrium exists in TWA160-175. Its
+positions:
+
+- **R1** (measure the basin of attraction), **R4** (separate ramping the trim
+  in from searching for it) and **R6** (correct ADR 0046) are closed — see
+  ADR 0048 and `docs/findings-2026-08-16-stability-not-balance.md`, which
+  reframed the gap as a dynamic-stability defect rather than a missing
+  equilibrium or a missing force term (see "Where it stands" above).
+- **R2** (walk the band at a 2deg step instead of 10deg, to test whether the
+  gap is partly a grid-step artifact) and **R3** (retry the 19 failed
+  transitions outside TWA170 through `findReachableTrim` from the boat's
+  actual state, reported as a second number alongside 125/156, never merged
+  into one) are open, unmeasured.
+- **R5** (whether `K3`'s two TWS6 points stay the build gate as-is, or a fixed
+  matrix-row subset replaces them) is an explicit owner decision, not started.
+
+TWA160-175 stands as a documented model limit, same status as TWA<50; whether
+to add it to the success criterion's scope exclusion is an open owner
+decision, not a physics one — see "Where it stands" above.
 
 A work order lives here while it is open and moves to `Archive/` when it is
 done. There is exactly one open at a time.
