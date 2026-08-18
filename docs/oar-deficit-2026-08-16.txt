@@ -1,0 +1,13 @@
+trymow: 162, osiadanie 400s pod wioslem, end=1
+kurs | najmniejszy |Mwiosla| | trym, ktory to daje | v | przechyl
+TWA150 |     0.63 N*m  | szot= 35 karota=0.5 tackX= 1 crewX=-1 | 2.43 | 0.60deg  (zagiel -7.4 kadlub -21.3 plywak 4.8)
+TWA155 |     1.53 N*m  | szot= 20 karota=1 tackX=-1 crewX=-1 | 2.08 | -0.00deg  (zagiel 3.1 kadlub 2.8 plywak 3.4)
+TWA160 |     0.17 N*m  | szot= 20 karota=0 tackX=-1 crewX= 0 | 2.88 | -0.12deg  (zagiel 13.3 kadlub 3.5 plywak 8.8)
+TWA162 |     0.27 N*m  | szot=100 karota=1 tackX=-1 crewX= 0 | 1.99 | -0.01deg  (zagiel 6.1 kadlub 1.6 plywak 3.1)
+TWA165 |     1.18 N*m  | szot=100 karota=0.5 tackX=-1 crewX= 0 | 2.52 | -0.11deg  (zagiel 19.5 kadlub 5.0 plywak 6.1)
+TWA168 |     0.35 N*m  | szot=100 karota=0 tackX=-1 crewX= 0 | 2.74 | -0.22deg  (zagiel 31.2 kadlub 8.0 plywak 8.3)
+TWA170 |     0.11 N*m  | szot= 35 karota=0 tackX=-1 crewX=-1 | 2.71 | -0.24deg  (zagiel 7.3 kadlub 37.9 plywak 8.2)
+TWA172 |     0.91 N*m  | szot=100 karota=1 tackX= 0 crewX= 1 | 1.89 | -0.01deg  (zagiel 15.6 kadlub -5.5 plywak 2.7)
+TWA175 |     0.08 N*m  | szot= 70 karota=1 tackX=-1 crewX= 1 | 1.84 | -0.00deg  (zagiel 6.6 kadlub -3.0 plywak 2.6)
+TWA178 |     0.03 N*m  | szot= 35 karota=0.5 tackX= 0 crewX= 0 | 2.19 | -0.19deg  (zagiel 37.0 kadlub 11.2 plywak 4.5)
+TWA180 |     0.51 N*m  | szot= 55 karota=1 tackX=-1 crewX=-1 | 1.77 | -0.01deg  (zagiel 2.0 kadlub 16.6 plywak 2.4)

@@ -1,0 +1,15 @@
+osiadanie 300s pod wioslem, potem 900s BEZ wiosla
+trzyma = konczy w +-5deg od kursu i dryfuje <1deg w ostatniej cwiartce
+trymow: 162, TWS6, end=1
+
+TWA150 | TRZYMA (7 trymow) | najblizej: TWA149.2 (blad 0.8deg, dryf w koncowce 0.00deg) szot=35 karota=0 tackX=1 crewX=-1
+TWA155 | TRZYMA (3 trymow) | najblizej: TWA151.5 (blad 3.5deg, dryf w koncowce 0.00deg) szot=35 karota=1 tackX=1 crewX=-1
+TWA160 | TRZYMA (1 trymow) | najblizej: TWA159.0 (blad 1.0deg, dryf w koncowce 0.00deg) szot=55 karota=1 tackX=1 crewX=-1
+TWA162 | TRZYMA (1 trymow) | najblizej: TWA159.0 (blad 3.0deg, dryf w koncowce 0.00deg) szot=55 karota=1 tackX=1 crewX=-1
+TWA165 | NIE TRZYMA       | najblizej: TWA159.0 (blad 6.0deg, dryf w koncowce 0.00deg) szot=55 karota=1 tackX=1 crewX=-1
+TWA168 | NIE TRZYMA       | najblizej: TWA174.6 (blad 6.6deg, dryf w koncowce 3.51deg) szot=20 karota=0 tackX=-1 crewX=1
+TWA170 | TRZYMA (1 trymow) | najblizej: TWA173.8 (blad 3.8deg, dryf w koncowce 2.96deg) szot=35 karota=0.5 tackX=-1 crewX=1
+TWA172 | TRZYMA (5 trymow) | najblizej: TWA172.5 (blad 0.5deg, dryf w koncowce 6.73deg) szot=55 karota=0 tackX=-1 crewX=1
+TWA175 | TRZYMA (17 trymow) | najblizej: TWA174.9 (blad 0.1deg, dryf w koncowce 0.20deg) szot=55 karota=1 tackX=-1 crewX=1
+TWA178 | TRZYMA (23 trymow) | najblizej: TWA178.0 (blad 0.0deg, dryf w koncowce 0.86deg) szot=35 karota=0.5 tackX=0 crewX=1
+TWA180 | TRZYMA (28 trymow) | najblizej: TWA179.8 (blad 0.2deg, dryf w koncowce 0.01deg) szot=100 karota=1 tackX=-1 crewX=1

@@ -1,0 +1,53 @@
+ekran czulosci: TWA 168, TWS6, end=1
+deficyt = najmniejszy |moment wiosla| jaki zostawia ktorykolwiek trym.
+Nizej = blizej samodzielnego plyniecia. To EKRAN, nie wynik.
+
+BAZA (bez zmian)                   TWA168:0.35 (szot=100 karota=0 tackX=-1 crewX=0, v=2.74, phi=-0.22deg, zagiel 31.2 kadlub 8.0)   [371s]
+   status: —
+hull.lateralArea 1.41 -> 1.00      TWA168:0.11 (szot=100 karota=1 tackX=-1 crewX=-1, v=1.94, phi=-0.01deg, zagiel 5.4 kadlub 9.2)   [356s]
+   status: WOLNY: "band, not a point value" (kat sekcji 70deg to INNY kadlub Flaya)
+hull.lateralArea 1.41 -> 0.70      TWA168:0.41 (szot=20 karota=1 tackX=1 crewX=1, v=1.79, phi=-0.01deg, zagiel 28.8 kadlub -6.4)   [356s]
+   status: WOLNY: jw., dolny kraniec pasma
+hull.clrXFraction 0.05 -> 0.00     TWA168:0.24 (szot=100 karota=0 tackX=-1 crewX=0, v=2.74, phi=-0.22deg, zagiel 37.3 kadlub 2.7)   [361s]
+   status: WOLNY: "No direct measurement of this hull's CLR"
+hull.clrXFraction 0.05 -> 0.15     TWA168:0.20 (szot=20 karota=0.5 tackX=0 crewX=0, v=2.39, phi=-0.14deg, zagiel 18.6 kadlub 16.3)   [360s]
+   status: WOLNY: jw.
+sail.yceFraction 0.35 -> 0.20      TWA168:0.60 (szot=100 karota=1 tackX=-1 crewX=-1, v=1.94, phi=-0.01deg, zagiel 1.1 kadlub 9.1)   [358s]
+   status: WOLNY: "vortex-lift approximation, not a citation"
+sail.yceFraction 0.35 -> 0.50      TWA168:0.81 (szot=35 karota=1 tackX=0 crewX=1, v=1.92, phi=-0.01deg, zagiel 18.8 kadlub -6.7)   [375s]
+   status: WOLNY: jw.
+sail.yawHeelSign 0 -> +1           TWA168:0.35 (szot=100 karota=0 tackX=-1 crewX=0, v=2.74, phi=-0.22deg, zagiel 31.2 kadlub 8.0)   [389s]
+   status: ZAMROZONY: "tested paired, not solo, not at other magnitudes" (K4)
+sail.yawHeelSign 0 -> -1           TWA168:0.35 (szot=100 karota=0 tackX=-1 crewX=0, v=2.74, phi=-0.22deg, zagiel 31.2 kadlub 8.0)   [378s]
+   status: ZAMROZONY: jw.
+hull.heelClrSign 0 -> +1           TWA168:0.30 (szot=100 karota=0 tackX=-1 crewX=0, v=2.74, phi=-0.22deg, zagiel 31.2 kadlub 8.1)   [346s]
+   status: ZAMROZONY: "negative result at ONE coefficient, not a proof no sign helps" (K4)
+hull.heelClrSign 0 -> -1           TWA168:0.40 (szot=100 karota=0 tackX=-1 crewX=0, v=2.74, phi=-0.22deg, zagiel 31.2 kadlub 7.9)   [340s]
+   status: ZAMROZONY: jw.
+hull.lead 0.06L -> 0.03L           TWA168:0.07 (szot=100 karota=0.5 tackX=0 crewX=1, v=2.48, phi=-0.11deg, zagiel 39.5 kadlub -13.4)   [340s]
+   status: ZAMROZONY: "DO NOT re-pick this value to make a rudder-free assertion pass"
+hull.lead 0.06L -> 0.12L           TWA168:0.39 (szot=35 karota=0 tackX=-1 crewX=0, v=2.75, phi=-0.20deg, zagiel 28.1 kadlub 7.1)   [339s]
+   status: ZAMROZONY: jw. (0.05-0.25L to pasmo z Larsson & Eliasson)
+sail.verticalLiftFraction 0 -> 0.20 TWA168:0.51 (szot=100 karota=0 tackX=-1 crewX=0, v=2.74, phi=-0.18deg, zagiel 31.2 kadlub 8.0)   [335s]
+   status: ZAMROZONY: literatura 0.15-0.25, odlozone przez scenariusze wywrotki
+
+RANKING wzgledem bazy (0.35 N*m):
+      0.07 N*m    -0.28  hull.lead 0.06L -> 0.03L
+      0.11 N*m    -0.24  hull.lateralArea 1.41 -> 1.00
+      0.20 N*m    -0.15  hull.clrXFraction 0.05 -> 0.15
+      0.24 N*m    -0.11  hull.clrXFraction 0.05 -> 0.00
+      0.30 N*m    -0.05  hull.heelClrSign 0 -> +1
+      0.35 N*m     0.00  BAZA (bez zmian)
+      0.35 N*m     0.00  sail.yawHeelSign 0 -> +1
+      0.35 N*m     0.00  sail.yawHeelSign 0 -> -1
+      0.39 N*m  +   0.04  hull.lead 0.06L -> 0.12L
+      0.40 N*m  +   0.05  hull.heelClrSign 0 -> -1
+      0.41 N*m  +   0.06  hull.lateralArea 1.41 -> 0.70
+      0.51 N*m  +   0.16  sail.verticalLiftFraction 0 -> 0.20
+      0.60 N*m  +   0.25  sail.yceFraction 0.35 -> 0.20
+      0.81 N*m  +   0.46  sail.yceFraction 0.35 -> 0.50
+
+Zadna z tych liczb nie jest podstawa do zmiany w /core sama z siebie:
+wariant, ktory wygrywa, musi przejsc pelny zestaw akceptacyjny, polare,
+pokrycie i scenariusze wywrotki -- a jesli jego parametr jest ZAMROZONY,
+to decyzja wlasciciela, nie pomiarowa.

@@ -1,0 +1,51 @@
+[324s] end=1 TWS4 TWA150: hold FOUND in 324s -- sheet=35 brailW=0 crew=0 crewX=-1 tackX=1 stays=1, settled TWA154.4 exc=4.5 v=109%
+   ladowanie (* = wrocila w +-10deg): -20:154* -15:154* -10:154* -7:154* -5:154* -3:154* -2:154* -1:154* +1:154* +2:154* +3:154* +5:154* +7:154* +10:154* +15:154* +20:154*
+   BASEN: -20deg / +20deg  (szerokosc 40deg, krok siatki przejsc 10deg)
+[708s] end=1 TWS4 TWA160: hold FOUND in 354s -- sheet=35 brailW=0 crew=0 crewX=-1 tackX=1 stays=1, settled TWA154.4 exc=5.1 v=101%
+   ladowanie (* = wrocila w +-10deg): -20:154* -15:154* -10:154* -7:154* -5:154* -3:154* -2:154* -1:154* +1:154* +2:154* +3:154* +5:154* +7:154* +10:154* +15:154* +20:154*
+   BASEN: -20deg / +20deg  (szerokosc 40deg, krok siatki przejsc 10deg)
+[1523s] end=1 TWS4 TWA170: hold FOUND in 787s -- sheet=35 brailW=1 crew=0 crewX=0 tackX=-1 stays=1, settled TWA169.5 exc=0.2 v=110%
+   ladowanie (* = wrocila w +-10deg): -20:179* -15:179* -10:179* -7:179* -5:180* -3:179* -2:180* -1:180* +1:59 +2:65 +3:67 +5:69 +7:70 +10:71 +15:72 +20:72
+   BASEN: -20deg / +0deg  (szerokosc 20deg, krok siatki przejsc 10deg)
+[1928s] end=1 TWS4 TWA180: hold FOUND in 377s -- sheet=35 brailW=0 crew=0 crewX=0 tackX=0.5 stays=-1, settled TWA179.2 exc=1.9 v=91%
+   ladowanie (* = wrocila w +-10deg): -20:177* -15:179* -10:180* -7:179* -5:180* -3:178* -2:177* -1:177* +1:177* +2:177* +3:178* +5:180* +7:178* +10:42 +15:42 +20:42
+   BASEN: -20deg / +7deg  (szerokosc 27deg, krok siatki przejsc 10deg)
+[2341s] end=1 TWS6 TWA150: hold FOUND in 382s -- sheet=35 brailW=0 crew=0 crewX=-1 tackX=1 stays=1, settled TWA152.0 exc=2.2 v=105%
+   ladowanie (* = wrocila w +-10deg): -20:152* -15:152* -10:152* -7:152* -5:152* -3:152* -2:152* -1:152* +1:152* +2:152* +3:152* +5:152* +7:152* +10:152* +15:152* +20:152*
+   BASEN: -20deg / +20deg  (szerokosc 40deg, krok siatki przejsc 10deg)
+[2735s] end=1 TWS6 TWA160: hold FOUND in 363s -- sheet=35 brailW=0 crew=0 crewX=-1 tackX=1 stays=1, settled TWA152.0 exc=7.3 v=99%
+   ladowanie (* = wrocila w +-10deg): -20:152* -15:152* -10:152* -7:152* -5:152* -3:152* -2:152* -1:152* +1:152* +2:152* +3:152* +5:152* +7:152* +10:152* +15:152* +20:152*
+   BASEN: -20deg / +20deg  (szerokosc 40deg, krok siatki przejsc 10deg)
+[4943s] end=1 TWS6 TWA170: hold FOUND in 2177s -- sheet=55 brailW=0.5 crew=0 crewX=-1 tackX=1 stays=1, settled TWA159.6 exc=9.6 v=101%
+   ladowanie (* = wrocila w +-10deg): -20:160 -15:160 -10:160 -7:160 -5:160 -3:160 -2:160 -1:160 +1:160 +2:160 +3:160 +5:160 +7:120 +10:120 +15:120 +20:120
+   BASEN: -0deg / +0deg  (szerokosc 0deg, krok siatki przejsc 10deg)
+[5024s] end=1 TWS6 TWA180: hold FOUND in 47s -- sheet=68 brailW=0 crew=0 crewX=0.5 tackX=-0.5 stays=0, settled TWA177.5 exc=3.8 v=72%
+   ladowanie (* = wrocila w +-10deg): -20:180* -15:179* -10:177* -7:176* -5:176* -3:177* -2:177* -1:178* +1:180* +2:180* +3:180* +5:60 +7:60 +10:60 +15:60 +20:60
+   BASEN: -20deg / +3deg  (szerokosc 23deg, krok siatki przejsc 10deg)
+[5461s] end=1 TWS10 TWA150: hold FOUND in 403s -- sheet=35 brailW=0 crew=0 crewX=-1 tackX=1 stays=1, settled TWA152.9 exc=3.2 v=112%
+   ladowanie (* = wrocila w +-10deg): -20:153* -15:153* -10:153* -7:153* -5:153* -3:153* -2:153* -1:153* +1:153* +2:153* +3:153* +5:153* +7:153* +10:153* +15:153* +20:WYWR
+   BASEN: -20deg / +15deg  (szerokosc 35deg, krok siatki przejsc 10deg)
+[5891s] end=1 TWS10 TWA160: hold FOUND in 398s -- sheet=35 brailW=0 crew=0 crewX=-1 tackX=1 stays=1, settled TWA152.9 exc=6.5 v=99%
+   ladowanie (* = wrocila w +-10deg): -20:153* -15:153* -10:153* -7:153* -5:153* -3:153* -2:153* -1:153* +1:153* +2:153* +3:153* +5:153* +7:153* +10:153* +15:153* +20:WYWR
+   BASEN: -20deg / +15deg  (szerokosc 35deg, krok siatki przejsc 10deg)
+[6890s] end=1 TWS10 TWA170: hold FOUND in 967s -- sheet=20 brailW=0 crew=0.3 crewX=1 tackX=0.5 stays=-1, settled TWA178.1 exc=9.7 v=61%
+   ladowanie (* = wrocila w +-10deg): -20:175* -15:174* -10:175* -7:175* -5:175* -3:175* -2:174* -1:175* +1:176* +2:176* +3:177* +5:179* +7:179* +10:178* +15:174* +20:WYWR
+   BASEN: -20deg / +15deg  (szerokosc 35deg, krok siatki przejsc 10deg)
+[6960s] end=1 TWS10 TWA180: hold FOUND in 39s -- sheet=64 brailW=0 crew=0 crewX=0 tackX=-0.5 stays=0, settled TWA176.4 exc=5.3 v=66%
+   ladowanie (* = wrocila w +-10deg): -20:178* -15:180* -10:180* -7:180* -5:180* -3:179* -2:178* -1:177* +1:176* +2:177* +3:178* +5:66 +7:66 +10:66 +15:66 +20:66
+   BASEN: -20deg / +3deg  (szerokosc 23deg, krok siatki przejsc 10deg)
+
+PODSUMOWANIE -- szerokosc basenu przyciagania [deg], siatka przejsc uzywa kroku 10deg
+delty: -20,-15,-10,-7,-5,-3,-2,-1,1,2,3,5,7,10,15,20  okno: 300s  trym: zamrozony  pasmo powrotu: +-10deg
+  end=1 TWS4 TWA150: -20/+20 = 40deg
+  end=1 TWS4 TWA160: -20/+20 = 40deg
+  end=1 TWS4 TWA170: -20/+0 = 20deg
+  end=1 TWS4 TWA180: -20/+7 = 27deg
+  end=1 TWS6 TWA150: -20/+20 = 40deg
+  end=1 TWS6 TWA160: -20/+20 = 40deg
+  end=1 TWS6 TWA170: -0/+0 = 0deg  << WEZSZY NIZ KROK SIATKI
+  end=1 TWS6 TWA180: -20/+3 = 23deg
+  end=1 TWS10 TWA150: -20/+15 = 35deg
+  end=1 TWS10 TWA160: -20/+15 = 35deg
+  end=1 TWS10 TWA170: -20/+15 = 35deg
+  end=1 TWS10 TWA180: -20/+3 = 23deg

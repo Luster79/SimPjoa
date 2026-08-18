@@ -1,0 +1,30 @@
+EKRAN 2: warianty parametrow oceniane LICZBA TRYMOW UTRZYMUJACYCH KURS
+(ekran 1 rankowal po deficycie momentu, ktory jest ~0 wszedzie -- nie mogl rozroznic)
+kursy 165 i 168 = dno luki; baza dala tam 0 i 0 trymow, wioslo wlozone 7 i 3
+
+=== BAZA ===
+TWA165 | NIE TRZYMA       | najblizej: TWA159.0 (blad 6.0deg, dryf w koncowce 0.00deg) szot=55 karota=1 tackX=1 crewX=-1
+TWA168 | NIE TRZYMA       | najblizej: TWA174.6 (blad 6.6deg, dryf w koncowce 3.51deg) szot=20 karota=0 tackX=-1 crewX=1
+=== hull.clrXFraction:0.00 ===
+TWA165 | NIE TRZYMA       | najblizej: TWA158.9 (blad 6.1deg, dryf w koncowce 0.00deg) szot=55 karota=1 tackX=1 crewX=-1
+TWA168 | NIE TRZYMA       | najblizej: TWA172.6 (blad 4.6deg, dryf w koncowce 6.53deg) szot=35 karota=0.5 tackX=-1 crewX=1
+=== hull.clrXFraction:0.15 ===
+TWA165 | NIE TRZYMA       | najblizej: TWA158.5 (blad 6.5deg, dryf w koncowce 0.00deg) szot=55 karota=1 tackX=1 crewX=-1
+TWA168 | NIE TRZYMA       | najblizej: TWA174.3 (blad 6.3deg, dryf w koncowce 1.59deg) szot=35 karota=0 tackX=-1 crewX=1
+=== hull.clrXFraction:0.25 ===
+TWA165 | NIE TRZYMA       | najblizej: TWA157.2 (blad 7.8deg, dryf w koncowce 0.00deg) szot=55 karota=1 tackX=1 crewX=-1
+TWA168 | NIE TRZYMA       | najblizej: TWA174.7 (blad 6.7deg, dryf w koncowce 0.00deg) szot=100 karota=0.5 tackX=-1 crewX=-1
+=== hull.lateralArea:1.00 ===
+TWA165 | NIE TRZYMA       | najblizej: TWA170.3 (blad 5.3deg, dryf w koncowce 9.34deg) szot=35 karota=0 tackX=-1 crewX=1
+TWA168 | NIE TRZYMA       | najblizej: TWA168.9 (blad 0.9deg, dryf w koncowce 7.65deg) szot=35 karota=0 tackX=0 crewX=1
+=== hull.lateralArea:2.00 ===
+TWA165 | TRZYMA (1 trymow) | najblizej: TWA160.1 (blad 4.9deg, dryf w koncowce 0.00deg) szot=55 karota=1 tackX=1 crewX=-1
+TWA168 | NIE TRZYMA       | najblizej: TWA160.1 (blad 7.9deg, dryf w koncowce 0.00deg) szot=55 karota=1 tackX=1 crewX=-1
+=== hull.lowSpeedSideDamping:300 ===
+TWA165 | TRZYMA (1 trymow) | najblizej: TWA160.1 (blad 4.9deg, dryf w koncowce 0.00deg) szot=55 karota=1 tackX=1 crewX=-1
+TWA168 | NIE TRZYMA       | najblizej: TWA160.1 (blad 7.9deg, dryf w koncowce 0.00deg) szot=55 karota=1 tackX=1 crewX=-1
+=== hull.crossFlowDragCoeff:2.0 ===
+TWA165 | NIE TRZYMA       | najblizej: TWA159.0 (blad 6.0deg, dryf w koncowce 0.00deg) szot=55 karota=1 tackX=1 crewX=-1
+TWA168 | NIE TRZYMA       | najblizej: TWA174.6 (blad 6.6deg, dryf w koncowce 4.54deg) szot=35 karota=0.5 tackX=-1 crewX=1
+
+KONIEC
