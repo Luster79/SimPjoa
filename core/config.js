@@ -250,16 +250,37 @@ function crossCheckAeroTableV2(byApex) {
   }
 }
 
-// Two named boats (docs/adr/0029, docs/adr/0030): 'default' is the PJOA FOLK
-// with the campaign's revised ama, 'old' is the same boat before that revision.
+// Named boats (docs/adr/0029, 0030, 0050): 'default' is the PJOA FOLK with
+// the campaign's revised ama, 'old' is the same boat before that revision.
 // Unlike the aero tables — which are leaf objects createConfig can swap AFTER
 // the merge — these parameters are the SOURCE the whole config is derived
 // from (hull, ama, sail, crew, every inertia), so the variant has to be known
 // BEFORE buildDefaultConfig runs. That is why it is a createConfig argument
 // read ahead of the merge rather than a field patched into it.
+//   'slim' and 'fat' (ADR 0050) are the SAME PJOA FOLK CSV as 'default' —
+// they exist for hull.asymmetryLiftCoeff, a single unsourced coefficient
+// (builder testimony, no citation), not a geometry difference, so there is
+// no second CSV to point them at. See ASYMMETRY_VARIANT_PATCH below for the
+// one field each overrides.
 export const BOAT_VARIANTS = {
   default: 'example_proa_parameters.csv',
   old: 'proa_parameters_old.csv',
+  slim: 'example_proa_parameters.csv',
+  fat: 'example_proa_parameters.csv',
+};
+
+// ADR 0050's overnight coefficient sweep found the response landscape
+// non-monotonic: a narrow, high-reward window at [0.014, 0.015] (best
+// corridor and close-hauled margins, but only ~0.001 wide on the
+// coefficient axis) and a wide, gently-eroding plateau from 0 to ~0.008.
+// Neither dominates the other, and nothing sources which one (if either)
+// matches the real boat — so both ship as named variants instead of one
+// being silently picked. 'default' stays at the field's own literal 0
+// below, unchanged, since every existing acceptance figure in the
+// project's history was measured there.
+const ASYMMETRY_VARIANT_PATCH = {
+  slim: 0.004,   // plateau's best-balanced point: K3 close-hauled margins 1.8/8.3deg
+  fat: 0.0145,   // window's centre: K3 close-hauled margins 5.0/7.3/5.0deg, largest corridor
 };
 
 function loadBoatParamsCSV(variant = 'default') {
@@ -506,6 +527,24 @@ function buildDefaultConfig(boat = 'default') {
       sailingFreeReliefFadeEndDeg: 24,
       lowSpeedSideDamping: 100,            // tunable — N per (m/s) of sway speed; linear-regime side resistance that keeps a near-stalled boat from drifting freely at very low absolute speed, independent of the (now measured) CS curve's own shape
       crossFlowDragCoeff: 1.1,             // bluff-body cross-flow (broadside) drag coefficient on the lateral plane; past stall the hull is dragged side-on and meets huge resistance, which is what stops a spurious "sails sideways" state — see hydro.js hullSideForce
+      // asymmetryLiftCoeff (docs/adr/0049, 0050, 2026-08-18/19): the vaka's
+      // windward side — the ama's own side, since the ama is kept to
+      // windward in every normal sailing configuration and never relocates
+      // (state.js Conventions) — is built slightly more convex than the
+      // leeward side, per direct testimony from the PJOA FOLK's own builder
+      // (the same authority level as the owner's manual, docs/README.md's
+      // "primary source"), NOT a citation with a magnitude. Zero on THIS
+      // (the 'default') boat, unchanged from ADR 0049: every existing
+      // acceptance figure in the project's history was measured at 0, and
+      // this variant is what they still mean. ADR 0050's overnight sweep
+      // found the response landscape NON-MONOTONIC — a narrow, high-reward
+      // window at [0.014, 0.015] and a wide, gently-eroding plateau from 0
+      // to ~0.008 — with no single value serving both "wide corridor" and
+      // "small close-hauled cost" without picking one hypothesis over the
+      // other. Rather than silently pick, the owner's call: ship BOTH as
+      // named boats — see BOAT_VARIANTS' 'slim' (0.004, the plateau's
+      // best-balanced point) and 'fat' (0.0145, the window's centre).
+      asymmetryLiftCoeff: 0,
       // lateralArea (~Lwl*draft): dual-use — the cross-flow bluff-body term
       // above AND the hullSideForceCoeff CS(leeway) term (hydro.js) both
       // reference this same projected-side-area estimate. Flay's own CS is referenced to
@@ -1351,7 +1390,14 @@ export function createConfig(userConfig) {
   // afterwards (see BOAT_VARIANTS). It is then stored on the result so a
   // config round-trips — createConfig(cfg) reproduces the same boat.
   const boat = userConfig?.boat ?? 'default';
-  const base = buildDefaultConfig(boat);
+  let base = buildDefaultConfig(boat);
+  // 'slim'/'fat' (ADR 0050) share 'default's own CSV — see
+  // ASYMMETRY_VARIANT_PATCH's own comment — so their one point of
+  // difference is applied here, BEFORE userConfig, so an explicit
+  // hull.asymmetryLiftCoeff patch still overrides the variant's own.
+  if (ASYMMETRY_VARIANT_PATCH[boat] !== undefined) {
+    base = deepMerge(base, { hull: { asymmetryLiftCoeff: ASYMMETRY_VARIANT_PATCH[boat] } });
+  }
   const merged = deepMerge(base, userConfig);
   merged.boat = boat;
   // Re-derive the active aero table from sail.aeroTableVersion on every call.

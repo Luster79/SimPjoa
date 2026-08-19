@@ -216,7 +216,12 @@ function stationWeights(theta, phi, config, draftRatio) {
 // integrator.js's live path passes the real state.z).
 // theta (L5, the pitch DOF's own angle, rad): replaces the fore-aft crewPosX
 // this function used to receive directly -- see clrXPosition's own comment.
-export function hullSideForce(u, v, r, theta, phi, config, heaveZ = 0) {
+// end (+1|-1, trailing and optional like heaveZ -- the isolated probes in
+// harness/asserts-hull-ama.js and scratch/ call this at the default and are
+// unaffected as long as hull.asymmetryLiftCoeff stays 0; only core/
+// integrator.js's live path passes the real state.end): which physical side
+// the ama is bolted to, needed by the asymmetry term below.
+export function hullSideForce(u, v, r, theta, phi, config, heaveZ = 0, end = 1) {
   const { hull, rho_w } = config;
   const DEG = Math.PI / 180;
   const L = hull.length;
@@ -383,6 +388,31 @@ export function hullSideForce(u, v, r, theta, phi, config, heaveZ = 0) {
     Fx += FxStrip;
     yawMoment += st.x * FyStrip;
   }
+
+  // --- Hull camber / windward-side asymmetry (docs/adr/0049, 2026-08-18) --
+  // The vaka's windward side -- the ama's own side, per state.js's own
+  // Conventions -- is built slightly more convex than the leeward side
+  // (builder testimony, no measured magnitude -- see hull.asymmetryLiftCoeff's
+  // own config.js comment). Flow along an asymmetric section behaves like a
+  // cambered foil: a lift-like force toward the convex (windward/ama) side
+  // that is PRESENT AT ZERO LEEWAY, unlike hullSideForceCoeff's CS(leeway)
+  // above, which is exactly 0 there by construction -- Flay's tank tests
+  // never measured a zero-leeway point (ADR 0004). The hull-scale analogue
+  // of aero.js's sail camber; nothing equivalent existed for the hull before
+  // this.
+  //
+  // A SINGLE lumped force, not per-station: the source gives no fore-aft
+  // distribution, and HULL_STATIONS' own positions are symmetric about x=0
+  // by construction (stationWeights), so spreading it uniformly across
+  // stations would net to this same total Fy and exactly zero yaw moment
+  // anyway -- computing it directly avoids inventing a lever arm nothing
+  // supports. u*|u|, not u^2: sign-preserving like every other direction-of-
+  // travel term in this file, so it fades out rather than assuming the
+  // mechanism reverses the same way at sternway. No induced-drag Fx
+  // contribution -- no measured L/D relationship exists for this term to
+  // derive one from, unlike the leeway-driven foil term above.
+  const asymmetryLiftCoeff = hull.asymmetryLiftCoeff ?? 0;
+  Fy += asymmetryLiftCoeff * 0.5 * rho_w * u * Math.abs(u) * effectiveLateralArea * end;
 
   return { Fx, Fy, yawMoment };
 }

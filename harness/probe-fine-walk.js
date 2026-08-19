@@ -35,8 +35,29 @@ const END_LIST = argOf('end', [1]);
 const FROM = argOf('from', [150])[0];
 const TO = argOf('to', [180])[0];
 
+// --param=hull.asymmetryLiftCoeff:0.01 — same single-override convention as
+// probe-holds-freely.js, so a candidate can be screened on the OBTAINING
+// question with the same CLI shape as the HOLDING one.
+function overrideFrom(arg) {
+  if (!arg) return undefined;
+  const [path, raw] = arg.slice('--param='.length).split(':');
+  const value = Number(raw);
+  if (!path || !Number.isFinite(value)) {
+    console.error(`zly --param (oczekiwane sciezka.z.kropkami:liczba): ${arg}`);
+    process.exit(2);
+  }
+  const keys = path.split('.');
+  const over = {};
+  let node = over;
+  for (let i = 0; i < keys.length - 1; i++) node = (node[keys[i]] = {});
+  node[keys[keys.length - 1]] = value;
+  return over;
+}
+const PARAM = process.argv.find((s) => s.startsWith('--param='));
+
 function main() {
-  const config = createConfig();
+  const config = createConfig(overrideFrom(PARAM));
+  if (PARAM) console.log(`wariant: ${PARAM.slice('--param='.length)}`);
   const t0 = Date.now();
   const summary = [];
 

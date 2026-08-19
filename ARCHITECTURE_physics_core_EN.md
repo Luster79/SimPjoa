@@ -1,6 +1,6 @@
 # Physics core architecture
 
-*Last reviewed: 2026-08-09*
+*Last reviewed: 2026-08-18*
 
 Context map for the dependency-free ES-module physics core and its test
 harness. It describes **the model as it stands** — module layout, frame and
@@ -253,7 +253,7 @@ The single statement of where the centre of lateral resistance sits. Shared by
 `hullSideForce` and by aero.js's CE geometry — the CE−CLR "lead" only means
 anything if both sides reference the same point. Fore-aft crew trim shifts it.
 
-    hullSideForce(u, v, r, crewPosX, phi, config) -> { Fx, Fy, yawMoment }
+    hullSideForce(u, v, r, theta, phi, config, heaveZ, end) -> { Fx, Fy, yawMoment }
 
 **The hull's whole lateral force, by strip integration** (ADR 0017). Station x
 sees its own transverse velocity `v + r·x`, hence its own leeway, hence its own
@@ -280,6 +280,15 @@ The leeway magnitude is folded into [0, 90°] so a hull moving stern-first at a
 small drift angle reads as a small drift angle. **Known limitation, stated
 rather than hidden:** the folded angle is looked up in the same curve either
 way, and the measurements are for a hull going forward.
+
+**Windward-side asymmetry lift** (`hull.asymmetryLiftCoeff`, ADR 0049) — a
+single lumped term added after the strip loop, `∝ u·|u|·end`, present but
+defaulted to 0 like `heelClrShiftCoeff` above. Models builder testimony (not
+a citation) that the vaka's windward/ama side is built slightly more convex
+than the leeward side, giving a lift-like force toward it that is nonzero at
+zero leeway — unlike `CS(leeway)` above, which is exactly 0 there by
+construction. Screened 0.005–0.02, not adopted; see config.js's own comment
+and the ADR for why.
 
     amaDrag(u, v, r, phi, crewPos, end, config) -> { Fx, Fy, yawMoment }
 

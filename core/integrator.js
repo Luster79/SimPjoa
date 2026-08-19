@@ -30,7 +30,7 @@ export function computeForces(state, controls, config) {
   // state.theta, the pitch DOF's own dynamic angle, not controls.crewPosX
   // directly — see clrXPosition's own comment for why the substitution is
   // sign-preserving and needs no extra flip here.
-  const side = hullSideForce(state.u, state.v, state.r, state.theta ?? 0, state.phi, config, state.z);
+  const side = hullSideForce(state.u, state.v, state.r, state.theta ?? 0, state.phi, config, state.z, state.end);
   const drag = amaDrag(state.u, state.v, state.r, state.phi, controls.crewPos, state.end, config);
   const rudder = rudderForce(state, controls, config);
   const windage = windageForce(state, controls, config);

@@ -1,6 +1,6 @@
 # docs/ — index
 
-*Last reviewed: 2026-08-18*
+*Last reviewed: 2026-08-19*
 
 `ARCHITECTURE_physics_core_EN.md` in the repo root is the context map for the
 code. This file is the map for everything in `docs/`.
@@ -134,9 +134,10 @@ re-measures the empty band as **[162.3, 174.4], 12deg** — narrower than the
 old [160,175] framing on the reach side, unbounded-looking on the deep side —
 with family A (sail+hull+ama balance) folding at its TWA162.26 ceiling and
 family B (hull-dominated, sail contributing almost nothing) not reachable
-below TWA174.44. **Why static restoring and dynamic escape coexist is open**:
-a sheet-grid discontinuity and a dead heel-authority channel were both
-measured and refuted as explanations; no third hypothesis has been tested.
+below TWA174.44. **Why static restoring and dynamic escape coexist was open**
+at the time of ADR 0048 — a sheet-grid discontinuity and a dead heel-authority
+channel had both been measured and refuted as explanations, with no third
+hypothesis tested yet (ADR 0049, below, is now a candidate).
 Inserting the oar stationary — in the water, at zero deflection, never
 steered — closes most of the band (`harness/probe-holds-freely.js --oar=in`),
 consistent with the boat having no second lateral-plane appendage since the
@@ -148,6 +149,51 @@ coverage figures above that rest on it — `coverage-no-oar`'s 42/42 and
 `coverage-obtain-course`'s 125/156, including its `holding trim FOUND` at
 TWA170 — are overstated. ADR 0048 does not change the predicate, so the
 correction stands as a caveat on those numbers, not a revision of them.
+
+**2026-08-18 (ADR 0049): a credible third hypothesis, screened but not
+adopted.** The owner reports direct builder testimony (PJOA FOLK-specific,
+same authority level as the manual): the vaka's windward side is built
+slightly more convex than the leeward side, giving a lift-like force toward
+the ama's own side even at zero leeway — nothing equivalent existed in the
+hull's lateral-force model before this (`hullSideForceCoeff`'s CS(leeway) is
+exactly 0 at zero leeway by construction). Implemented as
+`hull.asymmetryLiftCoeff` (`core/hydro.js`'s `hullSideForce`, default 0,
+verified byte-identical no-op there). Screened at TWS6 on the two
+zero-holder gap points plus the ADR 0048 saddle: holders climb from 0/0/1
+(coeff 0) to 11/17/18 (coeff 0.015), a broad plateau across 0.005-0.02 that
+falls back toward baseline by 0.05 — the shape of a real mechanism, not a
+curve-fit. `end=-1` reproduces `end=1` digit-for-digit (no mirror-symmetry
+defect). The full acceptance suite at coeff=0.01 promotes three `xfail`s
+(`C-C` — the manual's own downwind recipe — to full PASS, `K3` shunt-hold
+both ends) but regresses `K3`'s TWA70→90 bearing-away pair 1.6-1.8deg past
+its band, and changes 42/42 `out/polar.csv` rows (a global effect, not a
+deep-band patch). **Held at its no-op default**: the magnitude is this
+project's own order-of-magnitude estimate, not a citation, and adopting it
+trades a real regression for a real gain — an owner decision, not a
+measurement one. See `docs/adr/0049` for the full table and the acceptance
+diff.
+
+**2026-08-19 (ADR 0050): the owner's overnight search finds two windows, not
+one — shipped as two named boats, not a single adopted default.** An 8-hour
+sweep of `hull.asymmetryLiftCoeff` (0-0.05), scored on BOTH the deep-band
+corridor and K3's two close-hauled checks (bearing-away TWA70→90,
+pointing-up TWA90→70), found the response non-monotonic: a wide, forgiving
+plateau (0-~0.008, best point 0.004) and a narrow, higher-reward window
+([0.014,0.015], best point 0.0145, only ~0.001 wide on the coefficient axis
+— too fragile a target for an unsourced parameter). Neither dominates the
+other and nothing sources which one the real hull matches, so both ship as
+`BOAT_VARIANTS`: **`slim`** (0.004 — corridor 12/6/4/3/5/11/11/21/43/40/44
+across TWA150-180 at TWS6, both K3 checks pass with 1.8-8.3deg of margin)
+and **`fat`** (0.0145 — corridor 12/18/18 on the gap's own TWA165/168/170,
+both K3 checks pass with 5.0-7.3deg of margin, the best numbers measured but
+on a knife-edge coefficient). `default` is untouched — `hull.
+asymmetryLiftCoeff` stays its own literal 0, so every acceptance figure
+above still means exactly what it always meant. Neither variant has its own
+gated acceptance run yet, and the OBTAINING side (a stepped walk into the
+deep band, not just holding once placed there) was not re-verified for
+either — the direct test ran 5+ hours unfinished and was abandoned rather
+than left blocking the decision. See `docs/adr/0050` for the full sweep
+table.
 
 **Out of scope, unsolved:** TWA < 50, and whether a trim that holds heading
 while decaying to ~20% of its speed counts as holding at all.
@@ -229,6 +275,8 @@ Append-only. Never edit an old ADR; supersede it with a new one.
 | 0046 | A walk asks what is reachable, not just what holds (W5) -- `findReachableTrim` (asserts-helpers.js) replaces `findHoldingTrim` for every waypoint after a walk's start, evaluating each candidate by RAMPING it in from the boat's actual current state rather than settling fresh at the target. O9 (TWA90->TWA180) now stalls honestly AT the TWA170 waypoint (151.3deg final) instead of passing through it and failing only on the last leg (ADR 0045's TWA64) -- confirms, by a second independent instrument, that `findings-2026-08-15-deep-course-gap.md`'s TWA160-175 gap survives a wide, ramped, state-aware search |
 | 0047 | Windage gets a yaw moment, and the deep-course gap stays open (W1) -- gives `windageForce()` (ADR 0008) the yaw-moment lever ADR 0008 itself named and declined; the one term in the budget driven by apparent wind angle rather than leeway, so it survives TWA162-174 where every other term fades. Measured at 1-3 N*m against a 16-90 N*m luffing budget -- correctly signed, two orders of magnitude too small; a ninth candidate cause refuted. Real trade found and kept: `K3`'s pointing-up check (TWA90->TWA70) regressed out of its ±10deg band and is demoted to `xfail:STEERING`, because the same term is strongest exactly where apparent wind is strongest (close-hauled/reaching) and weakest where this ADR needed it (deep). **W1 closes: the gap is real, not a search artifact or a missing coefficient** |
 | 0048 | The TWA170 "hold" is a sub-degree saddle, and K1 cannot tell the difference -- corrects ADR 0046's existence claim (an equilibrium DOES exist in TWA160-175) while confirming its operational conclusion (the walk still cannot reach it); re-measures the empty band by continuation from both sides as [162.3, 174.4], 12deg. `holdsCourse`'s `restoring` predicate certifies a sub-degree-wide saddle the same way it certifies a wide attractor, so the 42/42 and 125/156 coverage figures that rest on it are overstated until the predicate changes -- not done by this ADR. Why strong static restoring coexists with dynamic escape is left open |
+| 0049 | Hull windward-side asymmetry lift: a credible third mechanism for the deep-course gap, screened but not adopted -- owner's builder testimony (PJOA FOLK-specific) that the vaka's windward side is built more convex than the leeward, giving a lift-like force independent of leeway; `hull.asymmetryLiftCoeff` wired into `hullSideForce`, default 0 (verified no-op). Screened 0-0.05: 0/0/1 holders at coeff 0 on the TWA165/168/170 gap points climb to 11-20 across a 0.005-0.02 plateau, falling back by 0.05; `end=-1` matches `end=1` digit-for-digit. Full suite at 0.01 promotes 3 xfails (incl. the manual's own C-C recipe) but regresses K3's TWA70-90 pointing pair and changes 42/42 polar rows. Kept at its no-op default -- adopting a value is an owner decision, not a measurement one |
+| 0050 | The asymmetry coefficient search finds two windows, not one; ship both as named boats -- owner-directed overnight sweep (0-0.05) scored on corridor width AND K3's two close-hauled checks finds the response non-monotonic: a wide plateau (0-~0.008, best 0.004) and a narrow window ([0.014,0.015], best 0.0145, ~0.001 wide -- too fragile a target for an unsourced parameter). Neither dominates; both ship as `BOAT_VARIANTS` (`slim`=0.004, `fat`=0.0145), reusing `default`'s own CSV since only this one coefficient differs. `default` untouched (still 0). Neither variant has its own gated acceptance run; the obtaining-course walk was not re-verified for either (5+h unfinished, abandoned) |
 
 ## Open work
 
@@ -286,14 +334,20 @@ after it was written.
 - **Re-anchoring an assertion band is normal after an intended physics change;
   re-picking a probe until it agrees is not.** If a claim only holds at a
   hand-chosen operating point, measure it across a grid and report the tally.
-- **There are two named boats.** `createConfig()` builds the `default` one (the
-  PJOA FOLK with the ADR 0029 ama); `createConfig({ boat: 'old' })` builds the
+- **There are four named boats, from two CSVs.** `createConfig()` builds
+  `default` (the PJOA FOLK with the ADR 0029 ama, from `data/
+  example_proa_parameters.csv`); `createConfig({ boat: 'old' })` builds the
   same boat before that revision, from `data/proa_parameters_old.csv`. The
   variant is read *before* the config is assembled — every derived quantity
   comes from the chosen file — so it is a `createConfig` argument, not a patch
-  field like `sail.aeroTableVersion`. Adding a third variant means adding a CSV,
-  an entry in `BOAT_VARIANTS`, and the file to **both** `tools/bundle.js` and
-  `ui/shims/node-fs.js` (the shim cannot fetch on demand).
+  field like `sail.aeroTableVersion`. Adding a variant that needs its OWN
+  geometry means adding a CSV, an entry in `BOAT_VARIANTS`, and the file to
+  **both** `tools/bundle.js` and `ui/shims/node-fs.js` (the shim cannot fetch
+  on demand). `slim` and `fat` (ADR 0050) are the exception that proves the
+  rule: they reuse `default`'s own CSV file verbatim and differ from it in
+  exactly one field (`hull.asymmetryLiftCoeff`, applied as a small patch in
+  `createConfig` — see `ASYMMETRY_VARIANT_PATCH`), so neither `tools/
+  bundle.js` nor the shim needed touching.
 
 ### Lessons this project paid for
 

@@ -128,6 +128,7 @@ const TRANSLATIONS = {
     'btn.applyBoat': 'Apply', 'btn.resetBoatDefaults': 'Reset to defaults',
     'lbl.boatVariant': 'Boat', 'opt.boatDefault': 'PJOA FOLK (default)',
     'opt.boatOld': 'PJOA FOLK \u2014 before the ama revision',
+    'opt.boatSlim': 'PJOA Slim', 'opt.boatFat': 'PJOA Fat',
     'hint.boatVariant': 'Switching rebuilds the boat from its own parameter file and discards edits below.',
     'h.boatPresets': 'Saved boats', 'lbl.boatName': 'Name',
     'btn.saveBoat': 'Save', 'btn.exportBoat': 'Export file', 'btn.importBoat': 'Import file',
