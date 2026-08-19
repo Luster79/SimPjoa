@@ -246,6 +246,8 @@
         <select id="boatVariant">
           <option value="default" data-i18n="opt.boatDefault">PJOA FOLK (default)</option>
           <option value="old" data-i18n="opt.boatOld">PJOA FOLK — before the ama revision</option>
+          <option value="slim" data-i18n="opt.boatSlim">PJOA Slim</option>
+          <option value="fat" data-i18n="opt.boatFat">PJOA Fat</option>
         </select>
       </div>
       <div class="hint" data-i18n="hint.boatVariant">Switching rebuilds the boat from its own parameter file and discards edits below.</div>
@@ -684,16 +686,37 @@ function crossCheckAeroTableV2(byApex) {
   }
 }
 
-// Two named boats (docs/adr/0029, docs/adr/0030): 'default' is the PJOA FOLK
-// with the campaign's revised ama, 'old' is the same boat before that revision.
+// Named boats (docs/adr/0029, 0030, 0050): 'default' is the PJOA FOLK with
+// the campaign's revised ama, 'old' is the same boat before that revision.
 // Unlike the aero tables — which are leaf objects createConfig can swap AFTER
 // the merge — these parameters are the SOURCE the whole config is derived
 // from (hull, ama, sail, crew, every inertia), so the variant has to be known
 // BEFORE buildDefaultConfig runs. That is why it is a createConfig argument
 // read ahead of the merge rather than a field patched into it.
+//   'slim' and 'fat' (ADR 0050) are the SAME PJOA FOLK CSV as 'default' —
+// they exist for hull.asymmetryLiftCoeff, a single unsourced coefficient
+// (builder testimony, no citation), not a geometry difference, so there is
+// no second CSV to point them at. See ASYMMETRY_VARIANT_PATCH below for the
+// one field each overrides.
 const BOAT_VARIANTS = {
   default: 'example_proa_parameters.csv',
   old: 'proa_parameters_old.csv',
+  slim: 'example_proa_parameters.csv',
+  fat: 'example_proa_parameters.csv',
+};
+
+// ADR 0050's overnight coefficient sweep found the response landscape
+// non-monotonic: a narrow, high-reward window at [0.014, 0.015] (best
+// corridor and close-hauled margins, but only ~0.001 wide on the
+// coefficient axis) and a wide, gently-eroding plateau from 0 to ~0.008.
+// Neither dominates the other, and nothing sources which one (if either)
+// matches the real boat — so both ship as named variants instead of one
+// being silently picked. 'default' stays at the field's own literal 0
+// below, unchanged, since every existing acceptance figure in the
+// project's history was measured there.
+const ASYMMETRY_VARIANT_PATCH = {
+  slim: 0.004,   // plateau's best-balanced point: K3 close-hauled margins 1.8/8.3deg
+  fat: 0.0145,   // window's centre: K3 close-hauled margins 5.0/7.3/5.0deg, largest corridor
 };
 
 function loadBoatParamsCSV(variant = 'default') {
@@ -940,6 +963,24 @@ function buildDefaultConfig(boat = 'default') {
       sailingFreeReliefFadeEndDeg: 24,
       lowSpeedSideDamping: 100,            // tunable — N per (m/s) of sway speed; linear-regime side resistance that keeps a near-stalled boat from drifting freely at very low absolute speed, independent of the (now measured) CS curve's own shape
       crossFlowDragCoeff: 1.1,             // bluff-body cross-flow (broadside) drag coefficient on the lateral plane; past stall the hull is dragged side-on and meets huge resistance, which is what stops a spurious "sails sideways" state — see hydro.js hullSideForce
+      // asymmetryLiftCoeff (docs/adr/0049, 0050, 2026-08-18/19): the vaka's
+      // windward side — the ama's own side, since the ama is kept to
+      // windward in every normal sailing configuration and never relocates
+      // (state.js Conventions) — is built slightly more convex than the
+      // leeward side, per direct testimony from the PJOA FOLK's own builder
+      // (the same authority level as the owner's manual, docs/README.md's
+      // "primary source"), NOT a citation with a magnitude. Zero on THIS
+      // (the 'default') boat, unchanged from ADR 0049: every existing
+      // acceptance figure in the project's history was measured at 0, and
+      // this variant is what they still mean. ADR 0050's overnight sweep
+      // found the response landscape NON-MONOTONIC — a narrow, high-reward
+      // window at [0.014, 0.015] and a wide, gently-eroding plateau from 0
+      // to ~0.008 — with no single value serving both "wide corridor" and
+      // "small close-hauled cost" without picking one hypothesis over the
+      // other. Rather than silently pick, the owner's call: ship BOTH as
+      // named boats — see BOAT_VARIANTS' 'slim' (0.004, the plateau's
+      // best-balanced point) and 'fat' (0.0145, the window's centre).
+      asymmetryLiftCoeff: 0,
       // lateralArea (~Lwl*draft): dual-use — the cross-flow bluff-body term
       // above AND the hullSideForceCoeff CS(leeway) term (hydro.js) both
       // reference this same projected-side-area estimate. Flay's own CS is referenced to
@@ -1785,7 +1826,14 @@ function createConfig(userConfig) {
   // afterwards (see BOAT_VARIANTS). It is then stored on the result so a
   // config round-trips — createConfig(cfg) reproduces the same boat.
   const boat = userConfig?.boat ?? 'default';
-  const base = buildDefaultConfig(boat);
+  let base = buildDefaultConfig(boat);
+  // 'slim'/'fat' (ADR 0050) share 'default's own CSV — see
+  // ASYMMETRY_VARIANT_PATCH's own comment — so their one point of
+  // difference is applied here, BEFORE userConfig, so an explicit
+  // hull.asymmetryLiftCoeff patch still overrides the variant's own.
+  if (ASYMMETRY_VARIANT_PATCH[boat] !== undefined) {
+    base = deepMerge(base, { hull: { asymmetryLiftCoeff: ASYMMETRY_VARIANT_PATCH[boat] } });
+  }
   const merged = deepMerge(base, userConfig);
   merged.boat = boat;
   // Re-derive the active aero table from sail.aeroTableVersion on every call.
@@ -2674,7 +2722,12 @@ function stationWeights(theta, phi, config, draftRatio) {
 // integrator.js's live path passes the real state.z).
 // theta (L5, the pitch DOF's own angle, rad): replaces the fore-aft crewPosX
 // this function used to receive directly -- see clrXPosition's own comment.
-function hullSideForce(u, v, r, theta, phi, config, heaveZ = 0) {
+// end (+1|-1, trailing and optional like heaveZ -- the isolated probes in
+// harness/asserts-hull-ama.js and scratch/ call this at the default and are
+// unaffected as long as hull.asymmetryLiftCoeff stays 0; only core/
+// integrator.js's live path passes the real state.end): which physical side
+// the ama is bolted to, needed by the asymmetry term below.
+function hullSideForce(u, v, r, theta, phi, config, heaveZ = 0, end = 1) {
   const { hull, rho_w } = config;
   const DEG = Math.PI / 180;
   const L = hull.length;
@@ -2841,6 +2894,31 @@ function hullSideForce(u, v, r, theta, phi, config, heaveZ = 0) {
     Fx += FxStrip;
     yawMoment += st.x * FyStrip;
   }
+
+  // --- Hull camber / windward-side asymmetry (docs/adr/0049, 2026-08-18) --
+  // The vaka's windward side -- the ama's own side, per state.js's own
+  // Conventions -- is built slightly more convex than the leeward side
+  // (builder testimony, no measured magnitude -- see hull.asymmetryLiftCoeff's
+  // own config.js comment). Flow along an asymmetric section behaves like a
+  // cambered foil: a lift-like force toward the convex (windward/ama) side
+  // that is PRESENT AT ZERO LEEWAY, unlike hullSideForceCoeff's CS(leeway)
+  // above, which is exactly 0 there by construction -- Flay's tank tests
+  // never measured a zero-leeway point (ADR 0004). The hull-scale analogue
+  // of aero.js's sail camber; nothing equivalent existed for the hull before
+  // this.
+  //
+  // A SINGLE lumped force, not per-station: the source gives no fore-aft
+  // distribution, and HULL_STATIONS' own positions are symmetric about x=0
+  // by construction (stationWeights), so spreading it uniformly across
+  // stations would net to this same total Fy and exactly zero yaw moment
+  // anyway -- computing it directly avoids inventing a lever arm nothing
+  // supports. u*|u|, not u^2: sign-preserving like every other direction-of-
+  // travel term in this file, so it fades out rather than assuming the
+  // mechanism reverses the same way at sternway. No induced-drag Fx
+  // contribution -- no measured L/D relationship exists for this term to
+  // derive one from, unlike the leeway-driven foil term above.
+  const asymmetryLiftCoeff = hull.asymmetryLiftCoeff ?? 0;
+  Fy += asymmetryLiftCoeff * 0.5 * rho_w * u * Math.abs(u) * effectiveLateralArea * end;
 
   return { Fx, Fy, yawMoment };
 }
@@ -3532,7 +3610,7 @@ function computeForces(state, controls, config) {
   // state.theta, the pitch DOF's own dynamic angle, not controls.crewPosX
   // directly — see clrXPosition's own comment for why the substitution is
   // sign-preserving and needs no extra flip here.
-  const side = hullSideForce(state.u, state.v, state.r, state.theta ?? 0, state.phi, config, state.z);
+  const side = hullSideForce(state.u, state.v, state.r, state.theta ?? 0, state.phi, config, state.z, state.end);
   const drag = amaDrag(state.u, state.v, state.r, state.phi, controls.crewPos, state.end, config);
   const rudder = rudderForce(state, controls, config);
   const windage = windageForce(state, controls, config);
@@ -4191,14 +4269,14 @@ const MS_TO_KN = 1.9438;
 // recording's codeVersion is meaningful (harness/replay.js warns on
 // mismatch) for a downloaded bundle without requiring a build step for
 // plain `python3 -m http.server` development.
-const CODE_VERSION = "c51ba2b";
+const CODE_VERSION = "01df032";
 // BUILD_TIME: same pattern as CODE_VERSION above — tools/bundle.js
 // replaces this with the COMMIT's timestamp (not wall-clock build time),
 // so it stays stable across re-bundling the same commit and always
 // matches CODE_VERSION's hash. Shown in the bottom-right version footer
 // so a bug report/recording can be tied to an exact, dated build without
 // having to separately ask "which commit was this."
-const BUILD_TIME = "2026-08-16T14:27:35+02:00";
+const BUILD_TIME = "2026-08-19T08:57:07+02:00";
 
 // ---------------------------------------------------------------------
 // i18n — EN/PL. Static labels are marked with data-i18n="key" in
@@ -4270,6 +4348,7 @@ const TRANSLATIONS = {
     'btn.applyBoat': 'Apply', 'btn.resetBoatDefaults': 'Reset to defaults',
     'lbl.boatVariant': 'Boat', 'opt.boatDefault': 'PJOA FOLK (default)',
     'opt.boatOld': 'PJOA FOLK \u2014 before the ama revision',
+    'opt.boatSlim': 'PJOA Slim', 'opt.boatFat': 'PJOA Fat',
     'hint.boatVariant': 'Switching rebuilds the boat from its own parameter file and discards edits below.',
     'h.boatPresets': 'Saved boats', 'lbl.boatName': 'Name',
     'btn.saveBoat': 'Save', 'btn.exportBoat': 'Export file', 'btn.importBoat': 'Import file',
