@@ -126,6 +126,7 @@
     <span class="stat"><span data-i18n="hud.yard">Yard</span> <b id="hudYard">0</b>&deg; <b id="hudLuffing" class="luffing-tag"></b></span>
     <span class="stat"><span data-i18n="hud.shunt">Shunt</span> <b id="hudShunt">none</b></span>
     <span class="stat">TWS <b id="hudTws">6.0</b> m/s</span>
+    <span class="stat"><span data-i18n="hud.boat">Boat</span> <b id="hudBoat">PJOA Fat</b></span>
     <span class="stat" id="recStat"><span class="rec-dot" id="recDot"></span><b id="recDuration">0:00</b> / <span id="recSize">0 KB</span></span>
     <span class="stat" style="margin-left:auto">
       <button id="btnLang">PL</button>
@@ -244,10 +245,10 @@
       <div class="row">
         <label for="boatVariant" data-i18n="lbl.boatVariant">Boat</label>
         <select id="boatVariant">
-          <option value="default" data-i18n="opt.boatDefault">PJOA FOLK (default)</option>
+          <option value="default" data-i18n="opt.boatDefault">PJOA v2</option>
           <option value="old" data-i18n="opt.boatOld">PJOA FOLK — before the ama revision</option>
           <option value="slim" data-i18n="opt.boatSlim">PJOA Slim</option>
-          <option value="fat" data-i18n="opt.boatFat">PJOA Fat</option>
+          <option value="fat" data-i18n="opt.boatFat" selected>PJOA Fat</option>
         </select>
       </div>
       <div class="hint" data-i18n="hint.boatVariant">Switching rebuilds the boat from its own parameter file and discards edits below.</div>
@@ -4269,14 +4270,14 @@ const MS_TO_KN = 1.9438;
 // recording's codeVersion is meaningful (harness/replay.js warns on
 // mismatch) for a downloaded bundle without requiring a build step for
 // plain `python3 -m http.server` development.
-const CODE_VERSION = "01df032";
+const CODE_VERSION = "35f3e9c";
 // BUILD_TIME: same pattern as CODE_VERSION above — tools/bundle.js
 // replaces this with the COMMIT's timestamp (not wall-clock build time),
 // so it stays stable across re-bundling the same commit and always
 // matches CODE_VERSION's hash. Shown in the bottom-right version footer
 // so a bug report/recording can be tied to an exact, dated build without
 // having to separately ask "which commit was this."
-const BUILD_TIME = "2026-08-19T08:57:07+02:00";
+const BUILD_TIME = "2026-08-19T11:49:40+02:00";
 
 // ---------------------------------------------------------------------
 // i18n — EN/PL. Static labels are marked with data-i18n="key" in
@@ -4287,7 +4288,7 @@ const BUILD_TIME = "2026-08-19T08:57:07+02:00";
 const TRANSLATIONS = {
   en: {
     'hud.speed': 'Speed', 'hud.course': 'Course', 'unit.kn': 'kn', 'hud.leeway': 'Leeway', 'hud.amaLoad': 'Ama load', 'hud.shunt': 'Shunt',
-    'hud.sheet': 'Sheet', 'hud.yard': 'Yard',
+    'hud.sheet': 'Sheet', 'hud.yard': 'Yard', 'hud.boat': 'Boat',
     'btn.rec': 'REC (F9)', 'btn.mark': 'Mark (F10)', 'btn.downloadRec': 'Download rec.',
     'btn.pause': 'Pause (P)', 'btn.step': 'Step (.)', 'btn.forces': 'Forces (F)', 'btn.polar': 'Polar (O)', 'btn.boat': 'Boat (B)',
     'legend.lift': 'sail lift', 'legend.drag': 'sail drag', 'legend.hullSide': 'hull side', 'legend.rudder': 'rudder',
@@ -4346,7 +4347,7 @@ const TRANSLATIONS = {
     'hint.boatDesign': 'Physical design parameters — hull, ama, sail, rudder, stability. Changes apply on "Apply" and reset the boat\'s motion state.',
     'tag.physics': 'affects physics', 'tag.graphics': 'drawing/UI only',
     'btn.applyBoat': 'Apply', 'btn.resetBoatDefaults': 'Reset to defaults',
-    'lbl.boatVariant': 'Boat', 'opt.boatDefault': 'PJOA FOLK (default)',
+    'lbl.boatVariant': 'Boat', 'opt.boatDefault': 'PJOA v2',
     'opt.boatOld': 'PJOA FOLK \u2014 before the ama revision',
     'opt.boatSlim': 'PJOA Slim', 'opt.boatFat': 'PJOA Fat',
     'hint.boatVariant': 'Switching rebuilds the boat from its own parameter file and discards edits below.',
@@ -4365,7 +4366,7 @@ const TRANSLATIONS = {
   },
   pl: {
     'hud.speed': 'Prędkość', 'hud.course': 'Kurs', 'unit.kn': 'w', 'hud.leeway': 'Znos', 'hud.amaLoad': 'Obc. amy', 'hud.shunt': 'Zwrot',
-    'hud.sheet': 'Szot', 'hud.yard': 'Reja',
+    'hud.sheet': 'Szot', 'hud.yard': 'Reja', 'hud.boat': 'Łódź',
     'btn.rec': 'NAGR (F9)', 'btn.mark': 'Znacznik (F10)', 'btn.downloadRec': 'Pobierz nagranie',
     'btn.pause': 'Pauza (P)', 'btn.step': 'Krok (.)', 'btn.forces': 'Siły (F)', 'btn.polar': 'Polara (O)', 'btn.boat': 'Łódź (B)',
     'legend.lift': 'siła nośna żagla', 'legend.drag': 'opór żagla', 'legend.hullSide': 'siła boczna kadłuba', 'legend.rudder': 'ster',
@@ -4466,8 +4467,14 @@ function setLang(lang) {
   if (boatMode) buildBoatPanel();
 }
 
-let dims = createConfig(); // dimensions/limits only; the sim keeps its own internal config. Reassigned wholesale by the boat-design panel's Apply (see bottom of file) — never mutated field-by-field.
-const sim = createSimulator();
+// DEFAULT_BOAT (ADR 0050): the UI opens on PJOA Fat, not core/config.js's
+// own 'default' — a UI-only choice, made here rather than in createConfig's
+// own no-arg default, so run_tests.js / the harness / every existing
+// acceptance figure keep meaning what they always meant (see ADR 0050's own
+// "default stays untouched" decision).
+const DEFAULT_BOAT = 'fat';
+let dims = createConfig({ boat: DEFAULT_BOAT }); // dimensions/limits only; the sim keeps its own internal config. Reassigned wholesale by the boat-design panel's Apply (see bottom of file) — never mutated field-by-field.
+const sim = createSimulator({ boat: DEFAULT_BOAT });
 
 // ---------------------------------------------------------------------
 // DOM references
@@ -6143,7 +6150,15 @@ const hud = {
   yard: document.getElementById('hudYard'),
   luffing: document.getElementById('hudLuffing'),
   stalled: document.getElementById('hudStalled'),
+  boat: document.getElementById('hudBoat'),
 };
+
+// Maps a BOAT_VARIANTS key (core/config.js) to its display-name locale key,
+// so the HUD's "which boat are we sailing" readout always shows the same
+// name the Boat tab's own dropdown does — one label per variant, read
+// through t() so it follows the active language and the dropdown's own
+// wording (e.g. ADR 0050's rename to "PJOA v2") without a second copy.
+const BOAT_LABEL_KEY = { default: 'opt.boatDefault', old: 'opt.boatOld', slim: 'opt.boatSlim', fat: 'opt.boatFat' };
 
 function normalizeAngle__b12(a) { return Math.atan2(Math.sin(a), Math.cos(a)); }
 
@@ -6183,6 +6198,7 @@ function updateHud(state, forces) {
   hud.heel.textContent = (state.phi / DEG__b12).toFixed(1);
   hud.shunt.textContent = t(`shuntPhase.${state.shunt.phase}`);
   hud.tws.textContent = controls.windSpeed.toFixed(1);
+  hud.boat.textContent = t(BOAT_LABEL_KEY[dims.boat] ?? dims.boat);
   // P4.1: sheet limit (commanded) vs actual yard angle (state.delta, a real
   // piece of state — R5-1) shown side by side, plus a LUFFING tag when the
   // wind, not the sheet, is holding delta below the (effective) limit.
