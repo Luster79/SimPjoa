@@ -32,7 +32,7 @@
 //
 //     node harness/probe-holds-freely.js | tee docs/holds-freely-YYYY-MM-DD.txt
 
-import { createConfig } from '../core/config.js';
+import { createConfig, deepMerge } from '../core/config.js';
 import { integrate } from '../core/integrator.js';
 import { DEG, HEADING0 } from './asserts-helpers.js';
 import { TRIMS } from './probe-oar-deficit.js';
@@ -96,11 +96,15 @@ function overrideFrom(arg) {
   node[keys[keys.length - 1]] = value;
   return over;
 }
-const PARAM = process.argv.find((s) => s.startsWith('--param='));
+const PARAMS = process.argv.filter((s) => s.startsWith('--param='));
+const BOAT = (process.argv.find((s) => s.startsWith('--boat=')) || '--boat=default').slice(7);
 
 function main() {
-  const config = createConfig(overrideFrom(PARAM));
-  if (PARAM) console.log(`wariant: ${PARAM.slice('--param='.length)}`);
+  let userConfig = { boat: BOAT };
+  for (const p of PARAMS) userConfig = deepMerge(userConfig, overrideFrom(p));
+  const config = createConfig(userConfig);
+  if (BOAT !== 'default') console.log(`boat: ${BOAT}`);
+  for (const p of PARAMS) console.log(`wariant: ${p.slice('--param='.length)}`);
   console.log(`osiadanie ${SETTLE_SECONDS}s pod wioslem, potem ${RELEASE_SECONDS}s BEZ wiosla`);
   console.log(`trzyma = konczy w +-${BAND}deg od kursu i dryfuje <${QUIET_DEG}deg w ostatniej cwiartce`);
   console.log(`trymow: ${TRIMS.length}, TWS${TWS}, end=${END}, wioslo: ${OAR === "up" ? "PODNIESIONE" : OAR === "in" ? "WLOZONE, trzymane prosto, nieruszane" : "UZYWANE jako ster"}\n`);

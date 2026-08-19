@@ -660,6 +660,29 @@ function buildDefaultConfig(boat = 'default') {
       // the source describes. Including half of an opposing pair is worse than
       // including neither.
       yawHeelSign: 0,
+      // heelLiftCoeff (docs/adr/0052, 2026-08-19): a DIFFERENT mechanism
+      // from asymmetryLiftCoeff above -- that one is keyed on `end` (a
+      // construction bias, fixed to one physical side); this one is keyed
+      // on sin(phi) (the boat's heeled STATE) and exists even on a hull
+      // that is symmetric by construction, because heeling itself makes
+      // the submerged cross-section asymmetric port/starboard (the
+      // "asymmetric waterline" source of heel-induced weather helm in
+      // general yacht-design literature -- Larsson & Eliasson's own class
+      // of source, already cited for hull.lead -- but, like
+      // asymmetryLiftCoeff, no boat-specific magnitude or functional-form
+      // citation was found; sin(phi), not phi, matches the form already
+      // used for every other heel-coupled term in this project
+      // (asymmetryLiftCoeff's own end-keyed analogue, aero.js's
+      // yawMomentHeel) rather than a new choice for this term alone).
+      // NOT the same thing as heelClrShiftCoeff/heelClrSign above: that
+      // term redistributes an EXISTING leeway-driven force (zero at
+      // v=0); this term is a lumped Fy present AT ZERO DRIFT, the
+      // hull-scale analogue of asymmetryLiftCoeff itself, just triggered
+      // by heel instead of construction. Default 0 -- FREE band,
+      // unmeasured on this boat, screened in docs/adr/0052 but not
+      // adopted as a nonzero default without a further owner decision,
+      // same discipline as asymmetryLiftCoeff (docs/adr/0049).
+      heelLiftCoeff: 0,
       ceLeverSign: 1,                     // +-1 (aero.js xCE/yCE yaw-lever sign) — CURRENTLY THE IDENTITY, not an active flip: at the present `lead` the naive, unflipped r x F derivation matches the boat's real steering direction on its own
       // lead: the classical yacht-design "lead" — the CE-CLR longitudinal
       // separation — of order 5-25% of waterline length depending on hull and

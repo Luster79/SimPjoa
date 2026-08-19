@@ -414,6 +414,23 @@ export function hullSideForce(u, v, r, theta, phi, config, heaveZ = 0, end = 1) 
   const asymmetryLiftCoeff = hull.asymmetryLiftCoeff ?? 0;
   Fy += asymmetryLiftCoeff * 0.5 * rho_w * u * Math.abs(u) * effectiveLateralArea * end;
 
+  // --- Heel-induced hull asymmetry lift (docs/adr/0052, 2026-08-19) --
+  // Distinct mechanism from asymmetryLiftCoeff above: even a hull that is
+  // symmetric BY CONSTRUCTION stops being symmetric port/starboard once it
+  // heels -- the submerged cross-section's two flanks present differently to
+  // the flow (one more vertical, one more curved), the standard "asymmetric
+  // waterline" source of heel-induced weather helm in yacht design. Keyed on
+  // sin(phi) rather than the constant `end`: it is the boat's heeled STATE
+  // that drives it, not which physical side is built which way. Structurally
+  // identical to asymmetryLiftCoeff otherwise -- same lumped, single-term,
+  // no-fore-aft-distribution, u*|u|, no-induced-drag reasoning applies (see
+  // that term's own comment above), because the source for THIS term is the
+  // same tier of evidence (general yacht-design literature, no
+  // boat-specific magnitude -- see hull.heelLiftCoeff's own config.js
+  // comment), not a measurement on this hull either.
+  const heelLiftCoeff = hull.heelLiftCoeff ?? 0;
+  Fy += heelLiftCoeff * Math.sin(phi) * 0.5 * rho_w * u * Math.abs(u) * effectiveLateralArea;
+
   return { Fx, Fy, yawMoment };
 }
 

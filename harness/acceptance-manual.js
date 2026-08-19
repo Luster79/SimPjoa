@@ -542,10 +542,19 @@ export function runAcceptance(config) {
   return results;
 }
 
-const config = createConfig();
+const boatArg = process.argv.find((a) => a.startsWith('--boat='));
+const boat = boatArg ? boatArg.slice('--boat='.length) : 'default';
+const heelClrSignArg = process.argv.find((a) => a.startsWith('--heelClrSign='));
+const yawHeelSignArg = process.argv.find((a) => a.startsWith('--yawHeelSign='));
+const heelLiftCoeffArg = process.argv.find((a) => a.startsWith('--heelLiftCoeff='));
+const hullOverride = {};
+if (heelClrSignArg) hullOverride.heelClrSign = Number(heelClrSignArg.slice('--heelClrSign='.length));
+if (yawHeelSignArg) hullOverride.yawHeelSign = Number(yawHeelSignArg.slice('--yawHeelSign='.length));
+if (heelLiftCoeffArg) hullOverride.heelLiftCoeff = Number(heelLiftCoeffArg.slice('--heelLiftCoeff='.length));
+const config = createConfig({ boat, hull: hullOverride });
 const rows = runAcceptance(config);
 const pad = (s, n) => String(s).padEnd(n);
-console.log('\nAcceptance criteria — Kryteria_Akceptacji_Symulator_Pjoa.md');
+console.log(`\nAcceptance criteria — Kryteria_Akceptacji_Symulator_Pjoa.md (boat=${boat})`);
 console.log('(+turn = bow points UP / toward the wind; -turn = bears away)\n');
 for (const r of rows) {
   console.log(`${pad(r.id, 9)} ${pad(r.verdict, 20)} ${r.claim}`);

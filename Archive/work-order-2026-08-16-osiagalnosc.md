@@ -61,6 +61,21 @@ nie brak równowagi. Basenu nikt do tej pory nie zmierzył — ani W1, ani W5.
 > (ADR 0048). R2 i R3 w pomiarze. R5 czeka na decyzję właściciela.
 > Wynik R1 zmienił diagnozę na tyle, że część założeń poniżej jest już
 > nieaktualna — patrz ADR 0048, który jest bieżącym stanem wiedzy.
+>
+> **Zamknięcie 2026-08-19:** zlecenie **zamknięte, przeniesione do
+> `Archive/`** — nie dlatego, że R2/R3 zostały wykonane (nie zostały), tylko
+> dlatego, że zupełnie inny trop (asymetria kadłuba, ADR 0049/0050) zamknął
+> to samo pytanie wyższą dźwignią: korytarz trymów w całym paśmie 150-180
+> poszedł z 0/0/1 do kilkunastu-kilkudziesięciu, bez dotykania siatki kroku
+> ani formuły macierzy. R2 (marsz co 2°) i R3 (dwuetapowe pytanie macierzy)
+> stają się bezprzedmiotowe, jeśli PJOA Slim/Fat zostają przyjęte — nie ma
+> już luki, którą miały precyzyjniej zaadresować. Próba wykonania R2
+> (`probe-fine-walk.js --step=2`) faktycznie ruszyła 2026-08-19, ale
+> przekroczyła 5h obliczeń bez wyniku i została przerwana — odnotowane jako
+> koszt, nie jako wynik. **R5 zostaje nierozstrzygnięte** i nie jest
+> częścią tego zamknięcia — to osobna decyzja właściciela o bramce K3 vs.
+> macierzy, niezależna od tego, który mechanizm fizyczny domyka pasmo.
+> Następca: `docs/work-order-2026-08-19-asymetria-przechylu.md`.
 
 ### Pomiar basenu (2026-08-16) — wykonany, `harness/probe-basin.js`
 

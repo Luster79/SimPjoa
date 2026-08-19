@@ -119,13 +119,13 @@ owner decision, not made by either ADR.
 
 **2026-08-18 correction (ADR 0048): the gap is a stability defect, not a
 missing equilibrium, and the 42/42 / 125/156 figures above are overstated.**
-`docs/work-order-2026-08-16-osiagalnosc.md`'s basin probe
+`Archive/work-order-2026-08-16-osiagalnosc.md`'s basin probe
 (`harness/probe-basin.js`) found that TWA160-175 does contain a fixed point —
 but at TWA170/TWS4 its basin of attraction is **under 1deg wide**, a saddle
 between two real attractors rather than a holdable course; the nearby TWA155
 and TWA170 grid certifications turn out to be one wider attractor (152.0 /
 159.6) borrowed across the ±10deg tolerance, not independent holds.
-`docs/findings-2026-08-16-stability-not-balance.md` then ruled out a missing
+`Archive/findings-2026-08-16-stability-not-balance.md` then ruled out a missing
 moment as the cause — the oar-moment deficit needed to balance the boat is
 ≤1.2 N·m against a 20-40 N·m budget at every course in the band — and instead
 found strong static restoring stiffness (dM/dψ down to −44 N·m/deg) coexisting
@@ -277,26 +277,31 @@ Append-only. Never edit an old ADR; supersede it with a new one.
 | 0048 | The TWA170 "hold" is a sub-degree saddle, and K1 cannot tell the difference -- corrects ADR 0046's existence claim (an equilibrium DOES exist in TWA160-175) while confirming its operational conclusion (the walk still cannot reach it); re-measures the empty band by continuation from both sides as [162.3, 174.4], 12deg. `holdsCourse`'s `restoring` predicate certifies a sub-degree-wide saddle the same way it certifies a wide attractor, so the 42/42 and 125/156 coverage figures that rest on it are overstated until the predicate changes -- not done by this ADR. Why strong static restoring coexists with dynamic escape is left open |
 | 0049 | Hull windward-side asymmetry lift: a credible third mechanism for the deep-course gap, screened but not adopted -- owner's builder testimony (PJOA FOLK-specific) that the vaka's windward side is built more convex than the leeward, giving a lift-like force independent of leeway; `hull.asymmetryLiftCoeff` wired into `hullSideForce`, default 0 (verified no-op). Screened 0-0.05: 0/0/1 holders at coeff 0 on the TWA165/168/170 gap points climb to 11-20 across a 0.005-0.02 plateau, falling back by 0.05; `end=-1` matches `end=1` digit-for-digit. Full suite at 0.01 promotes 3 xfails (incl. the manual's own C-C recipe) but regresses K3's TWA70-90 pointing pair and changes 42/42 polar rows. Kept at its no-op default -- adopting a value is an owner decision, not a measurement one |
 | 0050 | The asymmetry coefficient search finds two windows, not one; ship both as named boats -- owner-directed overnight sweep (0-0.05) scored on corridor width AND K3's two close-hauled checks finds the response non-monotonic: a wide plateau (0-~0.008, best 0.004) and a narrow window ([0.014,0.015], best 0.0145, ~0.001 wide -- too fragile a target for an unsourced parameter). Neither dominates; both ship as `BOAT_VARIANTS` (`slim`=0.004, `fat`=0.0145), reusing `default`'s own CSV since only this one coefficient differs. `default` untouched (still 0). Neither variant has its own gated acceptance run; the obtaining-course walk was not re-verified for either (5+h unfinished, abandoned) |
+| 0051 | The existing heel-coupled pair (`heelClrSign`/`yawHeelSign`) reconfirmed inert, on the current baseline -- re-screens T3's four-combination matrix (`Archive/work-order-2026-08-05-sterownosc.md`) nine ADRs later, including for the first time against `asymmetryLiftCoeff` active on `slim`/`fat`. AC-4.2a/b untouched by any combination on any of the three boats, reproducing T3's structural finding exactly; AC-1.1/1.2 regression pattern also matches. New measurement: the pair has ZERO interaction with `asymmetryLiftCoeff`'s deep-band corridor gain at TWA170, both ends, all combinations (`fat` flat at 18/162 holders, `slim` flat at 10-11, in every cell). Both terms stay at 0. Also corrects the work order's own first-draft scoping error: the deep band (TWA150-180) is the wrong search grid for a `sin(phi)`-coupled term (heel there is only ~4deg) -- AC-1.1/1.2/4.2's own TWA40-110 grids are where heel is large enough to matter |
+| 0052 | Heel-induced hull asymmetry lift: a real, distinct mechanism, screened but not adopted -- the OTHER heel-driven asymmetry the same conversation surfaced: even a hull symmetric by construction stops being symmetric port/starboard once it heels (asymmetric waterplane, general yacht-design literature, no boat-specific magnitude -- same evidentiary tier as ADR 0049 itself). `hull.heelLiftCoeff` wired into `hullSideForce`, keyed on `sin(phi)` instead of `asymmetryLiftCoeff`'s `end`, default 0 (verified no-op, `out/polar.csv` byte-identical). Screened -0.2 to +0.2 on the corrected TWA40-110 grid (acceptance criteria) plus TWA170 (deep-band interaction with `asymmetryLiftCoeff`, slim/fat): positive values regress AC-1.1/1.2 monotonically from 0.05 up; negative values show no regression but no benefit either; deep-band interaction is flat-to-noise-level at every magnitude in either direction. Unlike ADR 0049, no benefit was found anywhere to weigh against the cost -- kept at its no-op default, R3's rollover check deferred since there is no nonzero candidate yet to check it against |
 
 ## Open work
 
-**One open: `docs/work-order-2026-08-16-osiagalnosc.md`** — opened when the
-2026-08-16 transit-matrix run (`holding trim FOUND` on all six TWA170 rows)
-contradicted ADR 0046's claim that no equilibrium exists in TWA160-175. Its
-positions:
+**None currently open.** `Archive/work-order-2026-08-19-asymetria-przechylu.md`
+closed 2026-08-19 — R1 (`docs/adr/0051`) reconfirmed
+the existing `heelClrSign`/`yawHeelSign` pair inert, with zero interaction
+against `asymmetryLiftCoeff`'s deep-band gain; R2 (`docs/adr/0052`) built and
+screened the genuinely missing mechanism (`hull.heelLiftCoeff`, a heel-induced
+hull-asymmetry force distinct from both the existing pair and
+`asymmetryLiftCoeff`) but found no value worth adopting — real cost on the
+positive side (AC-1.1/1.2 regression), flat-to-noise benefit on the negative
+side. R3 (rollover interaction) deferred: moot while the term stays at its
+no-op default, mandatory again if a future work order revisits a nonzero
+candidate. Both terms — `heelClrSign`/`yawHeelSign` and the new
+`heelLiftCoeff` — stay at 0, same status as `asymmetryLiftCoeff` itself.
 
-- **R1** (measure the basin of attraction), **R4** (separate ramping the trim
-  in from searching for it) and **R6** (correct ADR 0046) are closed — see
-  ADR 0048 and `docs/findings-2026-08-16-stability-not-balance.md`, which
-  reframed the gap as a dynamic-stability defect rather than a missing
-  equilibrium or a missing force term (see "Where it stands" above).
-- **R2** (walk the band at a 2deg step instead of 10deg, to test whether the
-  gap is partly a grid-step artifact) and **R3** (retry the 19 failed
-  transitions outside TWA170 through `findReachableTrim` from the boat's
-  actual state, reported as a second number alongside 125/156, never merged
-  into one) are open, unmeasured.
-- **R5** (whether `K3`'s two TWS6 points stay the build gate as-is, or a fixed
-  matrix-row subset replaces them) is an explicit owner decision, not started.
+`Archive/work-order-2026-08-16-osiagalnosc.md` closed 2026-08-19 — not
+because its own R2/R3 finished (they didn't; R2's attempt ran 5+h unfinished
+and was abandoned) but because ADR 0049/0050's asymmetry-lift finding closed
+the same TWA160-175 corridor question by a different mechanism at higher
+leverage, making R2/R3 moot. **R5** (whether `K3`'s two TWS6 points stay the
+build gate as-is, or a fixed matrix-row subset replaces them) is carried
+forward, still an explicit owner decision, not started.
 
 TWA160-175 stands as a documented model limit, same status as TWA<50; whether
 to add it to the success criterion's scope exclusion is an open owner
