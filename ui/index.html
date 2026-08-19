@@ -135,6 +135,7 @@
     <span class="stat"><span data-i18n="hud.yard">Yard</span> <b id="hudYard">0</b>&deg; <b id="hudLuffing" class="luffing-tag"></b></span>
     <span class="stat"><span data-i18n="hud.shunt">Shunt</span> <b id="hudShunt">none</b></span>
     <span class="stat">TWS <b id="hudTws">6.0</b> m/s</span>
+    <span class="stat"><span data-i18n="hud.boat">Boat</span> <b id="hudBoat">PJOA Fat</b></span>
     <span class="stat" id="recStat"><span class="rec-dot" id="recDot"></span><b id="recDuration">0:00</b> / <span id="recSize">0 KB</span></span>
     <span class="stat" style="margin-left:auto">
       <button id="btnLang">PL</button>
@@ -253,10 +254,10 @@
       <div class="row">
         <label for="boatVariant" data-i18n="lbl.boatVariant">Boat</label>
         <select id="boatVariant">
-          <option value="default" data-i18n="opt.boatDefault">PJOA FOLK (default)</option>
+          <option value="default" data-i18n="opt.boatDefault">PJOA v2</option>
           <option value="old" data-i18n="opt.boatOld">PJOA FOLK — before the ama revision</option>
           <option value="slim" data-i18n="opt.boatSlim">PJOA Slim</option>
-          <option value="fat" data-i18n="opt.boatFat">PJOA Fat</option>
+          <option value="fat" data-i18n="opt.boatFat" selected>PJOA Fat</option>
         </select>
       </div>
       <div class="hint" data-i18n="hint.boatVariant">Switching rebuilds the boat from its own parameter file and discards edits below.</div>

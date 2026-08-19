@@ -67,7 +67,7 @@ const BUILD_TIME = 'dev';
 const TRANSLATIONS = {
   en: {
     'hud.speed': 'Speed', 'hud.course': 'Course', 'unit.kn': 'kn', 'hud.leeway': 'Leeway', 'hud.amaLoad': 'Ama load', 'hud.shunt': 'Shunt',
-    'hud.sheet': 'Sheet', 'hud.yard': 'Yard',
+    'hud.sheet': 'Sheet', 'hud.yard': 'Yard', 'hud.boat': 'Boat',
     'btn.rec': 'REC (F9)', 'btn.mark': 'Mark (F10)', 'btn.downloadRec': 'Download rec.',
     'btn.pause': 'Pause (P)', 'btn.step': 'Step (.)', 'btn.forces': 'Forces (F)', 'btn.polar': 'Polar (O)', 'btn.boat': 'Boat (B)',
     'legend.lift': 'sail lift', 'legend.drag': 'sail drag', 'legend.hullSide': 'hull side', 'legend.rudder': 'rudder',
@@ -126,7 +126,7 @@ const TRANSLATIONS = {
     'hint.boatDesign': 'Physical design parameters — hull, ama, sail, rudder, stability. Changes apply on "Apply" and reset the boat\'s motion state.',
     'tag.physics': 'affects physics', 'tag.graphics': 'drawing/UI only',
     'btn.applyBoat': 'Apply', 'btn.resetBoatDefaults': 'Reset to defaults',
-    'lbl.boatVariant': 'Boat', 'opt.boatDefault': 'PJOA FOLK (default)',
+    'lbl.boatVariant': 'Boat', 'opt.boatDefault': 'PJOA v2',
     'opt.boatOld': 'PJOA FOLK \u2014 before the ama revision',
     'opt.boatSlim': 'PJOA Slim', 'opt.boatFat': 'PJOA Fat',
     'hint.boatVariant': 'Switching rebuilds the boat from its own parameter file and discards edits below.',
@@ -145,7 +145,7 @@ const TRANSLATIONS = {
   },
   pl: {
     'hud.speed': 'Prędkość', 'hud.course': 'Kurs', 'unit.kn': 'w', 'hud.leeway': 'Znos', 'hud.amaLoad': 'Obc. amy', 'hud.shunt': 'Zwrot',
-    'hud.sheet': 'Szot', 'hud.yard': 'Reja',
+    'hud.sheet': 'Szot', 'hud.yard': 'Reja', 'hud.boat': 'Łódź',
     'btn.rec': 'NAGR (F9)', 'btn.mark': 'Znacznik (F10)', 'btn.downloadRec': 'Pobierz nagranie',
     'btn.pause': 'Pauza (P)', 'btn.step': 'Krok (.)', 'btn.forces': 'Siły (F)', 'btn.polar': 'Polara (O)', 'btn.boat': 'Łódź (B)',
     'legend.lift': 'siła nośna żagla', 'legend.drag': 'opór żagla', 'legend.hullSide': 'siła boczna kadłuba', 'legend.rudder': 'ster',
@@ -246,8 +246,14 @@ function setLang(lang) {
   if (boatMode) buildBoatPanel();
 }
 
-let dims = createConfig(); // dimensions/limits only; the sim keeps its own internal config. Reassigned wholesale by the boat-design panel's Apply (see bottom of file) — never mutated field-by-field.
-const sim = createSimulator();
+// DEFAULT_BOAT (ADR 0050): the UI opens on PJOA Fat, not core/config.js's
+// own 'default' — a UI-only choice, made here rather than in createConfig's
+// own no-arg default, so run_tests.js / the harness / every existing
+// acceptance figure keep meaning what they always meant (see ADR 0050's own
+// "default stays untouched" decision).
+const DEFAULT_BOAT = 'fat';
+let dims = createConfig({ boat: DEFAULT_BOAT }); // dimensions/limits only; the sim keeps its own internal config. Reassigned wholesale by the boat-design panel's Apply (see bottom of file) — never mutated field-by-field.
+const sim = createSimulator({ boat: DEFAULT_BOAT });
 
 // ---------------------------------------------------------------------
 // DOM references
@@ -1923,7 +1929,15 @@ const hud = {
   yard: document.getElementById('hudYard'),
   luffing: document.getElementById('hudLuffing'),
   stalled: document.getElementById('hudStalled'),
+  boat: document.getElementById('hudBoat'),
 };
+
+// Maps a BOAT_VARIANTS key (core/config.js) to its display-name locale key,
+// so the HUD's "which boat are we sailing" readout always shows the same
+// name the Boat tab's own dropdown does — one label per variant, read
+// through t() so it follows the active language and the dropdown's own
+// wording (e.g. ADR 0050's rename to "PJOA v2") without a second copy.
+const BOAT_LABEL_KEY = { default: 'opt.boatDefault', old: 'opt.boatOld', slim: 'opt.boatSlim', fat: 'opt.boatFat' };
 
 function normalizeAngle(a) { return Math.atan2(Math.sin(a), Math.cos(a)); }
 
@@ -1963,6 +1977,7 @@ function updateHud(state, forces) {
   hud.heel.textContent = (state.phi / DEG).toFixed(1);
   hud.shunt.textContent = t(`shuntPhase.${state.shunt.phase}`);
   hud.tws.textContent = controls.windSpeed.toFixed(1);
+  hud.boat.textContent = t(BOAT_LABEL_KEY[dims.boat] ?? dims.boat);
   // P4.1: sheet limit (commanded) vs actual yard angle (state.delta, a real
   // piece of state — R5-1) shown side by side, plus a LUFFING tag when the
   // wind, not the sheet, is holding delta below the (effective) limit.
