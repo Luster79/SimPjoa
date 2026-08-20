@@ -245,7 +245,6 @@
       <div class="row">
         <label for="boatVariant" data-i18n="lbl.boatVariant">Boat</label>
         <select id="boatVariant">
-          <option value="default" data-i18n="opt.boatDefault">PJOA v2</option>
           <option value="old" data-i18n="opt.boatOld">PJOA FOLK — before the ama revision</option>
           <option value="slim" data-i18n="opt.boatSlim">PJOA Slim</option>
           <option value="fat" data-i18n="opt.boatFat" selected>PJOA Fat</option>
@@ -706,6 +705,22 @@ const BOAT_VARIANTS = {
   fat: 'example_proa_parameters.csv',
 };
 
+// DEPRECATED (owner, 2026-08-20, after ADR 0053): 'default' — asymmetryLiftCoeff
+// pinned at 0 — cannot complete the criterion's own obtaining-course walk
+// (TWA90->180 stalls at TWA160.3, both ends, no reachable trim past it),
+// where BOTH `slim` and `fat` do. Removed from the UI's boat-selection list
+// and out of scope for new manual sailing/comparison work — `fat` and
+// `slim` are the variants worth testing going forward.
+//   Kept alive here, unchanged, ONLY because `createConfig()`'s own no-arg
+// fallback and the ENTIRE existing acceptance suite (`run_tests.js`, the
+// `out/polar.csv` byte-gate, every historical ADR's own cited figures)
+// resolve through this exact key — deleting the entry would break all of
+// that immediately, with nothing standing in to replace it. Swapping the
+// gate's own anchor to `fat` is a real, much bigger decision (regenerate
+// `out/polar.csv`, resolve the xfail promotions that follow, and recast
+// what every prior ADR's numbers are relative to) that this comment does
+// NOT make — see ADR 0053's own "Consequences" and ask before doing it.
+
 // ADR 0050's overnight coefficient sweep found the response landscape
 // non-monotonic: a narrow, high-reward window at [0.014, 0.015] (best
 // corridor and close-hauled margins, but only ~0.001 wide on the
@@ -1097,6 +1112,29 @@ function buildDefaultConfig(boat = 'default') {
       // the source describes. Including half of an opposing pair is worse than
       // including neither.
       yawHeelSign: 0,
+      // heelLiftCoeff (docs/adr/0052, 2026-08-19): a DIFFERENT mechanism
+      // from asymmetryLiftCoeff above -- that one is keyed on `end` (a
+      // construction bias, fixed to one physical side); this one is keyed
+      // on sin(phi) (the boat's heeled STATE) and exists even on a hull
+      // that is symmetric by construction, because heeling itself makes
+      // the submerged cross-section asymmetric port/starboard (the
+      // "asymmetric waterline" source of heel-induced weather helm in
+      // general yacht-design literature -- Larsson & Eliasson's own class
+      // of source, already cited for hull.lead -- but, like
+      // asymmetryLiftCoeff, no boat-specific magnitude or functional-form
+      // citation was found; sin(phi), not phi, matches the form already
+      // used for every other heel-coupled term in this project
+      // (asymmetryLiftCoeff's own end-keyed analogue, aero.js's
+      // yawMomentHeel) rather than a new choice for this term alone).
+      // NOT the same thing as heelClrShiftCoeff/heelClrSign above: that
+      // term redistributes an EXISTING leeway-driven force (zero at
+      // v=0); this term is a lumped Fy present AT ZERO DRIFT, the
+      // hull-scale analogue of asymmetryLiftCoeff itself, just triggered
+      // by heel instead of construction. Default 0 -- FREE band,
+      // unmeasured on this boat, screened in docs/adr/0052 but not
+      // adopted as a nonzero default without a further owner decision,
+      // same discipline as asymmetryLiftCoeff (docs/adr/0049).
+      heelLiftCoeff: 0,
       ceLeverSign: 1,                     // +-1 (aero.js xCE/yCE yaw-lever sign) — CURRENTLY THE IDENTITY, not an active flip: at the present `lead` the naive, unflipped r x F derivation matches the boat's real steering direction on its own
       // lead: the classical yacht-design "lead" — the CE-CLR longitudinal
       // separation — of order 5-25% of waterline length depending on hull and
@@ -2921,6 +2959,23 @@ function hullSideForce(u, v, r, theta, phi, config, heaveZ = 0, end = 1) {
   const asymmetryLiftCoeff = hull.asymmetryLiftCoeff ?? 0;
   Fy += asymmetryLiftCoeff * 0.5 * rho_w * u * Math.abs(u) * effectiveLateralArea * end;
 
+  // --- Heel-induced hull asymmetry lift (docs/adr/0052, 2026-08-19) --
+  // Distinct mechanism from asymmetryLiftCoeff above: even a hull that is
+  // symmetric BY CONSTRUCTION stops being symmetric port/starboard once it
+  // heels -- the submerged cross-section's two flanks present differently to
+  // the flow (one more vertical, one more curved), the standard "asymmetric
+  // waterline" source of heel-induced weather helm in yacht design. Keyed on
+  // sin(phi) rather than the constant `end`: it is the boat's heeled STATE
+  // that drives it, not which physical side is built which way. Structurally
+  // identical to asymmetryLiftCoeff otherwise -- same lumped, single-term,
+  // no-fore-aft-distribution, u*|u|, no-induced-drag reasoning applies (see
+  // that term's own comment above), because the source for THIS term is the
+  // same tier of evidence (general yacht-design literature, no
+  // boat-specific magnitude -- see hull.heelLiftCoeff's own config.js
+  // comment), not a measurement on this hull either.
+  const heelLiftCoeff = hull.heelLiftCoeff ?? 0;
+  Fy += heelLiftCoeff * Math.sin(phi) * 0.5 * rho_w * u * Math.abs(u) * effectiveLateralArea;
+
   return { Fx, Fy, yawMoment };
 }
 
@@ -4270,14 +4325,14 @@ const MS_TO_KN = 1.9438;
 // recording's codeVersion is meaningful (harness/replay.js warns on
 // mismatch) for a downloaded bundle without requiring a build step for
 // plain `python3 -m http.server` development.
-const CODE_VERSION = "35f3e9c";
+const CODE_VERSION = "8c95628";
 // BUILD_TIME: same pattern as CODE_VERSION above — tools/bundle.js
 // replaces this with the COMMIT's timestamp (not wall-clock build time),
 // so it stays stable across re-bundling the same commit and always
 // matches CODE_VERSION's hash. Shown in the bottom-right version footer
 // so a bug report/recording can be tied to an exact, dated build without
 // having to separately ask "which commit was this."
-const BUILD_TIME = "2026-08-19T11:49:40+02:00";
+const BUILD_TIME = "2026-08-20T11:18:15+02:00";
 
 // ---------------------------------------------------------------------
 // i18n — EN/PL. Static labels are marked with data-i18n="key" in
@@ -4347,7 +4402,7 @@ const TRANSLATIONS = {
     'hint.boatDesign': 'Physical design parameters — hull, ama, sail, rudder, stability. Changes apply on "Apply" and reset the boat\'s motion state.',
     'tag.physics': 'affects physics', 'tag.graphics': 'drawing/UI only',
     'btn.applyBoat': 'Apply', 'btn.resetBoatDefaults': 'Reset to defaults',
-    'lbl.boatVariant': 'Boat', 'opt.boatDefault': 'PJOA v2',
+    'lbl.boatVariant': 'Boat', 'opt.boatDefault': 'PJOA v2 (deprecated)',
     'opt.boatOld': 'PJOA FOLK \u2014 before the ama revision',
     'opt.boatSlim': 'PJOA Slim', 'opt.boatFat': 'PJOA Fat',
     'hint.boatVariant': 'Switching rebuilds the boat from its own parameter file and discards edits below.',
