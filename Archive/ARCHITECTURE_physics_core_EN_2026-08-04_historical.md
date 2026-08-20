@@ -1,0 +1,1037 @@
+# HISTORICAL — Physics core architecture, round-by-round edition
+
+> **This file is history, not the context map.** It is the state of
+> `ARCHITECTURE_physics_core_EN.md` as of 2026-08-04, before that document was
+> rewritten to describe only the current model. It is kept because its
+> round-by-round notes (rounds 3–10d) record *how* the model got to where it
+> is, and because comments removed from `/core` in the same rewrite referred to
+> the same rounds.
+>
+> **Do not consult this file to learn how the code works today** — it describes
+> superseded models alongside current ones and does not distinguish them.
+> For the current model, read `ARCHITECTURE_physics_core_EN.md` in the repo
+> root; for the reasoning behind a specific decision, read the ADR in
+> `docs/adr/`; the round documents this file cites are alongside it in
+> `Archive/`.
+>
+> Archived: 2026-08-04. Append-only from here — never edited.
+
+*Last reviewed: 2026-08-04 (frozen)*
+
+**Round 10d note:** `ROUND10d_helm_balance.md` closed three defects the
+user's field ride exposed (spontaneous uncontrolled bear-away, TWA113
+onward) plus three carried items from the round 10c review. H1: no prior
+test bounded the ABSOLUTE helm balance at a fixed trim (only differential
+steering-direction tests existed) — a new rudder-free-release test at the
+polar-optimal beam reach found `hull.lead` (0.05*LWL) marginally over its
+own 60s-excursion bound; a fine sweep found the balance is a knife edge in
+this narrow band, and re-anchored at 0.06*LWL (see aero.js sailForces'
+lead note and config.js hull.lead's own comment). H2: stability.js
+updateAback's aback TIMER required full ama submersion (amaLoad>1) before
+counting any time at all, so a through-gybe crossing (wind crossing to the
+ama-leeward side via a bear-away, yard slammed to delta~0) that settles at
+a genuinely pressed but sub-1.0 equilibrium went completely undetected —
+added a separate abackWarning signal (phi<0 && the sail's own current
+roll moment, Msail, still pressing it), kept OUT of the capsize timer
+itself (folding it in broke several deep-course scenarios into false
+capsizes). H3: audited for a reported exact-zero parked-hull pin; no
+force-computation bug found (every hydro force is genuinely zero at
+u=v=0, and sail forces are nonzero at every TWS>0 configuration tried,
+including the fully symmetric dead-run case) — the furled-sail spar drag
+already supplies adequate windage for the new acceptance test, so nothing
+was added; the exact reported reading is flagged, not silently assumed
+fixed. C-A/C-B/C-C (carried from round 10c): the dead-run release test
+became a 120s sustained-rate metric instead of a 30s snapshot; the
+brailWind slider gained a CONFIG-driven TRIM/SURVIVAL two-tone track +
+tooltip; the camber machinery (aero.js camberCLDelta) now reads
+sail.camber/brailCamberGain as a delta beyond the v2 aero table's own
+built-in ~1:10 camber instead of double-counting it, and its fade window
+was extended 45deg->75deg to actually cover the deep-course alpha range
+the brail bonus targets. Full evidence in
+`ROUND10d_helm_balance_findings.md`.
+
+**Round 9 note:** `ROUND9_physics_fidelity_work_order.md` closed the
+"heavy displacement monohull, not a light apparent-wind multihull" gap
+Round 7 identified but didn't have authorization to fix. R9-1
+(`docs/adr/0001`) replaced the wave-resistance wall (a monohull "hull
+speed" model wrong for this slender L/B=10:1 hull) with a bounded,
+ITTC-order residuary hump — boat/wind speed ratio no longer collapses as
+wind builds (0.77 at TWS=4 up to ~1.0 at TWS=10). R9-2 undid Round 7's
+D-5 sail-detune (it was compensating for the wave wall, not a sail
+problem) — both `xfail:CALIBRATION` polar bands were re-derived against
+the new, faster polar and now PASS. R9-3 (`docs/adr/0002`) corrected
+`ama.formFactor` from an admitted 3.3 (2-3x the physical ITTC/Prohaska
+range, kept there solely to keep T1 signed) to the genuinely physical
+1.2 — T1 (both legs) and T5 lost their signal as a direct result (ama-drag
+and the downwind "carrot" were never legitimate mechanisms once physically
+scaled) and are now `xfail:STEERING` with fresh diagnoses; the R7-4a
+drag-ratio bands were likewise re-derived. R9-4 (vertical lift) was
+implemented but found to destabilize established capsize-safety scenarios
+at even a tiny nonzero value post R9-1/2/3's higher sail power — defaulted
+to 0 (mechanism present, inactive), deferred rather than force-fit. R9-5
+(roll damping) applied a small, independent zeta bump (0.152 -> ~0.19).
+Full evidence in `ROUND9_physics_fidelity_findings.md`.
+
+**Round 8 note:** `ROUND8_physical_capsize.md` retired the v0.1
+amaLoad>1-for-2s "overload timer" as a capsize trigger on the flying
+(phi>=0) side — a pre-roll-DOF proxy that round 7's diagnosis found
+firing at phi~14-18deg, well short of the actual physical point of no
+return. Capsize there is now purely physical (phi crossing phiCapsizeDeg
++ capsizeTriggerMarginDeg — stability.js's updateAback); the aback
+(phi<0) timer is unchanged (already physical). Consequence: both prior
+`xfail:STABILITY` findings (T3, the R7-4b replay fixture) resolved to
+"flies the ama, finds a bounded oscillating equilibrium" rather than
+capsizing — the STABILITY tag is now unused. The round-5/7 broach-cliff
+assertion was also re-derived (R8-3) into a genuine, passing physical
+criterion (over-trimmed sails slower and heels more, no course loss).
+Current xfail ledger: two `xfail:STEERING`, two `xfail:CALIBRATION`
+(new tag, the polar bands), zero `xfail:STABILITY`. Full evidence
+(phi traces, before/after) in `ROUND8_physical_capsize_findings.md`.
+
+**Round 7 note:** `ROUND7_drag_calibration.md`/`ROUND7_DECISION.md`
+recalibrated hull/ama drag from ITTC-57 physics (fixing a ~26-30x
+ama-over-hull drag bug — a diagnosed uncommanded-round-up cause) and
+rebuilt the sail's CE-lever geometry around a classical yacht-design
+"lead" parameter (D-6) after the drag fix falsified round 5's steering
+directions. Full derivation and before/after evidence live in
+`ROUND7_steering_regression_findings.md` — this doc only carries the
+resulting function-signature/calibration changes, not the diagnosis
+itself. **This file is now ~700+ lines, well past the project's own
+~500-line anti-bloat guideline** (flagged in rounds 6 and 7 too) —
+splitting per-module sections into `docs/<module>.md` is recommended
+before the next round adds to it further.
+
+**Round 6 note:** `ROUND6_flight_recorder.md` added a session recorder
+(UI) and offline replay tool (`harness/replay.js`), both resting entirely
+on a now-TESTED determinism guarantee (`harness/asserts.js`'s R6-1
+self-test) rather than an assumption — see "Determinism contract" below.
+No core physics changed this round (the self-test passed on the first
+run — the core was already deterministic); the only new core-adjacent
+file is `harness/checksum.js`, a pure hashing utility shared by the
+self-test, the recorder, and the replay tool.
+
+**Round 5 note:** `ROUND5_CONSOLIDATED_work_order.md` replaced direct
+`controls.yardAngle` control with a one-sided SHEET CONSTRAINT — the yard's
+actual angle `state.delta` is now real state that relaxes toward its
+aerodynamic equilibrium under a bounded slew rate, clamped only from above
+by the commanded `controls.sheet` (P1, new `core/sheet.js`). The sail's
+center of effort now follows `delta` via real tack/chord geometry instead
+of a fixed offset (P1.2), `hydro.js`'s `amaDrag` gained a yaw moment (P2-1),
+and the righting curve gained a genuine capsizing branch past
+`phiCapsizeDeg` plus a post-capsize freeze (P3). See the new "Sheet
+constraint" and "Righting curve capsizing branch" sections below, and the
+Function signatures updates for aero.js/hydro.js/stability.js/sheet.js.
+
+**Round 3 note:** the Conventions and relevant Function signatures sections
+below were rewritten per `FIX_REQUEST_round3_worldframe.md`'s SPEC ERRATA
+(R3-1, R3-2). The "ama always at boat-frame +y" invariant in the original
+version of this document was wrong — it forced a shunt swap transform that
+spun the physical hull 180deg in the world at every shunt. See
+`core/shunt.js`'s header comment and `core/state.js`'s Conventions comment
+for the implementation-level detail this section summarises.
+
+**Round 4 note:** roll (`phi`, `p`) is now a real 4th DOF, integrated by
+the RK4 solver alongside x/y/heading/u/v/r — see the new "Roll dynamics"
+section below and `core/stability.js`. `amaLoad` is now DERIVED from `phi`
+(no longer a static heelMoment/restoringCapacity formula), and the aback
+capsize trigger reads `phi`'s sign directly instead of the apparent-wind
+angle. `computeAmaLoad` and `updateAback` signatures both changed
+accordingly (Function signatures section, stability.js). See
+`FIX_REQUEST_round4_roll_dof.md`.
+
+This document supplements PROMPT_proa_simulator_EN.md. In Step 1,
+implement ONLY the physics core and the test harness — no UI whatsoever.
+The core must be a pure JS module (ESM), runnable in Node >= 18 with no
+external dependencies, ready to be imported in the browser later without
+changes.
+
+## File structure
+
+    /core
+      config.js      — default CONFIG + validation + merging user file
+      state.js       — state definition, initial state, coordinate conventions
+      aero.js        — sail aerodynamics (Polhamus + camber + brails)
+      hydro.js       — hull and ama resistance, side force, yaw damping
+      rudder.js      — steering oar (active end depends on current tack)
+      stability.js   — heel moment balance, ama load, aback
+      shunt.js       — shunt-sequence state machine
+      sheet.js       — one-sided sheet constraint: delta_align, effectiveDeltaMax, sheetStep (round 5)
+      integrator.js  — RK4 / semi-implicit Euler, fixed dt
+      simulator.js   — facade: createSimulator(config) -> { step, getState, ... }
+    /harness
+      polar.js       — automatic polar diagram computation
+      scenarios.js   — test scenarios (squall, shunt, aback, stop)
+      asserts.js     — acceptance criteria as tests
+      export.js      — dump time series to CSV
+      checksum.js    — hashState(): shared per-step hash (round 6, used by the determinism self-test, the UI recorder, and replay.js)
+      replay.js      — headless CLI: re-simulates a recorded session exactly (round 6)
+    run_tests.js     — runs everything; nonzero exit code on failure
+
+## Conventions (MANDATORY, put in a comment at the top of state.js)
+
+- World frame: X east, Y north; angles in RADIANS, measured from the X
+  axis counterclockwise (mathematical convention).
+- Wind direction given as "blowing from" (meteorological) — convert once,
+  at input, to a "blowing towards" vector; only vectors inside the core.
+- Boat frame: x axis along the hull towards the ACTIVE bow, y axis 90deg
+  CCW from x. `heading` is the world-frame direction of the active bow;
+  after a shunt, `heading` jumps by PI (the active bow relabels to the
+  opposite physical tip) and the local frame rotates with it.
+- The ama is bolted to ONE PHYSICAL side of the hull — it does not
+  relocate at a shunt. Its side in the (shunt-rotating) boat frame is
+  `end` (+1/-1): +y when end=+1, -y when end=-1. **The ama is NOT always
+  at +y** — every rule about "the ama side" (aback detection, the yard's
+  leeward trim, heel-moment sign, crew-position mapping) reads `end`, not
+  a hardcoded +y. `end` also records which physical hull end is currently
+  the bow. The PHYSICAL hull orientation (independent of which tip is
+  currently labeled bow) is `heading` when end=+1, `heading+PI` when
+  end=-1 — this is continuous through a shunt (the hull does not
+  physically rotate; only the bow label changes).
+- Shunt swap transform (see core/shunt.js): `end *= -1; heading += PI;
+  u = -u; v = -v; r` unchanged. Under the PI rotation of the local frame
+  this keeps world-frame position, the physical hull's orientation, the
+  ama's world-frame side, and world-frame velocity all continuous. (An
+  earlier version of this transform — `u=-u, r=-r`, v preserved — matched
+  the "ama always at +y" convention above and was wrong on both counts:
+  it left a spurious sway/yaw-rate discontinuity and forced the ama to
+  flip world sides at every shunt. See `FIX_REQUEST_round3_worldframe.md`
+  R3-1.)
+- Velocities u (surge), v (sway) in the boat frame; r (yaw rate) rad/s.
+- Roll: `phi` (rad) and `p` (rad/s), the 4th DOF (FIX_REQUEST_round4_roll_dof.md
+  Part 1). Defined about the PHYSICAL hull longitudinal axis (not the
+  shunt-rotating active-bow frame) — positive phi = the AMA SIDE RISING.
+  Because it's a physical-frame quantity, phi and p are left OUT of the
+  shunt swap patch entirely (same treatment as r): unchanged at a swap.
+- Sheet constraint (round 5, ROUND5_CONSOLIDATED_work_order.md P1): the
+  sail is controlled by TWO things now. `controls.sheet` is an INPUT — the
+  MAXIMUM yard angle (delta_max, [0, ~90deg], eased = larger). `state.delta`
+  is the yard's ACTUAL angle (boat-frame magnitude, >=0), real state that
+  relaxes toward its aerodynamic equilibrium at a bounded slew rate
+  (core/sheet.js) — the sheet only ever LIMITS delta from above, it never
+  commands it directly. Left unchanged at a shunt swap, same as phi/p, but
+  for a different reason: nothing in the swap transform touches it.
+- Moments: positive = counterclockwise rotation (top-down view).
+- Sail angle of attack and leeway angle: always via atan2, never
+  asin/acos.
+- SI units everywhere; knots only in the presentation/export layer.
+
+## Data shapes
+
+### state (flat object, JSON-serialisable)
+    {
+      t,                // simulation time [s]
+      x, y,             // world position [m]
+      heading,          // direction of the active bow [rad]
+      u, v, r,          // boat-frame velocities [m/s, m/s, rad/s]
+      phi, p,           // roll angle [rad], roll rate [rad/s] — 4th DOF (round 4)
+      delta,            // actual yard angle [rad], >=0 — real state (round 5)
+      end,              // +1 | -1 — which hull end is the bow
+      amaLoad,          // ama load 0..1+ (>1 = past liftoff/submersion) — DERIVED from phi (round 4)
+      abackTimer,       // duration of the aback state (phi<0 past submersion) [s]
+      capsized,         // bool — round 8: the phi>=0 side has no timer anymore
+                        // (see stability.js updateAback); "ama flying" (amaLoad>1)
+                        // is a warning readout, derived on the fly from phi/amaLoad,
+                        // not stored state
+      shunt: { phase, progress }  // 'none'|'ease'|'transfer'|'swap'|'sheet'
+    }
+
+### controls (input on every step)
+    {
+      windDirFrom,      // [rad] blowing from
+      windSpeed,        // [m/s]
+      sheet,            // [rad] MAXIMUM yard angle (delta_max), >=0 — round 5; NOT the actual yard angle, see state.delta
+      rudder,           // [-1..1] -> scaled to +/-35 deg in rudder.js
+      rudderUp,         // bool — steering oar shipped (out of the water); zero force
+                        // DEFAULTS TO TRUE: shipped is the oar's resting state
+                        // regardless of `rudder`'s own value (see rudder.js)
+      brailLee,         // 0..1 leeward brail
+      brailWind,        // 0..1 windward brail
+      crewPos,          // -0.3..1.0 crew position, lateral (fraction of ama.spacing, toward the ama)
+      crewPosX,         // -1..1 crew position, fore-aft (fraction of half hull length; round 4)
+      tackX,            // -1..1 rig fore-aft position, referenced to the ACTIVE bow (S2,
+                        // docs/adr/0011). THE proa steering control: it moves xCE, and it
+                        // is what lets the helm lever (xCE - clrX) reach zero at all
+      shuntRequest      // bool (rising edge starts the sequence)
+    }
+
+### config
+All physical constants and tuning multipliers from the main prompt,
+plus the CL/CD tables loaded from data/crab_claw_CL_CD_polhamus.csv
+(primary source; structure: { alphaDeg[], CL[], CD[] }, linear
+interpolation in aero.js), with a Polhamus-formula regeneration
+cross-check at startup as required by the main prompt. Fixed schema version: a
+`configVersion` field; range validation at startup (fail fast).
+
+## Function signatures (pure functions, no hidden state)
+
+### aero.js
+    apparentWind(state, controls) -> { vx, vy, speed, angleToBoat }
+    sailCoefficients(alpha, controls, config) -> { CL, CD, alphaSailor }
+      // Polhamus from table + camber and brail multipliers per the prompt.
+      // Round 5: also adds a small flogging-drag term (config.sail.
+      // floggingCDFactor * CD0) ramped in only within LUFF_WINDOW_DEG of a
+      // genuine zero-AoA weathervane (alphaAbsDeg -> 0) — the regime-b
+      // "sail flogging" depower path, not active in normal driving trims.
+    windageForce(state, controls, config) -> { Fx, Fy }
+      // F15 (docs/adr/0008): the boat's own above-water air drag — hull
+      // topsides, crew, mast, spars — along the apparent wind. Before this,
+      // rho_air had exactly ONE user in the whole core (the sail). Exposed
+      // area interpolates on sin^2 of the apparent-wind angle between
+      // hull.windageAreaFrontal and hull.windageArea. Deliberately NOT faded
+      // by shuntForceFade: the sail's lift is carried across during a shunt,
+      // the hull and crew are not. Summed into Fx/Fy (not into hull
+      // resistance) because on a broad reach it PUSHES rather than retards.
+
+    sailForces(state, controls, config)
+      -> { Fx, Fy, Fz, heelMoment, yawMoment, yawMomentHeel, alpha, alphaSailor, aw }
+      // Fx, Fy in the boat frame. F11 (work-order-2026-07-30): the heel
+      // projection is now SPLIT — the in-plane transverse force gets a
+      // second cos(phi) to become the horizontal Fy (so Fy ~ cos^2 phi),
+      // sin(phi) to become the vertical Fz, and the heeling moment is
+      // taken from the IN-PLANE force (so heelMoment ~ cos phi). Fz is
+      // exposed but NOT integrated — there is no heave DOF; see README's
+      // "Known simplifications". F12: the heeling arm is
+      // sail.CEheight + hull.clrDepth (the sail/hull couple), not CEheight.
+      // heelMoment already reduced by brailWind
+      // and by sail.verticalLiftFraction (round 9, R9-4: Marchaj's
+      // crab-claw vertical-lift claim, conservatively modeled — see
+      // aero.js's own comment; defaulted to 0/inactive, see config.js's
+      // comment for why: it broke established capsize-safety scenarios
+      // at even a tiny nonzero value once R9-1/2/3's higher sail power
+      // was in place);
+      // alpha is the raw, internal chord-flow angle (not acute on normal
+      // courses); alphaSailor [0, pi/2] is the UI-facing angle of attack.
+      // The yard trims to the side opposite the ama (leeward) — the chord
+      // angle used to derive alpha is end-aware (`state.end * state.delta`
+      // — round 5: the ACTUAL yard state, not the commanded sheet; not
+      // always `+delta`), so heelMoment's sign mirrors with `end` too;
+      // stability.js interprets it via `heelMoment * end`.
+      // Round 4 (FIX_REQUEST_round4_roll_dof.md 1.4): Fx/Fy are scaled by
+      // cos(state.phi) (heel foreshortens the sail's projected area), and
+      // yawMomentHeel = config.hull.yawHeelSign * state.end *
+      // sail.CEheight * sin(phi) * Fx — the heeled mast offsets the CE
+      // laterally, so the drive force Fx produces a yaw moment too.
+      //   DISABLED since 2026-08-04 (yawHeelSign = 0), and not because the
+      // physics is zero: this models one half of a cancelling pair. Heel
+      // swings the RIG's CE to leeward (computed here) and also makes the
+      // immersed HULL asymmetric, which opposes it and is the dominant
+      // real-world heel-to-yaw mechanism — and which the model does not have
+      // at all. A partial model of a cancelling pair has an essentially
+      // arbitrary sign, and this one's was calibrated against a rule the
+      // owner's manual contradicts. At +-1 it DOMINATED both the crew-lateral
+      // and the brail criteria and forced them to share a direction, so no
+      // sign satisfied the source; at 0 each of the manual's own named
+      // mechanisms governs its own criterion. Restore only together with the
+      // hull's term. See core/config.js at yawHeelSign for the measured
+      // matrix, and Archive/findings-2026-08-02.
+      // CE GEOMETRY, current form (2026-08-03/04):
+      //   xCE = clrXNeutral + hull.lead + tackOffset + swing + ceBrailXShift
+      // three of whose four terms are newer than the round-7 text below.
+      //   tackOffset = state.end * controls.tackX * sail.tackTravel — the rig's
+      // own fore-aft position, referenced to the ACTIVE bow so it flips at a
+      // shunt. THE proa steering control (docs/adr/0011): before it, `lead`
+      // (0.33 m) exceeded the entire trim-driven excursion (0.25 m), so the
+      // helm lever xCE-clrX was positive by construction and the sail could
+      // modulate the SIZE of a yaw moment but never its DIRECTION.
+      //   swing = -halfChordEff * (1 - cos delta) when sail.ceSwingMode is
+      // 'manual' (the default), -halfChordEff * cos delta when 'geometric'.
+      // The manual form makes the CE move AFT as the sail is eased, i.e.
+      // sheeting in bears away — the owner's source states this outright
+      // ("pulling the sheet forces the bow to turn off the wind as the sail's
+      // centre of effort moves forward"), and it is the opposite of what the
+      // rigid-triangle geometry gives. Written as (1-cos) rather than by
+      // flipping a sign so the lever's RANGE is untouched. See docs/adr/0014;
+      // 'geometric' is kept switchable because the losing side is a real
+      // argument, not an error.
+      //   ceBrailXShift * brailWind — the windward brail's OWN forward CE
+      // shift (docs/adr/0015), independent of trim, because the manual gives
+      // it its own mechanism and no trim dependence. Without it the brail's
+      // only path to xCE was modulating the swing amplitude, which the (1-cos)
+      // form collapses to ~2 cm at close trims.
+      //
+      // Round 5 introduced `yawMoment = ceLeverSign * (x_CE*Fy - y_CE*Fx) +
+      // yawMomentHeel` with x_CE/y_CE derived from a tack position
+      // (config.sail.tackXFraction) and the yard's own swing. Round 7
+      // (D-6, ROUND7_DECISION.md) rebuilt x_CE/y_CE around a classical
+      // yacht-design "lead" instead — round 5's version measured the CE as
+      // a small, standalone CG-relative offset and got the SCALE of
+      // sail-trim-induced steering badly wrong (a real Pjoa's sail-trim
+      // response is slow — an owner field datum, D-6 — but round 5's model
+      // turned a modest sheet/brail change into several deg/s of turn
+      // rate, and once R7-1 fixed the oversized ama-drag term that used to
+      // dominate/override it, this got tested and directly falsified: T3
+      // and T4's directions were reversed or capsized under the corrected
+      // drag). The new geometry:
+      //   x_CE = clrXPosition(0, config) + hull.lead - halfChordEffX*cos(delta)
+      //   y_CE = -end * halfChord * ceSwingFraction * sin(delta)
+      //   halfChordEffX = halfChord * ceSwingFraction * (1 - ceBrailShift*brailWind)
+      //   halfChord = CEheight/4
+      // hull.lead (order 5-25% of hull.length, Larsson & Eliasson,
+      // Principles of Yacht Design) anchors the CE's NEUTRAL point against
+      // the hull's own CLR (hydro.js's clrXPosition, at crewPosX=0 — fixed,
+      // so crew fore-aft only moves the hull's CLR for T2, not the sail's
+      // CE too, which would cancel that mechanism). sail.ceSwingFraction
+      // (~0.5) scales down how far the yard's OWN swing still moves the
+      // CE from that neutral point — round 5's model let the FULL
+      // geometric half-chord reach the CE; a real, flow-attached
+      // aerodynamic center tracks closer to the leading edge across the
+      // practical trim range, so only a fraction should. Both values are
+      // empirically landed against D-6's target (0.3-1.5deg/s steady
+      // sail-trim turn rate at TWS 6, i.e. harness/asserts.js's
+      // steeringOk() 2-20deg/10s-window direction-strict/magnitude-loose
+      // check — see D-6's own "assertion philosophy" note: real Pjoa
+      // sail-trim response varies with wind/boat, so these tests assert
+      // direction strictly and magnitude loosely, not a tight number).
+      // config.hull.ceLeverSign flipped from -1 (round 5) to +1 (round 7):
+      // the lead-dominated x_CE is now typically POSITIVE (round 5's was
+      // typically negative, swing-dominated). Round 10 (R10-4, docs/adr/
+      // 0004) found this +1 value is now the IDENTITY, not an active
+      // flip: once round 9's lead fix (0.15->0.05*LWL) removed a
+      // structural lee-helm bias, the naive r x F derivation matches the
+      // boat's real steering direction on its own — see aero.js's own
+      // comment at this line for the full history. Round 10d (H1,
+      // ROUND10d_helm_balance.md) fine-tuned lead again, 0.05->0.06*LWL:
+      // the differential steering tests round 9 validated don't bound the
+      // ABSOLUTE helm balance at a fixed trim, and a new rudder-free-
+      // release test at the polar-optimal beam reach found 0.05*LWL's
+      // balance was weather-side but marginally over its own 60s-
+      // excursion bound; 0.06*LWL sits with real margin from the knife-
+      // edge sign flip found nearby (~0.068*LWL) — see config.js
+      // hull.lead's own comment for the swept numbers. ceBrailShift
+      // (config.sail, ~0.3) is unchanged
+      // from round 5: shrinks x_CE's along-yard swing proportionally to
+      // brailWind (spilling the sail's rear moves the effective CE toward
+      // the tack), damping yaw sensitivity downwind (T5) without needing
+      // its own lead-style anchor.
+
+### hydro.js
+    hullResistance(u, config) -> Fx        // friction (round 7, R7-1: ITTC-57
+                                            // model-ship Cf at the instantaneous
+                                            // Reynolds number, ittc57Cf(u,
+                                            // hull.length) — replaces the old
+                                            // flat hull.Cf=0.0015 estimate) +
+                                            // residuary (round 9, R9-1: a
+                                            // bounded Gaussian Cr(Fr) hump,
+                                            // same nondimensional form as
+                                            // friction — replaces the old
+                                            // u^4-above-Fr-0.4 "wave wall",
+                                            // a displacement-monohull model
+                                            // wrong for this slender L/B=10:1
+                                            // hull; see docs/adr/0001)
+    clrXPosition(crewPosX, config) -> x offset from CG
+                                            // Round 7, D-6: factored out of
+                                            // hullSideForce so aero.js's sail
+                                            // CE geometry can reference the
+                                            // SAME CLR point (see aero.js
+                                            // sailForces' `lead` note below).
+    hullSideForce(u, v, r, crewPosX, config) -> { Fx, Fy, yawMoment }
+      // THE HULL'S WHOLE LATERAL FORCE, BY STRIP INTEGRATION (2026-08-04,
+      // docs/adr/0017). Station x sees its own transverse velocity v + r*x,
+      // hence its own leeway, hence its own CS from the measured curve
+      // (docs/adr/0004). Every term is per-station and summed -- foil force,
+      // low-speed linear damping, cross-flow, induced drag -- and the yaw
+      // moment is the integral of x*f(x), not clrX*Fy.
+      //   The lateral area is NOT uniform along the length: it carries a
+      // linear taper w(x) = 1 + 12*xc*x/L^2, mean 1 (so the strips still sum
+      // to hull.lateralArea) and centroid exactly clrXPosition(). A uniform
+      // distribution would put the centroid at the CG and delete the hull's
+      // weathercocking; this way the crew's fore-aft trim still moves the CLR
+      // through the model's one existing statement of it.
+      //   Reduces to the old model exactly at r=0: every strip sees the same
+      // leeway, the sum factors, and the moment is clrX*Fy to the last digit.
+      //   What it adds is everything r does. The v-r cross term ADR 0016 had
+      // to record as an omission is now captured (-268 N*m of extra damping at
+      // u=3.5, v=-0.3, r=0.3), and pure rotation produces side force of its
+      // own (85 N at r=0.3) from the tapered plane's asymmetry.
+      // Fx is still the induced drag cost of Fy, now strip by strip.
+                                            // crewPosX (round 4, 1.5) shifts
+                                            // the CLR fore/aft via clrXPosition:
+                                            // clrX += hull.crewTrimSign *
+                                            // hull.crewForeAftTrimCoeff *
+                                            // crewPosX * (hull.length/2).
+                                            // Empirically verified: forward
+                                            // crew luffs, aft bears away,
+                                            // with crewTrimSign=+1 — no flip
+                                            // needed (see coupling-sign test).
+    amaDrag(u, phi, crewPos, end, config) -> { Fx, yawMoment }
+                                            // 2026-08-04 (docs/adr/0015): now
+                                            // friction + RESIDUARY, the same
+                                            // bounded Fr hump the hull has had
+                                            // since R9-1. The ama had wave
+                                            // drag of exactly zero while the
+                                            // hull had it, and being shorter
+                                            // it sits at a HIGHER Froude
+                                            // number (0.68 vs 0.54 at 4 m/s).
+                                            // This is the honest home for
+                                            // authority round 7 put in
+                                            // formFactor (3.3) and round 9
+                                            // rightly removed.
+                                            // F1 (work-order-2026-07-30):
+                                            // takes phi (not amaLoad) and
+                                            // derives immersion WITH SIGN —
+                                            // full when pressed (phi<0), zero
+                                            // when flying (phi>0). Fixes the
+                                            // old unsigned-amaLoad bug where a
+                                            // flying ama had maximum drag.
+                                            // Round 5 (P2-1, Pjoa manual
+                                            // III.3: the ama's drag rotates
+                                            // the canoe around it): yawMoment
+                                            // = -(ama.spacing*end)*Fx — the
+                                            // drag force acts at the ama's
+                                            // own lateral position, standard
+                                            // r x F, no flip knob needed
+                                            // (the sign already comes out so
+                                            // MORE ama drag turns the bow
+                                            // TOWARD the ama side). Round 7
+                                            // (R7-1): Fx itself is now
+                                            // ittc57Cf(u, ama.length) *
+                                            // ama.formFactor (a slender-body
+                                            // skin-friction model — replaces
+                                            // the old bluff-body
+                                            // dragCoeff=0.4 estimate, which
+                                            // was ~100x too high and the root
+                                            // cause of a diagnosed
+                                            // uncommanded-round-up bug; see
+                                            // ROUND7_drag_calibration.md,
+                                            // ROUND7_steering_regression_
+                                            // findings.md). Form factor 1.2
+                                            // (round 9, R9-3, docs/adr/0002)
+                                            // — the genuinely physical
+                                            // ITTC/Prohaska value; round 7
+                                            // had run 3.3 (2-3x that range)
+                                            // as an admitted crutch to keep
+                                            // one steering test signed — see
+                                            // config.js's comment and the
+                                            // re-derived R7-4a drag-ratio
+                                            // bands this now satisfies.
+    yawDamping() -- DELETED (2026-08-04, docs/adr/0017). It was the yaw-rate
+      // half of the integral above, evaluated at v=0 while hullSideForce did
+      // the sway half at r=0, so neither owned the cross term. ADR 0016 had
+      // already replaced F10's configured pair (yawDampingLinear/CrossFlow,
+      // both deleted) with a strip integration; ADR 0017 merged that
+      // integration into hullSideForce so the two halves cannot disagree about
+      // the flow. F10's two physical requirements still hold by construction:
+      // no moment at r=0, and a real one at u=0, because a strip at x still
+      // sees r*x of flow when the boat is not making way.
+
+    Vertical rig geometry (docs/adr/0019)
+      // controls.halyard and controls.shroud, both 1 in the normal sailing
+      // state, at which every term is exactly ZERO and the geometry is what it
+      // was before they existed. hull.lead / ceSwingFraction / clrXFraction are
+      // untouched -- the same add-the-CHANGE discipline as the AC-3 swing.
+      //   halyard sets the YARD's inclination about sail.yardCERadius (derived,
+      // = CEheight / sin(yardPeakAngleDeg), so full hoist reproduces the
+      // nominal height). Easing drops the CE and swings it AFT -> weather helm,
+      // which is the manual's own stated cause (AC-5.1a).
+      //   shroud sets the mast rake. The shroud runs to the ama, so slack lets
+      // the mast fall AWAY from it -- to leeward -- and aft. One angle drives
+      // both senses because the manual describes one action.
+      //   CEheight is now the sail's SIZE reference (the streamwise chord,
+      // which does not change with hoist); the EFFECTIVE height feeds the heel
+      // arm and the heel->yaw term.
+      //   Fore-aft rake carries NO `end` factor (the mast rakes toward the
+      // active stern on both ends, and +x already points at the active bow --
+      // the ADR 0016 trap); the lateral term DOES, since the ama is bolted to
+      // one physical side.
+
+### rudder.js
+    rudderForce(state, controls, config) -> { Fx, Fy, yawMoment }
+      // F9 (work-order-2026-07-30): a proper foil, not coeff*sin(deflection).
+      // Effective AoA = deflection + inflow angle at the blade (so leeway
+      // weathercocks and yaw rate DAMPS — neither existed before), a stall
+      // shape past rudder.stallAngleDeg, and lift+drag projected onto the
+      // boat axes, so Fx exists and steering costs speed. The oar sits at
+      // the PHYSICAL STERN, -(L/2)*end; the old +(L/2) was invisible without
+      // an inflow term and inconsistent with it.
+      // lever arm = -(half hull length), with NO `end` factor: the boat
+      // frame's +x already points at the ACTIVE bow (see Conventions), so the
+      // stern is at -L/2 on BOTH ends. F9 wrote -(L/2)*state.end and verified
+      // the signs at end=+1 only, where the two are the same number; at
+      // end=-1 that put the oar at the BOW, failing two of F9's own three
+      // required properties and making the boat round up 81deg and stop
+      // instead of bearing away 11deg at 3.93 m/s. Fixed 2026-08-04
+      // (docs/adr/0016); harness/polar.js's headingHoldRudder lost its
+      // compensating state.end at the same time. Dead at |u| ~ 0.
+      // controls.rudderUp short-circuits to { Fx: 0, Fy: 0, yawMoment: 0 } —
+      // a Pjoa's "rudder" is a steering OAR, normally shipped clear of the
+      // water, not centered. createDefaultControls() therefore defaults it
+      // to rudderUp=TRUE (shipped); the UI's checkbox reads the other way
+      // round ("oar in the water") because that is how a sailor acts on it.
+
+### stability.js — roll as a 4th DOF (FIX_REQUEST_round4_roll_dof.md Part 1;
+### supersedes the round-3 static heelMoment/restoringCapacity model)
+    rollRestoreMoment(phi, config) -> N*m
+      // Genuine restoring term (opposes phi) UP TO a point — see the
+      // capsizing branch below. phi>=0 (ama lifting): ama's own WEIGHT,
+      // ease-out growth from 0 at phi=0 to ama.mass*g*ama.spacing at
+      // phi=phiLiftoffRad ("ama just clear of the water" — restoring fully
+      // mobilised). phi<0 (ama pressed): symmetric, ama.maxBuoyancy instead
+      // of ama.mass, saturating at phi=-phiSubmergeRad ("ama fully
+      // submerged").
+      // Round 5 capsizing branch (ROUND5_CONSOLIDATED_work_order.md P3.1 —
+      // supersedes the round-4 model, which held the moment flat at its
+      // saturated value forever past liftoff/submergence, letting a boat
+      // find a spurious STABLE equilibrium at an absurd heel, verified:
+      // steady sailing at phi=58deg): the moment holds flat at its old cap
+      // for HOLD_FRAC (0.5) of the liftoff/submerge-to-phiCapsizeRad span
+      // (matching a real GZ curve, and preserving the round-4 near-
+      // threshold timer behaviour outright — a from-the-threshold ramp was
+      // tried first and measurably weakened the squall scenario's gust-
+      // recovery margin enough to tip it into capsizing), THEN ramps down
+      // through zero AT phiCapsizeRad and on into the opposite sign — a
+      // genuine capsizing arm — capped at the SAME magnitude one further
+      // span past that (an uncapped linear-in-phi term is a destabilizing
+      // linear spring; integrating it produces textbook exponential
+      // blow-up, verified: phi reaching thousands of degrees within
+      // seconds). config.stability.phiCapsizeDeg (50, symmetric both
+      // sides) is 38deg past phiLiftoffDeg / 40deg past phiSubmergeDeg,
+      // within the request's own suggested "~35-40deg past liftoff" band
+      // and comfortably below the 58deg runaway heel this fixes.
+    crewRollMoment(phi, crewPos, config) -> N*m
+      // A genuine PENDULUM torque, constant sign in phi (NOT a
+      // bidirectional restoring term): -crew.mass*g*crewPos*ama.spacing*
+      // cos(phi), matching the extension request's literal formula. This
+      // is why crew ballast is double-edged: for crewPos>0 it resists the
+      // ama lifting (phi>=0, the normal case) but WORSENS the ama being
+      // pressed down once phi has already gone negative (aback-like) — the
+      // same fixed weight, at the same fixed offset, always pulls that
+      // side down regardless of which way the platform is currently
+      // rolling. harness/scenarios.js's squall controller is phi-aware for
+      // exactly this reason (crew moves OFF the ama the instant phi<0,
+      // rather than chasing amaLoad's magnitude alone).
+    rollDampingMoment(p, config) -> N*m   // -stability.rollDampingCoeff * p (linear)
+    computeAmaLoad(phi, config) -> amaLoad
+      // DERIVED from phi (no longer a function of heelMoment/crewPos/end):
+      // 0=upright, exactly 1.0 at phi=phiLiftoffRad (ama just clear) or
+      // phi=-phiSubmergeRad (ama just fully submerged), UNBOUNDED past
+      // that (grows linearly with phi) so the aback timer and the "AMA
+      // FLYING" warning readout keep their "how far past the edge"
+      // semantics.
+    updateAback(state, amaLoad, Msail, dt, config) -> { abackTimer, capsized, abackWarning }
+      // Round 8 (ROUND8_physical_capsize.md, R8-1) retired the phi>=0
+      // "overload timer" as a capsize trigger — a v0.1 proxy from before
+      // roll dynamics existed, found (round 7 diagnosis) to fire at
+      // phi~14-18deg, far short of the actual physical point of no
+      // return. That side's capsize is now PURELY physical: state.phi
+      // crossing phiCapsizeDeg + capsizeTriggerMarginDeg (a config angle
+      // safely past the capsizing-arm reversal, so the freeze-on-capsize
+      // below catches the boat visibly rolling past the point of no
+      // return, not the instant it crosses the reversal). amaLoad>1 on
+      // this side is now a WARNING only (ui/app.js's "AMA FLYING" tag,
+      // derived on the fly — no stored timer).
+      // The aback/pressed path's TIMER (phi<0 && amaLoad>1, i.e. the ama
+      // fully submerged) is UNCHANGED: config.stability.abackCapsizeTime,
+      // same 6s semantics as before — this is the "physical mechanism
+      // instead of a bare timer" the round-4 extension request asked for:
+      // a backwinded sail drives heelMoment (and hence phi) negative
+      // through the roll ODE, so reading phi's sign is strictly more
+      // direct than the round-3 apparent-wind-angle proxy it replaces.
+      // Round 10d (H2, ROUND10d_helm_balance.md) added a SEPARATE
+      // abackWarning signal, gated on phi<0 && Msail<0 (the sail's own
+      // current roll-moment contribution, "the pressing moment on the
+      // ama") instead of full submersion: several reproduced through-gybe
+      // trajectories (wind crossing to the ama-leeward side via a
+      // bear-away, yard slammed to delta~0 against the mast) settle at a
+      // genuinely pressed, sustained SUB-1.0 amaLoad the old detector
+      // never flagged at all. Deliberately NOT folded into abackTimer —
+      // gating the timer itself on Msail<0 was tried first and broke
+      // several deep-course scenarios (ordinary downwind sailing has
+      // brief negative-phi/Msail moments that are not a sustained press)
+      // into false capsizes. ui/app.js surfaces abackWarning the same
+      // on-the-fly way as "AMA FLYING" (no stored state) as a third,
+      // lighter banner tier below the real "ABACK...capsize in Xs"
+      // countdown.
+
+### shunt.js
+    shuntStep(state, controls, config, dt) -> state patch
+      // state machine: ease -> transfer -> swap(end*=-1, heading+=PI,
+      // u=-u, v=-v, r/phi/p unchanged — see Conventions above) -> sheet;
+      // locked when u > threshold
+
+### sheet.js (round 5 — ROUND5_CONSOLIDATED_work_order.md P1.1)
+    deltaAlign(state, controls) -> rad (unclamped)
+      // The delta that puts the yard chord edge-on to the apparent wind:
+      // aero.js's alpha = chordAngle - awAngle, chordAngle = end*delta, so
+      // alpha=0 (or +-PI) needs chordAngle = awAngle+PI (the OTHER zero-AoA
+      // branch, chordAngle=awAngle, needs a negative delta — unreachable on
+      // this rig). Returns end*(awAngle+PI), normalized — NOT clamped to
+      // [0, delta_max]; the caller's clamp is what selects the regime.
+    effectiveDeltaMax(state, controls, config) -> rad
+      // FLOORED at config.sail.deltaMinDeg (S6, docs/adr/0010): the rig cannot
+      // be sheeted closer to the centreline than its own geometry allows —
+      // acos(hull.length / sparLength) = 10.7deg for this boat, derived from
+      // area/apex/length with nothing fitted. It bounds the SHEET, not the
+      // yard: a sheet is a rope and can only stop the yard swinging OUT, so
+      // the wind may still push it inside deltaMin (the luffing regime below).
+      // The sheet ceiling actually in force: released to
+      // config.sail.deltaMaxReleaseDeg during a shunt's ease/transfer/swap
+      // phases, closed back to the commanded controls.sheet once 'sheet'
+      // starts hauling it in.
+    sheetStep(state, controls, config, dt) -> { delta } patch
+      // delta relaxes toward delta_eq = clamp(deltaAlign, 0, effectiveDeltaMax)
+      // at a bounded slew rate (config.sail.yardSwingRateDegPerSec, 90 —
+      // request's own 60-120deg/s band). clamp() alone reproduces all
+      // three regimes with no special-casing: deltaAlign > delta_max ->
+      // rests at delta_max (taut, driving); deltaAlign in [0,delta_max] ->
+      // settles exactly at deltaAlign (full weathervane, alpha=+-PI,
+      // CL~0); deltaAlign < 0 (wind crossed to leeward) -> clamps to 0
+      // (backwinded, pressed against the mast). Held constant across one
+      // integrate() call's own RK4 sub-evaluations (same treatment as the
+      // shunt phase/fade), advanced once per substep — accurate at
+      // dt=1/240s.
+    isLuffing(state, controls, config) -> bool
+      // delta < effectiveDeltaMax - 2deg — UI "LUFFING" tag and the HUD
+      // sheet/yard readout. This is a MECHANICAL definition (matches the
+      // request's literal wording) and reads true throughout the
+      // backwinded regime too (delta pinned at ~0 by the wind, not the
+      // sheet) — the UI's dashed/fluttering VISUAL is gated on a separate,
+      // AERODYNAMIC condition instead (alphaSailor near 0), since a
+      // pressed, backwinded sail carries real load and isn't fluttering;
+      // see ui/app.js's drawBoat.
+
+### integrator.js
+    derivatives(state, forces, config) -> { du, dv, dr, dphi, dp, ... }
+      // dphi = state.p; dp = forces.Mroll / stability.I_roll (round 4)
+      // F8 (work-order-2026-07-30): THREE separate inertias — hull.massSurge,
+      // hull.massSway (which carries the added mass of the water a hull drags
+      // when accelerating sideways, ~3.6x the dry mass) and hull.yawInertia
+      // (~5.5x the old value, which was below even a uniform rod's m*L^2/12).
+      // hull.displacement is no longer read by the dynamics; it is only an
+      // input to the derivation in config.js. Because m_x != m_y, the
+      // rigid-body equations now also produce the MUNK MOMENT,
+      // (m_x - m_y)*u*v in dr — the classical destabilising moment on a
+      // slender body at an angle of attack, which was identically zero before
+      // for want of anything to express it with.
+    integrate(state, controls, config, dt) -> newState   // RK4, dt=1/240,
+      // ODE state [x, y, heading, u, v, r, phi, p] (phi/p added round 4)
+      // physics dt smaller than a frame; the facade runs N substeps.
+      // Round 5: sheetStep's patch is applied after the shunt patch (P1.1
+      // point 3 — a phase transition landing on this exact step is already
+      // reflected in the delta_max sheetStep relaxes against). ALSO round
+      // 5 (P3.2): if state.capsized, integrate() short-circuits to a pure
+      // exponential bleed of u/v/r/p toward zero and returns — no forces
+      // computed, no controls read, phi/x/y/heading frozen at whatever
+      // they were. This lives in integrator.js itself, not the UI-facing
+      // simulator.js facade, so every caller — harness scenarios and the
+      // polar sweep included, which call integrate() directly — gets the
+      // same "no ghost sailing at some absurd heel" guarantee. (Previously
+      // only simulator.js's step() special-cased capsized, and it did so
+      // by refusing to call integrate() at all, which froze u/v abruptly
+      // at whatever they were at the instant of capsize instead of
+      // bleeding down over ~3s — simulator.js's step() no longer needs
+      // that guard.)
+
+## Roll dynamics (4th DOF — FIX_REQUEST_round4_roll_dof.md Part 1)
+
+    I_roll * dp/dt = Msail + Mrestore(phi) + Mcrew(phi, crewPos) + Mdamp(p)
+
+- `Msail = -aero.heelMoment * state.end` — converts the boat-frame,
+  end-aware heelMoment into the physical-frame roll sign (positive =
+  lifts the ama), reusing the round-3 `heelMoment * end` convention.
+- `Mrestore`, `Mcrew`, `Mdamp` — see stability.js above.
+- `config.stability.I_roll` (roll inertia, kg*m^2): the extension
+  request's own suggested default (`displacement*(0.4*ama.spacing)^2` =
+  250 kg*m^2) gave a measured roll period of only ~1.0s at a
+  representative 8deg step-response probe — well under the requested
+  1.5-4s band. Raised to 1500 kg*m^2 (tunable, as the request itself
+  flags this default), giving a measured period of ~2.6s.
+- `config.stability.rollDampingCoeff` = 900 N*m per (rad/s), paired with
+  I_roll=1500 so the same 8deg step settles (|phi|<0.4deg) in ~3.2
+  oscillation periods, within the requested 2-4 period damped-overshoot
+  band. Linear damping (`-c*p`), not quadratic — chosen for a
+  classically-tunable locally-linear damped oscillator near equilibrium,
+  since the restoring curve itself is already nonlinear (piecewise
+  ease-out/saturating).
+- `config.stability.phiLiftoffDeg` (12) / `phiSubmergeDeg` (10): the
+  roll angles at which the ama's weight/buoyancy restoring moment
+  saturates — also where `computeAmaLoad` reads exactly 1.0.
+- `config.stability.phiCapsizeDeg` (50, round 5): past this angle (both
+  sides) the restoring arm reverses into a genuine capsizing arm — see
+  stability.js's rollRestoreMoment above.
+- `config.stability.capsizeTriggerMarginDeg` (15, round 8): the flying
+  (phi>=0) side's capsize trigger itself — phi crossing phiCapsizeDeg +
+  this margin — replacing the old amaLoad>1-for-2s overload timer. See
+  stability.js's updateAback above.
+- Sail force scaling and the heel-yaw coupling: see aero.js above.
+- Fore-aft crew CLR shift: see hydro.js above.
+
+`amaLoad`, the aback timer, and (round 8) the flying side's physical
+phi-threshold trigger are now driven entirely by the roll state instead
+of a static per-step formula, so a violent gust can make
+`phi` genuinely overshoot PAST zero into the opposite regime (ama
+lifting -> ama pressed) within a second or two — a real consequence of
+having actual roll inertia and damping instead of an instantaneous
+moment-balance snapshot. Controllers reacting to `amaLoad`'s magnitude
+alone (e.g. a naive "shift crew toward the ama whenever load is high")
+can be caught out by this, since crew ballast's effect is sign-of-phi
+dependent (see crewRollMoment above) — harness/scenarios.js's squall
+controller was retuned to check `state.phi`'s sign for exactly this
+reason; see its header comment for the capsize this exposed and fixed.
+
+### simulator.js
+    createSimulator(userConfig?) -> {
+      step(controls, dtFrame),   // runs substeps at fixed dt
+      getState(), reset(), setConfig(patch),
+      forcesBreakdown()          // last force breakdown — for UI and debugging.
+                                  // Includes amaLoad (raw, unbounded — feeds
+                                  // the aback timer and the flying-side
+                                  // capsize trigger) and amaLoadDisplay
+                                  // (capped at config.stability.amaLoadDisplayCap,
+                                  // UI-safe), plus alpha (raw) and alphaSailor
+                                  // ([0, pi/2], UI-safe) — see aero.js. Round
+                                  // 5: also deltaMax (effectiveDeltaMax) and
+                                  // luffing (isLuffing) — see sheet.js.
+    }
+    // Round 5 (P3.2): step()'s substep loop no longer special-cases
+    // state.capsized (no `if (state.capsized) break`) — integrate() itself
+    // now freezes safely when capsized, so still calling it every substep
+    // lets the exponential bleed actually animate down over ~3s instead of
+    // leaving the state frozen at whatever u/v happened to be at the exact
+    // instant of capsize.
+
+## Determinism contract (round 6 — ROUND6_flight_recorder.md)
+
+Determinism is a TESTED contract, not an assumption: given the same
+`initialState`, `config`, and ordered sequence of `(dtFrame, controls)`
+steps, `core/integrator.js`'s `integrate()` produces bit-identical output
+every time — no wall-clock reads, no randomness, no iteration-order
+dependence, fixed-size substeps derived only from `dtFrame` and
+`config.dt`. `harness/asserts.js`'s R6-1 self-test runs a scenario twice
+from the same initial state and hashes every step (`harness/checksum.js`)
+to catch a violation immediately if one is ever introduced; this is what
+the session recorder (`ui/app.js`) and offline replay tool
+(`harness/replay.js`) both depend on to make a recorded session
+re-simulate EXACTLY. Any future core change that breaks this self-test is
+a regression, full stop — not a "well, close enough."
+
+**Scope of the guarantee — same-engine, not cross-engine:** the contract
+above is proven WITHIN one JS engine build (R6-1 runs entirely inside one
+Node process). A recording made in a BROWSER and replayed via
+`node harness/replay.js` crosses an engine boundary — the browser and
+Node bundle different V8 versions even on the same machine, and
+`Math.sin`/`cos`/`atan2`/`sqrt` are "implementation-approximated" per the
+ECMAScript spec, not required to be bit-identical across engine builds.
+Verified directly (round-6 investigation): a long enough browser recording
+CAN show a single-ULP divergence in one field (e.g. `p`) after a few
+thousand accumulated RK4 substeps, purely from this cross-engine trig
+difference — confirmed by (a) replaying the exact same recording's
+stepping logic against `core/simulator.js`'s real facade WITHIN Node
+(bit-exact match, so `harness/replay.js`'s own logic is not the cause),
+and (b) the divergence appearing only after hundreds of frames, never at
+the very start (the signature of accumulated ULP-scale drift, not a
+struck logic bug). This does not weaken the guarantee that matters for
+catching regressions — R6-1 stays bit-exact forever, in-engine — it just
+means `harness/replay.js --verify` treats a late, single-field, tiny
+divergence as informational rather than alarming; see its own output for
+the detail. The replayed CSV remains fully trustworthy for diagnosis
+either way.
+
+## Test harness
+
+### polar.js
+    computePolar(config, { twsList, twaFrom:40, twaTo:170, step:10 })
+      -> table { twa, tws, bestSpeed, bestSheetAngle, deltaAngle, bestCamberUse }
+    // for each heading: simulate to steady state (criterion: |da/dt| < eps
+    // for 10 s), optimise the SHEET LIMIT by simple grid search (round 5 —
+    // was yardAngle directly). bestSheetAngle is the search variable;
+    // deltaAngle is the settled ACTUAL yard angle it produced — the two
+    // coincide only when the sheet is taut (asserted on driving rows,
+    // harness/asserts.js). simulateToSteady seeds the initial state.delta
+    // at the sheet under test (same reasoning as the existing u=1.0 seed:
+    // the yard's own swing is otherwise a startup transient of its own,
+    // large enough to kick an otherwise-holdable trim into a different,
+    // broached attractor before the sheet even locks in).
+
+### scenarios.js — each returns a time series (array of states)
+    scenarioSquall()   // close course, TWS 4->10 m/s over 5 s; control
+                       // ONLY via brailLee/brailWind/crewPos using a simple
+                       // threshold controller on amaLoad
+    scenarioShunt()    // 3 consecutive shunts, verify tacks and ama side
+    scenarioAback()    // crossing the wind line -> alarm -> capsize
+    scenarioStop()     // both brails 100% -> speed < 0.5 m/s within 20 s
+    scenarioBackwindSlam()  // round 5 (T9): settles taut/driving on a
+                       // reach, then the true wind steps across to the
+                       // leeward side — the yard must slam from taut down
+                       // to ~0 within the rate limit's own travel time,
+                       // sail forces computed at the ACTUAL in-transit
+                       // delta every substep, so the resulting yaw impulse
+                       // has to emerge from the ordinary force path, not
+                       // be scripted
+
+### asserts.js — the prompt's acceptance criteria as tests, incl.:
+    - CL(35 deg) in [1.6, 1.8]; CL_max in [1.75, 2.0] at alpha 38-46 deg
+    - polar: no progress below ~50 deg TWA; maximum at 90-135 deg;
+      bestSheetAngle and the settled delta coincide on driving (taut-sheet)
+      rows. Round 9 (R9-1/R9-2, docs/adr/0001): the wave-wall removal +
+      sail-detune reversal legitimately raised the whole polar (globalMax
+      ~7 m/s at TWS=6, up from ~3.7) — both the TWA-40 ratio band and the
+      TWA-90 absolute-speed band were re-derived against the new polar
+      shape/realistic absolute speeds (ratio <0.55 and [3.0,6.5] m/s
+      respectively) rather than the old wave-wall-calibrated numbers, and
+      now PASS — see ROUND9_physics_fidelity_findings.md and
+      harness/asserts.js's own comment at that check.
+    - no NaN/Inf in any scenario; energy does not grow with zero wind
+      (damping test)
+    - the squall scenario ends without capsize; the aback scenario ends
+      with one
+    - shunt: after the sequence heading rotated by PI, ama to windward,
+      the boat reaches >80% of pre-shunt speed within 30 s
+    - round 5, T1-T10 (ROUND5_CONSOLIDATED_work_order.md P5 — a shared
+      steeringDrift() helper: settle on course with the heading-hold
+      autopilot, LOCK the rudder at its settled deflection, apply ONE
+      control change, measure signed heading drift over a lock window
+      with no further correction). Round 7 (D-6, ROUND7_DECISION.md)
+      changed the lock window to 10s and the pass criterion to
+      steeringOk(): DIRECTION strict, MAGNITUDE loose (2-20deg over that
+      window) — the owner's field datum says real Pjoa sail-trim response
+      varies with wind/boat, so a tight number is the wrong thing to
+      assert:
+      - T1 (THE ONE SANCTIONED REVERSAL, P2-2): crew toward the ama turns
+        to windward (round-4 demanded the opposite). Round 7 restored it
+        by running ama.formFactor at 3.3 — an admitted crutch, 2-3x the
+        physical ITTC/Prohaska range (D-1: "the minimum ama-drag authority
+        that keeps this leg signed"). Round 9 (R9-3, docs/adr/0002)
+        corrected formFactor to the genuinely physical 1.2 — BOTH T1 legs
+        now fail outright (not just weaker, backwards), confirming
+        ama-drag was never a legitimate mechanism for this maneuver; both
+        retagged xfail:STEERING pending real reference data (Irwin/Flay
+        et al. 2023) to find the actual mechanism, if any — see
+        ROUND9_physics_fidelity_findings.md.
+      - T2 (kept, now practice-validated): crewPosX forward luffs, aft
+        bears away — runs through hullSideForce's own clrX shift, not the
+        sail's CE geometry, so unaffected by round 7's CE-lever rework.
+      - T3 (needs P1.2, redone round 7 D-6 — see aero.js's CE-lever/`lead`
+        note above): easing the sheet (still taut) turns to windward,
+        trimming in turns to leeward. A THIRD check (90s lock, not just
+        the 10s direction/magnitude window) used to be xfail:STABILITY —
+        round 7's amaLoad-timer capsize fired on this exact trim; round 8
+        (ROUND8_physical_capsize.md, R8-1/R8-2) retired that timer for a
+        purely physical trigger, re-ran this same trim, and found it
+        genuinely FLIES the ama (amaLoad cycling up to ~2.0) but settles
+        into a bounded oscillation (phi cycling ~8-24deg) rather than
+        escalating toward the reversal — the xfail is REMOVED, tag lifted
+        per that document.
+      - T4 (needs P2-3, redone round 7 D-6): windward brail on a beam
+        reach turns to leeward AND lowers ama load simultaneously.
+      - T5 (needs P2-3): windward brail lowers mean |rudder| deep downwind
+        (TWA 165) — the "carrot" stabilizes. Round 9 (R9-1/R9-2/R9-3):
+        xfail:STEERING — the yaw-hunting baseline this measured against
+        is noise-level (~0.0003-0.002) now that the ama-drag/CE-lever
+        terms it compensated for are physically scaled; a sweep of
+        TWS/sheet/crewPos found no trim with a meaningful, reliably-signed
+        baseline — see ROUND9_physics_fidelity_findings.md.
+      - T6 (needs P1): releasing the sheet fully at amaLoad~0.9 in a gust
+        saves the boat that a held-in sheet would capsize (the panic rule)
+      - T7 (needs P1): sheet limit 90deg on a beam reach settles delta at
+        its own equilibrium, not pinned at 90; alpha stays >= 0
+      - T8 (needs P1): fully easing the sheet on a reach collapses drive,
+        boat decelerates
+      - T9 (needs P1): scenarioBackwindSlam — yard swings to ~0 within the
+        rate limit's travel time, nonzero yaw-rate impulse during the swing
+      - T10 (needs P3): capsize freezes (speed <0.1 m/s within 3s, frozen
+        thereafter); past phiCapsizeDeg, heel gains a fixed increment
+        faster than at the old (round-4) threshold — genuinely
+        accelerating, not just waiting out the timer
+      - over-sheeting probe (section 8): round 5-7 had this as a "broach
+        cliff" assertion the bug-era force balance produced; the boat now
+        holds that old over-trimmed test point cleanly. Round 8 (R8-3)
+        replaced it entirely with the honest round-1-style criterion, now
+        measurable with real dynamics: at matched course/wind (TWA=90,
+        found to show it more cleanly than the old TWA=50 point, which
+        turned out to be a "boom as a lever" power regime instead — see
+        ROUND8_physical_capsize.md), an over-trimmed leg sails SLOWER and
+        HEELS MORE than a well-trimmed leg, with no loss of course either
+        way — a genuine, passing check, no xfail tag.
+    - round 6: determinism self-test (see "Determinism contract" above) —
+      run scenarioSquall() twice from the same initial state, hash every
+      step, assert zero divergence
+    - round 7 (R7-4, ROUND7_drag_calibration.md/ROUND7_DECISION.md):
+      R7-4a, the drag-ratio hard anchor (amaDrag/hullResistance in
+      [0.10,0.30] at static immersion, [0.4,1.0] at max, u=1.6m/s);
+      R7-4b, a replay-fixture test consuming recordings/simpjoa-recording-
+      20260716-155817.json (the session that diagnosed the ama-drag bug)
+      against the live core, NO checksum verification (cross-engine ULP —
+      see "Determinism contract"). Round 8: under the physical capsize
+      trigger this recording no longer capsizes either (same bounded-
+      flying-equilibrium finding as T3) — but its sustained-|r| sub-check
+      still fails on its own (narrower) terms, now retagged xfail:STEERING
+      (the yaw-rate symptom of that same bounded oscillation, not a
+      capsize/overload issue anymore — see ROUND8_physical_capsize.md).
+      R7-4c, a general uncommanded-round-up bound (steady reach, rudder
+      locked, |r|<2deg/s over 30s).
+    - xfail mechanism (round 7, D-3/D-4; round 8 adds a third tag,
+      'CALIBRATION', for the polar-band findings below): check()'s 4th
+      argument tags a known, diagnosed, EXPECTED-to-fail assertion
+      ('STEERING' | 'STABILITY' | 'CALIBRATION'). run_tests.js reports
+      these separately under "KNOWN MODEL LIMITATIONS", excludes them
+      from the main pass count, and fails the build if one unexpectedly
+      starts passing (a "promotion candidate" — the model changed and the
+      mark needs a human decision to lift, not a silent pass). As of
+      round 8, the STABILITY tag is unused (both prior holders — T3, R7-4b
+      — resolved to passing/retagged); the mechanism stays generic in case
+      a future round needs it again.
+
+### checksum.js (round 6)
+    hashState(value) -> string
+      // FNV-1a 32-bit hash of JSON.stringify(value). Non-cryptographic —
+      // only has to catch accidental divergence between two runs of a
+      // deterministic simulation, not resist an adversary. The ONE shared
+      // implementation the determinism self-test, the UI recorder, and
+      // replay.js all use — three independent copies could each agree
+      // with themselves while silently disagreeing with each other,
+      // which would look exactly like a real replay bug.
+
+### replay.js (round 6) — CLI, no dependencies
+    node harness/replay.js <recording.json> [--csv out.csv] [--verify]
+    // Loads a UI-recorded session (see ui/app.js's recorder), warns
+    // loudly if the recording's codeVersion/configVersion don't match
+    // the current tree, then re-simulates the exact frame sequence via
+    // core/integrator.js's integrate() directly — NOT through
+    // core/simulator.js's facade, since that facade's edge-detection for
+    // controls.shuntRequest (a held key -> a single pulse) is private to
+    // its own closure; replay.js mirrors that same edge-detection itself
+    // (stepFrame()) rather than requiring a core change to expose it,
+    // keeping this round's core footprint at zero beyond the determinism
+    // self-test. --verify recomputes checksums every 60 frames (same
+    // cadence the recorder used) and reports PASS or the first divergent
+    // frame index. --csv dumps the full replayed state + force breakdown
+    // per frame, with any annotations echoed into their own column.
+
+### export.js
+    toCSV(run) — columns: t, TWA, AWA, u, v, r, phi, p, delta, deltaMax,
+    alpha, CL, CD, amaLoad, brailLee, brailWind, crewPos, crewPosX, shunt
+    phase (phi, p, crewPosX added round 4 — roll trace column; delta,
+    deltaMax added round 5 — the two coincide exactly when the sheet is
+    taut). One file per scenario + polar.csv. This is the input for
+    plotting and coefficient tuning.
+
+## Definition of done for Step 1
+
+`node run_tests.js` passes all assertions and leaves scenario CSV files
+plus the polar in /out. No file in /core references the DOM, canvas, or
+the system clock (time only via dt). Step 2 (UI) will import
+createSimulator() without modifying the core.
+
+## Known simplifications (round 5 additions — ROUND5_CONSOLIDATED_work_order.md P6)
+
+- Mast rake control: not modeled: the mast is fixed, upright rig geometry.
+- Rig structural failure on backwinding: the manual notes a hard-enough
+  aback can drop the rig; this sim caps the consequence at the existing
+  capsize mechanism, no separate failure mode.
+- Crew-at-mast-step during a shunt: procedural (the crew physically
+  handles the yard through the swap), not modeled as a force — the shunt
+  sequence's force-fade already covers the aerodynamic side of it.
+- Pitch / fore-aft trim beyond the existing phenomenological CLR shift
+  (hydro.js's crewPosX term): no real pitch DOF, same simplification as
+  round 4.
+- The over-sheeting-a-close-course test (harness/asserts.js #8) no longer
+  demonstrates a gradual heel/speed tradeoff: with the CE now a genuine,
+  delta-driven lever (P1.2) and the ama-drag moment added (P2-1), sheeting
+  in past a sharp threshold on a close course snaps into an outright
+  broach instead — verified across many TWA/TWS/crewPos combinations,
+  consistently. The test now asserts THAT (a broach cliff exists), not
+  the old gradual-tradeoff story, which no longer holds.
+- T5's downwind-stabilization margin (harness/asserts.js) is real but
+  modest (a few percent lower mean|rudder|) at the request's own
+  illustrative brailWind=0.5; the assertion uses brailWind=1.0 for a
+  robust, reproducible margin instead.

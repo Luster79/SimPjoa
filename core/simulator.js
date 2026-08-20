@@ -5,13 +5,18 @@ import { createConfig, validateConfig, deepMerge } from './config.js';
 import { createInitialState } from './state.js';
 import { integrate, computeForces } from './integrator.js';
 
+// Neutral controls used to seed lastForces for a state nothing has stepped
+// yet — both at creation and after reset(), so the facade never reports a
+// previous run's forces for a fresh state.
+const NEUTRAL_CONTROLS = {
+  windDirFrom: 0, windSpeed: 0, sheet: 0, rudder: 0,
+  brailLee: 0, brailWind: 0, crewPos: 0, crewPosX: 0, shuntRequest: false,
+};
+
 export function createSimulator(userConfig) {
   let config = createConfig(userConfig);
   let state = createInitialState(config);
-  let lastForces = computeForces(state, {
-    windDirFrom: 0, windSpeed: 0, sheet: 0, rudder: 0,
-    brailLee: 0, brailWind: 0, crewPos: 0, crewPosX: 0, shuntRequest: false,
-  }, config);
+  let lastForces = computeForces(state, NEUTRAL_CONTROLS, config);
   let lastShuntRequest = false;
 
   function step(controls, dtFrame) {
@@ -21,11 +26,10 @@ export function createSimulator(userConfig) {
 
     const nSub = Math.max(1, Math.round(dtFrame / config.dt));
     const subDt = dtFrame / nSub;
-    // No `if (state.capsized) break` here (R5-2.2): integrate() itself now
-    // freezes -- a short exponential bleed of u/v/r/p, ignoring controls --
-    // once capsized is set, so still calling it lets that bleed actually
-    // animate down over ~3s instead of leaving the state frozen at
-    // whatever u/v happened to be at the exact instant of capsize.
+    // Deliberately no `if (state.capsized) break` here: integrate() itself
+    // freezes once capsized (a short exponential bleed of u/v/r/p, ignoring
+    // controls), so still calling it lets that bleed animate down over ~3s
+    // instead of pinning u/v at whatever they were at the instant of capsize.
     for (let i = 0; i < nSub; i++) {
       state = integrate(state, stepControls, config, subDt);
     }
@@ -39,10 +43,24 @@ export function createSimulator(userConfig) {
 
   function reset() {
     state = createInitialState(config);
+    lastForces = computeForces(state, NEUTRAL_CONTROLS, config);
     lastShuntRequest = false;
   }
 
   function setConfig(patch) {
+    // Switching the named boat cannot be a merge. Every value the physics
+    // reads — hull, ama, sail, crew, all three inertias — is DERIVED from the
+    // variant's parameter file, so overlaying `{ boat: 'old' }` on a built
+    // config would relabel it while leaving the previous boat's numbers in
+    // place: a config that reports one boat and sails another. Rebuild from
+    // the new variant's own base instead, with this patch applied on top.
+    // Consequence, deliberate: customisations from EARLIER setConfig calls do
+    // not survive a variant switch — they were expressed against a different
+    // boat, and carrying them over is what would silently corrupt the new one.
+    if (patch?.boat !== undefined && patch.boat !== config.boat) {
+      config = createConfig(patch);
+      return;
+    }
     config = validateConfig(deepMerge(config, patch));
   }
 

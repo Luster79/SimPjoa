@@ -1,0 +1,129 @@
+Coverage snapshot -- ADR 0039 (the restoring probe omitted the hull)
+Date: 2026-08-10, AFTER the corrected `restoring` probe, the corrected K3
+end-mirror, and the existence-search rewrite.
+SUPERSEDES Archive/coverage-no-oar-2026-08-10.txt (39/42).
+
+    node harness/coverage-no-oar.js --wide-search
+
+Grid: TWA 50-180 step 10 x TWS 4/6/10 (42 points). TWA < 50 is OUT OF SCOPE
+by owner decision -- deferred, not solved; see docs/README.md.
+
+COVERAGE: 42/42 (100%) of the in-scope grid.
+
+Single pass, 20 minutes, no stitching of partial runs and no --dense-sheet.
+The same grid cost ~9 hours before the search was rewritten (see COST below).
+
+WHAT CHANGED, AND WHAT DID NOT. No physics changed -- out/*.csv are
+byte-identical and run_tests.js's byte gate is clean. Two measurement fixes
+and one search rewrite:
+
+  * K1's `restoring` term perturbed `heading` while holding BOAT-frame u/v
+    fixed, which rotates the hull and the flow together, so every hull/ama
+    yaw moment cancelled in the finite difference and only the rig's slope
+    survived -- an order of magnitude too small and sign-flipped at TWA110
+    and TWA140. Corrected in harness/asserts-helpers.js `yawMomentAtHeading`.
+  * K3's end mirror flipped the heading by pi for end=-1 but not the wind.
+    Not scored here (this file is end=+1 only -- see LIMITS).
+  * The search now stops at the first confirmed holder (see COST).
+
+THE THREE GAPS WERE THE PREDICATE, NOT THE BOAT AND NOT THE SEARCH. The
+superseded snapshot left TWA50/60/70 at TWS6 as NONE, and N1 called them
+"the strongest signal yet that these are a property of the boat" (M2's
+heel-runaway mechanism). They are not. All three hold, and their winning
+sheet angles are 8-12deg -- BELOW the 15deg floor of the dense grid N2 tried,
+i.e. at the polar's own speed optimum, a trim every search including the
+original narrow one has always contained. Those trims were being found and
+then discarded at the last step by `restoring`.
+
+Corroboration, from before the single pass replaced it: the 39 points the
+old snapshot recorded as HOLDS were replayed at THEIR OWN recorded trims
+under the corrected predicate, and 37 still held. The 2 that did not --
+TWA180 at TWS6 and TWS10, both marginally destabilising (slope +0.3 and
++0.1, against -1.4 at TWA180/TWS4) -- hold at other trims. The near-zero
+dead-run slope at all three winds is consistent with ADR 0027 ("the dead
+run is unstable"): TWA180 is genuinely marginal and which side of zero it
+lands on depends on the trim.
+
+COST. Profiling one point (TWA50/TWS4) exposed what the old exhaustive pass
+was spending to answer a question it had already answered: 750 trials -> 335
+survivors -> 284 of those held, and the FIRST holder was survivor #2. 480 of
+that point's 700 seconds went on re-proving it 283 more times. The metric
+asks EXISTENCE, so the search now interleaves the 60s screen with the 300s
+confirmation and breaks at the first holder, and the trial order is taken
+from the 39 winning trims the old snapshot recorded (stays=+1 won 30/39,
+tackX=+1 25/39, crewPosX=-1 20/39). The trial SET is unchanged, so nothing
+can be hidden by reordering. TWA50/TWS4 went 700s -> 28s. What now dominates
+the runtime is computePolar (~20s/point), which is real work, not waste.
+  A point that does NOT hold still costs the full sweep -- non-existence
+cannot be short-circuited. There are none today; expect them to dictate the
+runtime of any grid that regresses.
+
+READ THE TRIMS WITH CARE. Because the search stops at the first holder, the
+trim printed below is the FIRST one found in search order, not the
+minimum-excursion one. Several therefore sit close to the acceptance
+thresholds (excursion <=15deg, speed >=50%): TWA170/TWS10 reports v=51%
+where the old exhaustive pass found a 99% trim at the same point, and
+several excursions read 14.x against the 15 ceiling. This is a property of
+the REPORT, not of the boat -- every line below is a confirmed hold, and
+better trims exist at most of these points. Do not read the margins here as
+the boat's best.
+
+LIMITS THIS FILE STILL HAS, unchanged by the above:
+  * end=+1 ONLY. settledState hardcodes end:1, so nothing here says anything
+    about the other end -- and ADR 0016/0023 record a defect that survived
+    two rounds precisely because it was only visible on the un-exercised
+    end. A third such defect (K3's wind mirror) was found the same day this
+    file was written.
+  * crewPos (the crew's LATERAL position) is frozen at the polar's
+    speed-optimal value and is not a search axis -- even though M2 identified
+    it as the mechanism of the beat failure, and adding it as an axis takes
+    S1c from 4/6 to 6/6 on its own grid.
+  * holdsCourse freezes the trim for 300s. The owner has since ruled that
+    continuous re-trimming is acceptable and that the criterion is about the
+    moment a course CANNOT be held, which makes this predicate stricter than
+    the criterion requires -- so this number is a floor, not a ceiling.
+    holdsCourseActiveTrim has been fixed but NOT re-measured.
+
+Per-point detail (first holder found, see READ THE TRIMS WITH CARE):
+  TWA50/TWS4: HOLDS tackX=1 crewX=0 stays=-1 sheet=8 brail=0 exc=7.7deg v=91%
+  TWA60/TWS4: HOLDS tackX=1 crewX=-1 stays=-1 sheet=35 brail=0 exc=0.5deg v=102%
+  TWA70/TWS4: HOLDS tackX=1 crewX=0.5 stays=0 sheet=12 brail=0 exc=10.2deg v=95%
+  TWA80/TWS4: HOLDS tackX=1 crewX=0 stays=1 sheet=35 brail=0 exc=10.2deg v=88%
+  TWA90/TWS4: HOLDS tackX=1 crewX=0 stays=0 sheet=16 brail=0 exc=12.0deg v=104%
+  TWA100/TWS4: HOLDS tackX=1 crewX=-1 stays=-1 sheet=20 brail=0 exc=12.9deg v=102%
+  TWA110/TWS4: HOLDS tackX=1 crewX=0 stays=1 sheet=28 brail=0 exc=1.3deg v=103%
+  TWA120/TWS4: HOLDS tackX=1 crewX=-1 stays=0 sheet=32 brail=0 exc=4.0deg v=104%
+  TWA130/TWS4: HOLDS tackX=1 crewX=-1 stays=1 sheet=40 brail=0 exc=10.3deg v=105%
+  TWA140/TWS4: HOLDS tackX=1 crewX=-1 stays=1 sheet=35 brail=0 exc=14.1deg v=94%
+  TWA150/TWS4: HOLDS tackX=1 crewX=-1 stays=1 sheet=35 brail=0 exc=3.9deg v=108%
+  TWA160/TWS4: HOLDS tackX=1 crewX=-1 stays=1 sheet=35 brail=0 exc=5.7deg v=101%
+  TWA170/TWS4: HOLDS tackX=1 crewX=-1 stays=1 sheet=40 brail=0 exc=14.1deg v=101%
+  TWA180/TWS4: HOLDS tackX=-0.5 crewX=-0.5 stays=-1 sheet=35 brail=0 exc=4.1deg v=66%
+  TWA50/TWS6: HOLDS tackX=1 crewX=-0.5 stays=-1 sheet=8 brail=0 exc=1.6deg v=105%
+  TWA60/TWS6: HOLDS tackX=1 crewX=-0.5 stays=-1 sheet=8 brail=0 exc=8.2deg v=94%
+  TWA70/TWS6: HOLDS tackX=1 crewX=-1 stays=-1 sheet=12 brail=0 exc=0.1deg v=102%
+  TWA80/TWS6: HOLDS tackX=1 crewX=-0.5 stays=0 sheet=16 brail=0 exc=0.8deg v=103%
+  TWA90/TWS6: HOLDS tackX=1 crewX=-1 stays=0 sheet=20 brail=0 exc=0.3deg v=104%
+  TWA100/TWS6: HOLDS tackX=1 crewX=-1 stays=1 sheet=24 brail=0 exc=9.9deg v=104%
+  TWA110/TWS6: HOLDS tackX=1 crewX=-1 stays=1 sheet=28 brail=0 exc=12.5deg v=101%
+  TWA120/TWS6: HOLDS tackX=1 crewX=-1 stays=1 sheet=36 brail=0 exc=10.7deg v=97%
+  TWA130/TWS6: HOLDS tackX=1 crewX=-1 stays=1 sheet=55 brail=1 exc=14.1deg v=102%
+  TWA140/TWS6: HOLDS tackX=1 crewX=-1 stays=1 sheet=35 brail=0 exc=11.5deg v=101%
+  TWA150/TWS6: HOLDS tackX=1 crewX=-1 stays=1 sheet=35 brail=0 exc=1.6deg v=104%
+  TWA160/TWS6: HOLDS tackX=1 crewX=-1 stays=1 sheet=35 brail=0 exc=7.9deg v=98%
+  TWA170/TWS6: HOLDS tackX=-0.5 crewX=-0.5 stays=-1 sheet=40 brail=0 exc=13.8deg v=59%
+  TWA180/TWS6: HOLDS tackX=-0.5 crewX=0 stays=-1 sheet=68 brail=0 exc=1.9deg v=65%
+  TWA50/TWS10: HOLDS tackX=1 crewX=-0.5 stays=-1 sheet=8 brail=0 exc=5.6deg v=133%
+  TWA60/TWS10: HOLDS tackX=1 crewX=-0.5 stays=-1 sheet=12 brail=0 exc=2.4deg v=101%
+  TWA70/TWS10: HOLDS tackX=1 crewX=0.5 stays=0 sheet=12 brail=0 exc=14.4deg v=77%
+  TWA80/TWS10: HOLDS tackX=1 crewX=-1 stays=-1 sheet=16 brail=0 exc=9.1deg v=113%
+  TWA90/TWS10: HOLDS tackX=1 crewX=-1 stays=-1 sheet=16 brail=0 exc=0.8deg v=107%
+  TWA100/TWS10: HOLDS tackX=1 crewX=-1 stays=0 sheet=20 brail=0 exc=10.8deg v=107%
+  TWA110/TWS10: HOLDS tackX=1 crewX=-1 stays=0 sheet=28 brail=0 exc=3.8deg v=107%
+  TWA120/TWS10: HOLDS tackX=1 crewX=-1 stays=1 sheet=28 brail=0 exc=11.5deg v=98%
+  TWA130/TWS10: HOLDS tackX=1 crewX=-1 stays=1 sheet=35 brail=0.5 exc=3.7deg v=129%
+  TWA140/TWS10: HOLDS tackX=1 crewX=-1 stays=1 sheet=35 brail=0.5 exc=9.8deg v=119%
+  TWA150/TWS10: HOLDS tackX=1 crewX=-1 stays=1 sheet=35 brail=0 exc=2.4deg v=111%
+  TWA160/TWS10: HOLDS tackX=1 crewX=-1 stays=1 sheet=35 brail=0 exc=7.3deg v=97%
+  TWA170/TWS10: HOLDS tackX=-0.5 crewX=0.5 stays=0 sheet=40 brail=0 exc=14.3deg v=51%
+  TWA180/TWS10: HOLDS tackX=-0.5 crewX=0 stays=0 sheet=64 brail=0 exc=5.7deg v=72%

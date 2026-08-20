@@ -1,11 +1,15 @@
 parameter,value,note
-boat_length_m,5.5,T2 ~18ft; Wa'apa 4.9 lub 7.3 m
-hull_beam_m,0.55,waski kadlub kanu
-displacement_kg,250.0,"kadlub+zaloga, szacunek"
-ama_length_m,3.5,plywak nawietrzny
-ama_buoyancy_kg,80.0,szacunek
-ama_mass_kg,25.0,szacunek (drewno/kompozyt, znacznie lzejszy od jego wypornosci)
-beam_overall_m,2.5,rozstaw kadlub-ama
-sail_area_m2,12.0,typowe 8-15 m2 dla 5-6 m proa
-sail_apex_angle_deg,50.0,kleszcz kraba 45-60
-CE_height_m,2.0,"srodek ozaglowania nad WL, niski przy rei pochylonej"
+# PJOA FOLK, the owner's own boat (pjoa.eu/2020/10/03/folk-pjoa/), 2026-08-04.
+# Values marked MEASURED are published by the designer; the rest carry the note
+# that says how they were derived. See docs/adr/0021.
+boat_length_m,5.0,"MEASURED: pjoa.eu ""Lenght: 500cm"" (was 5.5, a Dierking T2/Wa'apa estimate)"
+hull_beam_m,0.52,"OWNER (from memory): 50-55 cm at the GUNWALE - it cannot be the waterline beam, see docs/adr/0022. Drawing only; no physics module reads hull.beam"
+displacement_kg,165.0,"MEASURED-derived: rigged 85-90 kg less the 13 kg ama = ~74 kg of boat, plus one 90 kg crew"
+ama_length_m,4.48,"NOT PUBLISHED - was 3.2 (scaled by the length ratio). Revised x1.40 per the steering campaign, docs/work-order-2026-08-05-boat-data.md: 3.2 m was itself an unmeasured scaling guess with no more claim to being right than a longer, more slender float of the same mass (ama_mass_kg is unchanged) and proportionally more buoyancy. Still well short of the 5.0 m hull."
+ama_buoyancy_kg,84.0,"NOT PUBLISHED - was 60.0 (scaled by the CUBE of the length ratio, a volume). Revised x1.40 alongside ama_length_m, LINEARLY (same cross-section, longer float), not by the cube -- the cube scaling was for resizing the WHOLE boat by one ratio (docs/adr/0021), not for this float's own length independently. See docs/work-order-2026-08-05-boat-data.md."
+ama_mass_kg,13.0,"MEASURED: pjoa.eu ""Ama (outrigger): 13 kg"""
+beam_overall_m,3.1,"MEASURED: pjoa.eu ""Beam: 310cm"" (was 2.5)"
+sail_area_m2,8.0,"MEASURED: pjoa.eu ""Crab law sail: 8 sqm"" (10 m2 is an option; was 12)"
+sail_apex_angle_deg,50.0,NOT PUBLISHED - kleszcz kraba 45-60, unchanged
+CE_height_m,2.0,"CORROBORATED: rig height 590/540cm; a crab claw peaked near the masthead has its centroid near 2 m. Unchanged"
+asymmetry_lift_coeff,0,"FREE-band, not a measurement -- see docs/adr/0049/0050. This 'default' variant is the CI/regression anchor (kept at 0 so every historical ADR figure keeps its meaning) and is DEPRECATED for new sailing/testing since ADR 0053 -- see pjoa_slim_parameters.csv / pjoa_fat_parameters.csv for the variants worth testing."

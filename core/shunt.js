@@ -8,30 +8,20 @@
 // (simulator.js) is responsible for turning a held button/key into that
 // edge, keeping this state machine itself simple and pure.
 //
-// SPEC ERRATUM applied (FIX_REQUEST_round3_worldframe.md R3-1): the ama is
-// bolted to ONE physical side of the hull — it does not relocate at a
-// shunt. The boat-frame y axis is defined via `heading` (always toward the
-// ACTIVE bow), so when `heading` jumps by PI at the swap, the whole local
-// frame rotates 180 deg in world terms, and the ama's LOCAL side (sign
-// `end`) must rotate WITH it for its WORLD side to stay put — i.e. `end`
-// flips, not "ama always at +y". World-velocity continuity under this PI
-// frame rotation requires u'=-u AND v'=-v (both components reverse, not
-// just u); yaw rate is frame-invariant, r'=r (left out of the patch below
-// on purpose — omitting it leaves the freshly-integrated r untouched rather
-// than overriding it). The previous swap (end*=-1, heading+=PI, u=-u, r=-r,
-// v preserved) matched the architecture doc as originally written, but that
-// doc was wrong: it injected a spurious sway reversal and yaw-rate reversal,
-// and forced the "ama always at +y" convention that flips the ama's WORLD
-// side at every shunt — see ARCHITECTURE_physics_core_EN.md's Conventions
-// section (rewritten) for the corrected frame definition.
+// THE SWAP TRANSFORM. The ama is bolted to ONE physical side of the hull —
+// it does not relocate at a shunt. The boat-frame y axis is defined via
+// `heading` (always toward the ACTIVE bow), so when `heading` jumps by PI at
+// the swap, the whole local frame rotates 180 deg in world terms, and the
+// ama's LOCAL side (sign `end`) must rotate WITH it for its WORLD side to
+// stay put — i.e. `end` flips. World-velocity continuity under this PI frame
+// rotation requires u'=-u AND v'=-v: both components reverse, not just u.
 //
-// Roll (phi, p — FIX_REQUEST_round4_roll_dof.md Part 1) is a PHYSICAL-frame
-// quantity (positive phi = the ama side rising, defined about the physical
-// hull axis, not the shunt-rotating active-bow frame) and is therefore left
-// out of the patch below entirely, same as r: omitting a key from the patch
-// leaves the freshly RK4-integrated value untouched rather than overriding
-// it, which is exactly "unchanged at swap" for a quantity that doesn't
-// depend on which tip is currently labeled bow.
+// Yaw rate is frame-invariant (r'=r), and roll (phi, p) is a PHYSICAL-frame
+// quantity — positive phi = the ama side rising, defined about the physical
+// hull axis rather than the shunt-rotating active-bow frame — so neither
+// changes at the swap. Both are left OUT of the patch below rather than
+// written back: omitting a key leaves the freshly RK4-integrated value
+// untouched, which is exactly "unchanged at swap".
 
 function normalizeAngle(a) {
   return Math.atan2(Math.sin(a), Math.cos(a));

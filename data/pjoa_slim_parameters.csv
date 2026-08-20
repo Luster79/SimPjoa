@@ -1,0 +1,17 @@
+parameter,value,note
+# PJOA Slim -- the PJOA FOLK (pjoa.eu/2020/10/03/folk-pjoa/) with the wide,
+# forgiving end of ADR 0050's hull-asymmetry-lift sweep. Identical to
+# example_proa_parameters.csv in every row except asymmetry_lift_coeff --
+# see that file for the geometry's own provenance and docs/adr/0021 for why
+# this is the real boat rather than a Dierking estimate.
+boat_length_m,5.0,"MEASURED: pjoa.eu ""Lenght: 500cm"" (was 5.5, a Dierking T2/Wa'apa estimate)"
+hull_beam_m,0.52,"OWNER (from memory): 50-55 cm at the GUNWALE - it cannot be the waterline beam, see docs/adr/0022. Drawing only; no physics module reads hull.beam"
+displacement_kg,165.0,"MEASURED-derived: rigged 85-90 kg less the 13 kg ama = ~74 kg of boat, plus one 90 kg crew"
+ama_length_m,4.48,"NOT PUBLISHED - was 3.2 (scaled by the length ratio). Revised x1.40 per the steering campaign, docs/work-order-2026-08-05-boat-data.md: 3.2 m was itself an unmeasured scaling guess with no more claim to being right than a longer, more slender float of the same mass (ama_mass_kg is unchanged) and proportionally more buoyancy. Still well short of the 5.0 m hull."
+ama_buoyancy_kg,84.0,"NOT PUBLISHED - was 60.0 (scaled by the CUBE of the length ratio, a volume). Revised x1.40 alongside ama_length_m, LINEARLY (same cross-section, longer float), not by the cube -- the cube scaling was for resizing the WHOLE boat by one ratio (docs/adr/0021), not for this float's own length independently. See docs/work-order-2026-08-05-boat-data.md."
+ama_mass_kg,13.0,"MEASURED: pjoa.eu ""Ama (outrigger): 13 kg"""
+beam_overall_m,3.1,"MEASURED: pjoa.eu ""Beam: 310cm"" (was 2.5)"
+sail_area_m2,8.0,"MEASURED: pjoa.eu ""Crab law sail: 8 sqm"" (10 m2 is an option; was 12)"
+sail_apex_angle_deg,50.0,NOT PUBLISHED - kleszcz kraba 45-60, unchanged
+CE_height_m,2.0,"CORROBORATED: rig height 590/540cm; a crab claw peaked near the masthead has its centroid near 2 m. Unchanged"
+asymmetry_lift_coeff,0.004,"FREE-band, not a measurement -- builder testimony for the mechanism/direction only (docs/adr/0049), magnitude from ADR 0050's overnight sweep: the WIDE plateau's best-balanced point (K3 close-hauled margins 1.8/8.3deg on the acceptance grid). Full suite 98/98 (0 regressions, 3 xfail promotions) and the TWA90-180 obtaining walk both verified in docs/adr/0053."

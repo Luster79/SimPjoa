@@ -3,7 +3,14 @@
   "version": "1.0.0",
   "description": "",
   "main": "run_tests.js",
-  "scripts": {},
+  "scripts": {
+    "test": "node run_tests.js --fast",
+    "test:full": "node run_tests.js",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Luster79/SimPjoa.git"
@@ -17,7 +24,11 @@
   },
   "homepage": "https://github.com/Luster79/SimPjoa#readme",
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.61.1",
-    "@types/node": "^26.1.1"
+    "@types/node": "^26.1.1",
+    "eslint": "^10.8.1",
+    "prettier": "^3.9.6",
+    "typescript": "^7.0.2"
   }
 }

@@ -1,0 +1,21 @@
+{
+  // R10 (docs/work-order-2026-07-22.md). Scoped to core/harness/tools --
+  // ui/app.js is deliberately excluded: document.getElementById() returns
+  // the generic HTMLElement, so every .value/.checked/.width read throughout
+  // that file needs its own JSDoc cast to type-check cleanly (~78 findings,
+  // all DOM-narrowing noise, zero in the excluded set). That is a real,
+  // separate annotation project, not part of "add the tooling" -- core,
+  // harness and tools type-check clean with zero errors as-is.
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "target": "ES2022",
+    "strict": false,
+    "types": ["node"]
+  },
+  "include": ["core/**/*.js", "harness/**/*.js", "tools/**/*.js", "run_tests.js"],
+  "exclude": ["node_modules", "dist", "out", "scratch", "Archive", "ui/**/*.js"]
+}

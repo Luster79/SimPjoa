@@ -1,0 +1,17 @@
+[13707s] end=1 TWS6 TWA150->TWA180 krok 10deg: nie (13707s)
+   legs=[160:152 170:160 180:BRAK]
+   doszla do TWA160.3 (cel 180+-10) converged=true restoring=true v=100% capsized=false
+   zatrzymanie: TWA180 (brak osiagalnego trymu)
+[29743s] end=1 TWS6 TWA150->TWA180 krok 5deg: nie (16036s)
+   legs=[155:152 160:152 165:160 170:160 175:BRAK]
+   doszla do TWA160.3 (cel 180+-10) converged=true restoring=true v=100% capsized=false
+   zatrzymanie: TWA175 (brak osiagalnego trymu)
+[52806s] end=1 TWS6 TWA150->TWA180 krok 2deg: nie (23063s)
+   legs=[152:152 154:152 156:152 158:152 160:152 162:153 164:160 166:160 168:160 170:160 172:BRAK]
+   doszla do TWA160.3 (cel 180+-10) converged=true restoring=true v=100% capsized=false
+   zatrzymanie: TWA172 (brak osiagalnego trymu)
+
+PODSUMOWANIE -- TWA150->TWA180, ten sam marsz przy roznym kroku
+  end=1 TWS6 krok 10deg: nie, TWA160.3, stanela na TWA180
+  end=1 TWS6 krok 5deg: nie, TWA160.3, stanela na TWA175
+  end=1 TWS6 krok 2deg: nie, TWA160.3, stanela na TWA172

@@ -1,0 +1,8 @@
+O8: TWA90 -> TWA45 walked oar-free through the 10deg grid, arrives in band and holds (TWS6, end=1): HOLDS
+  startHoldConfirmed=true legs=[80:88 70:80 60:61 50:44 45:44] reached TWA43.6 (target 45+-10) converged=true restoring=true speedRatio=100% capsized=false -- OUT OF DECLARED SCOPE (TWA<50)
+O9: TWA90 -> TWA180 walked oar-free through the 10deg grid, arrives in band and holds (TWS6, end=1): none
+  startHoldConfirmed=true legs=[100:104 110:113 120:110 130:129 140:150 150:151 160:151 170:NO-REACHABLE-TRIM] reached TWA151.3 (target 180+-10) converged=true restoring=true speedRatio=100% capsized=false
+O8: TWA90 -> TWA45 walked oar-free through the 10deg grid, arrives in band and holds (TWS6, end=-1): HOLDS
+  startHoldConfirmed=true legs=[80:88 70:80 60:61 50:44 45:44] reached TWA43.8 (target 45+-10) converged=true restoring=true speedRatio=100% capsized=false -- OUT OF DECLARED SCOPE (TWA<50)
+O9: TWA90 -> TWA180 walked oar-free through the 10deg grid, arrives in band and holds (TWS6, end=-1): none
+  startHoldConfirmed=true legs=[100:104 110:112 120:112 130:129 140:150 150:151 160:151 170:NO-REACHABLE-TRIM] reached TWA151.3 (target 180+-10) converged=true restoring=true speedRatio=100% capsized=false

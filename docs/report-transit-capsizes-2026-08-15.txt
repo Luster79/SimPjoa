@@ -1,0 +1,8 @@
+TWA100->TWA110 TWS6 end=1: RESOLVED (ramped) -- reached TWA113.1, converged=true restoring=true speedRatio=100% -- no longer capsizes once the trim change is ramped instead of stepped
+TWA100->TWA110 TWS6 end=-1: RESOLVED (ramped) -- reached TWA102.9, converged=true restoring=true speedRatio=102% -- no longer capsizes once the trim change is ramped instead of stepped
+TWA80->TWA70 TWS10 end=1: RESOLVED (ramped) -- reached TWA71.8, converged=true restoring=true speedRatio=97% -- no longer capsizes once the trim change is ramped instead of stepped
+TWA80->TWA70 TWS10 end=-1: RESOLVED (ramped) -- reached TWA73.7, converged=true restoring=true speedRatio=98% -- no longer capsizes once the trim change is ramped instead of stepped
+TWA160->TWA170 TWS10 end=1: STILL CAPSIZES/UNRESOLVED -- no ramped trim (widened grid) reached and held the destination -- not a step-artifact, or the destination trim itself does not survive
+TWA160->TWA170 TWS10 end=-1: STILL CAPSIZES/UNRESOLVED -- no ramped trim (widened grid) reached and held the destination -- not a step-artifact, or the destination trim itself does not survive
+
+SUMMARY: 4/6 of the ADR 0042 capsizing transitions resolve once ramped (widened grid); 2/6 still fail.

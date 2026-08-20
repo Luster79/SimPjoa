@@ -1,0 +1,71 @@
+[30s] end=1 TWS6 TWA50: holding trim FOUND
+[89s] end=1 TWS6 TWA60: holding trim FOUND
+[167s] end=1 TWS6 TWA70: holding trim FOUND
+[179s] end=1 TWS6 TWA80: holding trim FOUND
+[188s] end=1 TWS6 TWA90: holding trim FOUND
+[199s] end=1 TWS6 TWA100: holding trim FOUND
+[210s] end=1 TWS6 TWA110: holding trim FOUND
+[220s] end=1 TWS6 TWA120: holding trim FOUND
+[335s] end=1 TWS6 TWA130: holding trim FOUND
+[696s] end=1 TWS6 TWA140: holding trim FOUND
+[1037s] end=1 TWS6 TWA150: holding trim FOUND
+[1381s] end=1 TWS6 TWA160: holding trim FOUND
+[3454s] end=1 TWS6 TWA170: holding trim FOUND
+[3496s] end=1 TWS6 TWA180: holding trim FOUND
+[3498s] end=1 TWS6 TWA50->TWA60: HOLDS [ramp] -- reached TWA66.0 converged=true restoring=true capsized=false v=111% -- running 1/1
+[3500s] end=1 TWS6 TWA60->TWA50: HOLDS [ramp] -- reached TWA43.6 converged=true restoring=true capsized=false v=84% -- running 2/2
+[3503s] end=1 TWS6 TWA60->TWA70: HOLDS [ramp] -- reached TWA61.2 converged=true restoring=true capsized=false v=98% -- running 3/3
+[3505s] end=1 TWS6 TWA70->TWA60: HOLDS [ramp] -- reached TWA66.0 converged=true restoring=true capsized=false v=101% -- running 4/4
+[3507s] end=1 TWS6 TWA70->TWA80: HOLDS [ramp] -- reached TWA88.3 converged=true restoring=true capsized=false v=106% -- running 5/5
+[3510s] end=1 TWS6 TWA80->TWA70: HOLDS [ramp] -- reached TWA61.2 converged=true restoring=true capsized=false v=89% -- running 6/6
+[3512s] end=1 TWS6 TWA80->TWA90: HOLDS [ramp] -- reached TWA97.7 converged=true restoring=true capsized=false v=102% -- running 7/7
+[3514s] end=1 TWS6 TWA90->TWA80: HOLDS [ramp] -- reached TWA88.3 converged=true restoring=true capsized=false v=99% -- running 8/8
+[3516s] end=1 TWS6 TWA90->TWA100: HOLDS [ramp] -- reached TWA94.7 converged=true restoring=true capsized=false v=99% -- running 9/9
+[3519s] end=1 TWS6 TWA100->TWA90: HOLDS [ramp] -- reached TWA97.7 converged=true restoring=true capsized=false v=100% -- running 10/10
+[3519s] end=1 TWS6 TWA100->TWA110: none [ramp] -- reached TWA100.8 converged=true restoring=false capsized=true v=0% -- running 10/11
+[3521s] end=1 TWS6 TWA110->TWA100: HOLDS [ramp] -- reached TWA94.7 converged=true restoring=true capsized=false v=98% -- running 11/12
+[3524s] end=1 TWS6 TWA110->TWA120: HOLDS [ramp] -- reached TWA114.9 converged=true restoring=true capsized=false v=100% -- running 12/13
+[3526s] end=1 TWS6 TWA120->TWA110: HOLDS [ramp] -- reached TWA109.6 converged=true restoring=true capsized=false v=100% -- running 13/14
+[3528s] end=1 TWS6 TWA120->TWA130: HOLDS [ramp] -- reached TWA124.6 converged=true restoring=true capsized=false v=99% -- running 14/15
+[3531s] end=1 TWS6 TWA130->TWA120: HOLDS [ramp] -- reached TWA114.9 converged=true restoring=true capsized=false v=101% -- running 15/16
+[3533s] end=1 TWS6 TWA130->TWA140: none [ramp] -- reached TWA118.1 converged=true restoring=true capsized=false v=101% -- running 15/17
+[3535s] end=1 TWS6 TWA140->TWA130: none [ramp] -- reached TWA153.9 converged=true restoring=true capsized=false v=100% -- running 15/18
+[3537s] end=1 TWS6 TWA140->TWA150: HOLDS [ramp] -- reached TWA152.0 converged=true restoring=true capsized=false v=100% -- running 16/19
+[3539s] end=1 TWS6 TWA150->TWA140: HOLDS [ramp] -- reached TWA149.2 converged=true restoring=true capsized=false v=100% -- running 17/20
+[3542s] end=1 TWS6 TWA150->TWA160: HOLDS [ramp] -- reached TWA152.0 converged=true restoring=true capsized=false v=100% -- running 18/21
+[3544s] end=1 TWS6 TWA160->TWA150: HOLDS [ramp] -- reached TWA152.0 converged=true restoring=true capsized=false v=100% -- running 19/22
+[3546s] end=1 TWS6 TWA160->TWA170: none [ramp] -- reached TWA159.6 converged=true restoring=true capsized=false v=100% -- running 19/23
+[3548s] end=1 TWS6 TWA170->TWA160: HOLDS [ramp] -- reached TWA152.0 converged=true restoring=true capsized=false v=100% -- running 20/24
+[3550s] end=1 TWS6 TWA170->TWA180: none [ramp] -- reached TWA60.4 converged=true restoring=true capsized=false v=319% -- running 20/25
+[3553s] end=1 TWS6 TWA180->TWA170: none [ramp] -- reached TWA119.5 converged=true restoring=true capsized=false v=104% -- running 20/26
+-- row end=1 TWS6 took 3553s
+
+COVERAGE: 20/26 transitions obtainable with the oar shipped throughout (K1's converged+restoring predicate), grid TWA 50-180 step 10, TWS 6, end 1, mode ramp.
+
+Per-transition detail:
+  end=1 TWS6 TWA50->TWA60: HOLDS [ramp] -- reached TWA66.0 exc=10.8deg converged=true restoring=true capsized=false v=111%
+  end=1 TWS6 TWA60->TWA50: HOLDS [ramp] -- reached TWA43.6 exc=12.0deg converged=true restoring=true capsized=false v=84%
+  end=1 TWS6 TWA60->TWA70: HOLDS [ramp] -- reached TWA61.2 exc=2.5deg converged=true restoring=true capsized=false v=98%
+  end=1 TWS6 TWA70->TWA60: HOLDS [ramp] -- reached TWA66.0 exc=1.5deg converged=true restoring=true capsized=false v=101%
+  end=1 TWS6 TWA70->TWA80: HOLDS [ramp] -- reached TWA88.3 exc=10.5deg converged=true restoring=true capsized=false v=106%
+  end=1 TWS6 TWA80->TWA70: HOLDS [ramp] -- reached TWA61.2 exc=14.2deg converged=true restoring=true capsized=false v=89%
+  end=1 TWS6 TWA80->TWA90: HOLDS [ramp] -- reached TWA97.7 exc=4.9deg converged=true restoring=true capsized=false v=102%
+  end=1 TWS6 TWA90->TWA80: HOLDS [ramp] -- reached TWA88.3 exc=3.4deg converged=true restoring=true capsized=false v=99%
+  end=1 TWS6 TWA90->TWA100: HOLDS [ramp] -- reached TWA94.7 exc=1.3deg converged=true restoring=true capsized=false v=99%
+  end=1 TWS6 TWA100->TWA90: HOLDS [ramp] -- reached TWA97.7 exc=1.5deg converged=true restoring=true capsized=false v=100%
+  end=1 TWS6 TWA100->TWA110: NONE [ramp] -- reached TWA100.8 exc=1.0deg converged=true restoring=false capsized=true v=0%
+  end=1 TWS6 TWA110->TWA100: HOLDS [ramp] -- reached TWA94.7 exc=5.6deg converged=true restoring=true capsized=false v=98%
+  end=1 TWS6 TWA110->TWA120: HOLDS [ramp] -- reached TWA114.9 exc=2.2deg converged=true restoring=true capsized=false v=100%
+  end=1 TWS6 TWA120->TWA110: HOLDS [ramp] -- reached TWA109.6 exc=2.4deg converged=true restoring=true capsized=false v=100%
+  end=1 TWS6 TWA120->TWA130: HOLDS [ramp] -- reached TWA124.6 exc=3.9deg converged=true restoring=true capsized=false v=99%
+  end=1 TWS6 TWA130->TWA120: HOLDS [ramp] -- reached TWA114.9 exc=4.1deg converged=true restoring=true capsized=false v=101%
+  end=1 TWS6 TWA130->TWA140: NONE [ramp] -- reached TWA118.1 exc=2.6deg converged=true restoring=true capsized=false v=101%
+  end=1 TWS6 TWA140->TWA130: NONE [ramp] -- reached TWA153.9 exc=0.5deg converged=true restoring=true capsized=false v=100%
+  end=1 TWS6 TWA140->TWA150: HOLDS [ramp] -- reached TWA152.0 exc=0.2deg converged=true restoring=true capsized=false v=100%
+  end=1 TWS6 TWA150->TWA140: HOLDS [ramp] -- reached TWA149.2 exc=0.3deg converged=true restoring=true capsized=false v=100%
+  end=1 TWS6 TWA150->TWA160: HOLDS [ramp] -- reached TWA152.0 exc=0.0deg converged=true restoring=true capsized=false v=100%
+  end=1 TWS6 TWA160->TWA150: HOLDS [ramp] -- reached TWA152.0 exc=0.0deg converged=true restoring=true capsized=false v=100%
+  end=1 TWS6 TWA160->TWA170: NONE [ramp] -- reached TWA159.6 exc=0.6deg converged=true restoring=true capsized=false v=100%
+  end=1 TWS6 TWA170->TWA160: HOLDS [ramp] -- reached TWA152.0 exc=0.5deg converged=true restoring=true capsized=false v=100%
+  end=1 TWS6 TWA170->TWA180: NONE [ramp] -- reached TWA60.4 exc=5.4deg converged=true restoring=true capsized=false v=319%
+  end=1 TWS6 TWA180->TWA170: NONE [ramp] -- reached TWA119.5 exc=8.8deg converged=true restoring=true capsized=false v=104%

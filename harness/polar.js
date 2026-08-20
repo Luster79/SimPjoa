@@ -15,11 +15,16 @@ function normalizeAngle(a) { return Math.atan2(Math.sin(a), Math.cos(a)); }
 
 // headingHoldRudder — small P+D autopilot used by the whole harness (polar
 // runs and scenarios) to hold a course so TWA stays put while speed settles.
-// The state.end factor compensates for the rudder's lever-arm sign flip
-// after a shunt (see rudder.js), so the same gains work on either tack/end.
+//
+// The `state.end` factor this used to carry is GONE (2026-08-04). It existed
+// to compensate for the oar's lever arm flipping sign after a shunt — which
+// was itself the bug: core/rudder.js placed the oar at the BOW on end -1. With
+// the lever arm corrected, positive rudder gives a positive yaw moment on both
+// ends and the autopilot needs no end-awareness. Keeping the factor after the
+// fix would have re-introduced the same inversion from the other side.
 export function headingHoldRudder(state, targetHeading, config, kp = 2.5, kd = 1.2) {
   const error = normalizeAngle(targetHeading - state.heading);
-  const raw = state.end * (kp * error - kd * state.r);
+  const raw = kp * error - kd * state.r;
   return Math.max(-1, Math.min(1, raw));
 }
 
@@ -43,8 +48,8 @@ function makeInitialState(deltaStart = 0) {
   // the sheet dynamics still fully govern delta from there on; nothing
   // stops it moving away again if that isn't actually where it settles.
   return {
-    t: 0, x: 0, y: 0, heading: HEADING0, u: 1.0, v: 0, r: 0, phi: 0, p: 0, delta: deltaStart, end: 1,
-    amaLoad: 0, abackTimer: 0, overloadTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 },
+    t: 0, x: 0, y: 0, heading: HEADING0, u: 1.0, v: 0, r: 0, phi: 0, p: 0, z: 0, w: 0, delta: deltaStart, end: 1,
+    amaLoad: 0, abackTimer: 0, capsized: false, shunt: { phase: 'none', progress: 0 },
   };
 }
 
@@ -76,25 +81,46 @@ const HEADING_HOLD_TOLERANCE = 15 * DEG;
 //   FIX_REQUEST_step1_review.md MEDIUM-2: a previous version returned it
 //   unconditionally, letting a transient spike from an unsettled, unstable
 //   trim masquerade as the polar's best speed for that heading).
-// simulateToSteady(config, twaDeg, tws, sheetDeg, crewPos, maxSeconds) ->
-// { speed, settled, deltaDeg }. sheetDeg is the SEARCH VARIABLE now (R5-1):
-// the sheet limit, not the actual yard angle — the settled actual yard
-// angle (state.delta) is reported separately as deltaDeg, since the two
-// only coincide when the sheet is taut (see bestForHeading's assertion-
-// facing use in harness/asserts.js).
-function simulateToSteady(config, twaDeg, tws, sheetDeg, crewPos, maxSeconds = 25) {
+// simulateToSteady(config, twaDeg, tws, sheetDeg, crewPos, brailWind,
+// maxSeconds) -> { speed, settled, deltaDeg }. sheetDeg is the SEARCH
+// VARIABLE now (R5-1): the sheet limit, not the actual yard angle — the
+// settled actual yard angle (state.delta) is reported separately as
+// deltaDeg, since the two only coincide when the sheet is taut (see
+// bestForHeading's assertion-facing use in harness/asserts.js). brailWind
+// (round 10c, C1): the windward brail ("carrot") is now also a search
+// variable, but only for deep TWAs (see BRAIL_SEARCH_DEEP below) — the
+// two-regime brailWind characteristic makes a partial carrot pull a real
+// candidate for the polar-optimal deep trim, not just a survival/panic
+// control.
+// P2 (Archive/work-order-2026-07-22.md, Archive/diagnostic-2026-07-22-residuary-hump.md
+// Result 5): the OLD gate required 10 CONSECUTIVE per-step samples each
+// within 0.01 m/s of the last one, reset to zero by a single noisy tick —
+// with maxSeconds=25 that left only ~15s for acceleration, and some
+// trims (e.g. TWA100/TWS6, sheet16/crewPos0.3) genuinely need close to
+// 30s to cross into that window at all, so they were discarded as
+// "unsettled" at 25s even though a 400s run confirms they are: speed
+// 7.38 at both 25s and 400s, `out/polar.csv` reporting 4.36 for that row
+// because the fast trims never accumulated their 10 consecutive seconds
+// in time. Fixed with a SLIDING window instead of a resettable counter
+// (settleWindow most recent 1Hz samples; converged once their spread,
+// not their per-step delta, is small) — this detects the same genuine
+// convergence without needing every intermediate second to individually
+// look flat, and maxSeconds raised 25->35 to give slow trims enough
+// runway to actually reach it (verified against the diagnostic's own
+// case: settles at t=29s, speed 7.382, within 0.02% of the 400s value).
+function simulateToSteady(config, twaDeg, tws, sheetDeg, crewPos, brailWind = 0, tackX = 0, maxSeconds = 35) {
   const windDirFrom = HEADING0 + twaDeg * DEG;
   const controls = {
     windDirFrom, windSpeed: tws, sheet: sheetDeg * DEG, rudder: 0,
-    brailLee: 0, brailWind: 0, crewPos, crewPosX: 0, shuntRequest: false,
+    brailLee: 0, brailWind, crewPos, crewPosX: 0, tackX, shuntRequest: false,
   };
 
   let state = makeInitialState(Math.min(Math.abs(sheetDeg) * DEG, Math.PI / 2));
   const dt = config.dt;
   const stepsPerSecond = Math.round(1 / dt);
-  const settleWindow = 10; // seconds of near-constant speed required
-  let lastSampleSpeed = 0;
-  let stableSeconds = 0;
+  const settleWindow = 10; // seconds of trailing samples the spread check looks across
+  const SETTLE_SPREAD = 0.05; // m/s — max-min allowed across that trailing window
+  const window = [];
   let settled = false;
 
   const maxSteps = Math.round(maxSeconds * stepsPerSecond);
@@ -104,17 +130,13 @@ function simulateToSteady(config, twaDeg, tws, sheetDeg, crewPos, maxSeconds = 2
 
     if (i % stepsPerSecond === 0) {
       const speed = Math.hypot(state.u, state.v);
-      if (Math.abs(speed - lastSampleSpeed) < 0.01) {
-        stableSeconds += 1;
-        if (stableSeconds >= settleWindow) {
-          const headingError = Math.abs(normalizeAngle(state.heading - HEADING0));
-          settled = headingError <= HEADING_HOLD_TOLERANCE;
-          break;
-        }
-      } else {
-        stableSeconds = 0;
+      window.push(speed);
+      if (window.length > settleWindow) window.shift();
+      if (window.length === settleWindow && Math.max(...window) - Math.min(...window) < SETTLE_SPREAD) {
+        const headingError = Math.abs(normalizeAngle(state.heading - HEADING0));
+        settled = headingError <= HEADING_HOLD_TOLERANCE;
+        break;
       }
-      lastSampleSpeed = speed;
     }
   }
   return { speed: Math.hypot(state.u, state.v), settled, deltaDeg: state.delta / DEG };
@@ -127,32 +149,137 @@ function simulateToSteady(config, twaDeg, tws, sheetDeg, crewPos, maxSeconds = 2
 // achievable polar speed genuinely depends on crew position across most of
 // its range, matching the prompt's "sailing controlled almost entirely by
 // sheet and crew position" description — not just a light-air trim detail.
-const CREW_POS_SEARCH = [0, 0.3, 0.6, 1.0];
+// Keep full range. It looks like dead weight at 6 m/s — it wins at no TWA
+// there, and from about TWA150 down it cannot be held at all (crewPos*
+// crew.mass exceeds ama.maxBuoyancy, 90 kg vs 80 kgf, so the ama is pressed
+// under). But the polar also runs at 10 m/s, and there full hiking is
+// exactly what the boat needs: dropping to the top of the range cost 6-9% of
+// reaching speed across TWA 60-110 at that wind (e.g. TWA90 12.05 -> 10.86
+// m/s). Any future trim of this grid has to be measured across the whole
+// twsList, not one wind.
+//   Capped at config.crew.posMax (O7, docs/work-order-2026-08-10-ostrzenie.md),
+// not a bare 1.0: 1.0 is the UI's own literal top of travel, but posMax
+// (0.933 on the current boat, config.js's own derivation) is where the crew's
+// weight alone sinks the ama outright, and the UI already clamps every
+// interactive control to it (ui/app.js). A search that goes past it is
+// picking a trim the boat cannot actually be sailed at -- three copies of
+// this same search (this file, findHoldingTrim, S3) did, silently, until
+// the owner decided (2026-08-11) to keep the limit soft (UI-only, not
+// hardened in /core) but respected by every search that stands in for a
+// real sailor's reach.
+function crewPosSearch(config) {
+  return [...new Set([0, 0.3, 0.6, Math.min(1.0, config.crew.posMax)])];
+}
 
-function bestForHeading(config, twaDeg, tws) {
-  let best = { speed: 0, sheet: 0, delta: 0, crewPos: 0 };
+// BRAIL_SEARCH_DEEP (round 10c, C1): coarse grid, only added for TWA>=135
+// (see bestForHeading) — the manual's "carrot" is a downwind-only
+// technique, and searching it across the whole polar would multiply the
+// (already O(sheet*crewPos)) search cost for no benefit upwind/on a reach,
+// where a partial windward brail is never the fast trim. 0 and 0.6 bracket
+// the TRIM regime (config.sail.brailTrimRange's own default); 0.3 samples
+// its middle.
+const BRAIL_SEARCH_DEEP = [0, 0.3, 0.6];
+
+// TACKX_SEARCH (S2, work-order-2026-08-02): the rig's fore-aft position is a
+// real trim, so the polar searches it — freezing it at 0 would have reported
+// a boat sailing with its helm permanently out of balance. Restricted to
+// close-hauled headings, and the restriction is measured, not assumed. Speed
+// gain of the best tackX over tackX=0, TWS 6: TWA 45 +3.45%, TWA 70 +0.92%,
+// TWA 90 +0.00%, TWA 110 +0.11%, and TWA 90 at TWS 10 +0.04%. Past ~70deg
+// the boat has little helm left for the tack to null out, and what is left
+// is inside the search's own noise.
+//   Negative (tack aft) is excluded for the same measured reason it is
+// included nowhere else: it LOSES close-hauled (TWA 45 -5.4%, TWA 70 -2.0%)
+// and its best showing anywhere is +0.11%, which is noise. It remains fully
+// available as a CONTROL — it is how the boat points up — it just never wins
+// a steady-state speed contest, which is the only question this sweep asks.
+const TACKX_SEARCH = [0, 0.5, 1];
+const TACKX_SEARCH_TWA_MAX = 70;
+
+// bestForHeading as a GENERATOR, yielding once per individual trial. A whole
+// heading is far too coarse a unit of work to hand a UI: measured 3-12.5s of
+// solid main-thread time per heading, so an interactive caller that only got
+// to breathe between headings still froze the tab in multi-second blocks (56
+// of them for the full sweep). One trial is ~10-100ms, which a caller can
+// batch to whatever frame budget it actually has. Node callers just drain it.
+function* bestForHeadingSteps(config, twaDeg, tws) {
+  let best = { speed: 0, sheet: 0, delta: 0, crewPos: 0, brailWind: 0, tackX: 0 };
+  const brailOptions = twaDeg >= 135 ? BRAIL_SEARCH_DEEP : [0];
+  const tackOptions = twaDeg <= TACKX_SEARCH_TWA_MAX ? TACKX_SEARCH : [0];
+  const crewOptions = crewPosSearch(config);
   for (let sheet = 4; sheet <= 88; sheet += 4) {
-    for (const crewPos of CREW_POS_SEARCH) {
-      const { speed, settled, deltaDeg } = simulateToSteady(config, twaDeg, tws, sheet, crewPos);
-      if (settled && speed > best.speed) best = { speed, sheet, delta: deltaDeg, crewPos };
+    for (const crewPos of crewOptions) {
+      for (const brailWind of brailOptions) {
+        for (const tackX of tackOptions) {
+          const { speed, settled, deltaDeg } = simulateToSteady(config, twaDeg, tws, sheet, crewPos, brailWind, tackX);
+          if (settled && speed > best.speed) best = { speed, sheet, delta: deltaDeg, crewPos, brailWind, tackX };
+          yield;
+        }
+      }
     }
   }
   return best;
 }
 
-export function computePolar(config, { twsList, twaFrom = 40, twaTo = 170, step = 10 }) {
-  const rows = [];
+function polarRow(config, twa, tws, best) {
+  return {
+    twa, tws,
+    bestSpeed: best.speed,
+    bestSheetAngle: best.sheet,
+    deltaAngle: best.delta,
+    bestCamberUse: config.sail.camber,
+    bestBrailWind: best.brailWind,
+    // bestCrewPos (S1, work-order-2026-08-02): the search has always covered
+    // crew position across its full range (crewPosSearch(config)) but never
+    // reported which one won, so no caller could reproduce "the boat at its
+    // polar-optimal trim" — the operating point S1's helm-balance assertions
+    // are defined at. Deliberately NOT added to the exported CSV: that
+    // header is written out explicitly in run_tests.js and ui/app.js, so the
+    // byte-gated out/polar_<boat>.csv files (ADR 0054) are unaffected.
+    bestCrewPos: best.crewPos,
+    // bestTackX (S2): like bestCrewPos, reported on the row but deliberately
+    // NOT added to the exported CSV header, which is written out explicitly
+    // in run_tests.js and ui/app.js.
+    bestTackX: best.tackX,
+  };
+}
+
+// computePolarSteps — the same sweep as computePolar, but yielding between
+// trials so an interactive caller can stay responsive, and emitting a row
+// object each time a heading completes. Rows arrive in the same order
+// computePolar returns them.
+export function* computePolarSteps(config, { twsList, twaFrom = 40, twaTo = 170, step = 10 }) {
   for (const tws of twsList) {
     for (let twa = twaFrom; twa <= twaTo; twa += step) {
-      const best = bestForHeading(config, twa, tws);
-      rows.push({
-        twa, tws,
-        bestSpeed: best.speed,
-        bestSheetAngle: best.sheet,
-        deltaAngle: best.delta,
-        bestCamberUse: config.sail.camber,
-      });
+      const steps = bestForHeadingSteps(config, twa, tws);
+      let r = steps.next();
+      while (!r.done) { yield null; r = steps.next(); }
+      yield polarRow(config, twa, tws, r.value);
     }
+  }
+}
+
+// The two sweeps this project actually runs. They are DELIBERATELY not the
+// same grid, and naming both here is the point: they used to differ only by
+// two literals sitting in run_tests.js and ui/app.js, which read as an
+// oversight (and had the README claiming they were identical).
+//
+// SWEEP_CI omits 8 m/s. Nothing in harness/asserts.js needs that wind — the
+// acceptance bands are anchored at 4/6/10 — and the sweep is the slowest
+// part of the suite, so a fourth wind costs a third more runtime to
+// regenerate a column no assertion reads.
+// SWEEP_FULL is what the demo offers, where the extra wind is worth having:
+// it is a diagram a person reads, not an assertion, and nobody is waiting on
+// CI for it.
+export const SWEEP_CI = { twsList: [4, 6, 10], twaFrom: 40, twaTo: 170, step: 10 };
+export const SWEEP_FULL = { twsList: [4, 6, 8, 10], twaFrom: 40, twaTo: 170, step: 10 };
+
+// computePolar — unchanged blocking API for Node (tests, CSV export): drains
+// the generator above, so there is exactly one implementation of the search.
+export function computePolar(config, opts) {
+  const rows = [];
+  for (const row of computePolarSteps(config, opts)) {
+    if (row) rows.push(row);
   }
   return rows;
 }

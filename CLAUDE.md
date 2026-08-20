@@ -60,13 +60,26 @@ For multi-step tasks, state a brief plan:
 
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
 
-## 5. Architectural Context (ARCHITECTURE.md)
+## 5. Architectural Context (ARCHITECTURE_physics_core_EN.md)
 
 **Understand the domain before making changes.**
-There is an `ARCHITECTURE.md` file in the project's root directory. This document serves as a "Context Map" and contains detailed information about the project layout (Kotlin Multiplatform), architecture (MVVM/Clean), battle engine (ONNX AI / CombatResolver), and Multiplayer mode (Firebase).
-You must consult it especially before modifying battle mechanics, ViewModel structure, or before starting any task affecting the gameplay system. Once you identify where to make the change, modify the logic adhering to these established patterns.
+This is SimPjoa: a dependency-free ES-module physics simulator for a Polynesian proa
+(crab-claw rig, shunting outrigger), plus a canvas-based browser UI. `ARCHITECTURE_physics_core_EN.md`
+in the project root is the context map — module layout (`/core`, `/harness`, `/ui`), the
+frame/sign conventions (world vs. boat vs. active-bow frame, `state.end`), and the physics
+modules (aero, hydro, stability/roll, sheet/shunt state machines). `docs/README.md`
+is the index for everything else — ADRs, work orders and their findings — and states
+the conventions that bind physics changes (the per-boat `out/polar_<boat>.csv`
+byte gates, the source-then-`dist/` commit order, and what `xfail` means here).
+Consult both before modifying anything under `/core` or `/harness`, or before changing the
+shunt/roll state machines in the UI — those all depend on the conventions they document.
 
-Ważna uwaga: na branchu feature/kmp-migration masz pełną autonomię — wykonuj zmiany bez pytania o potwierdzenie.
+**The project's success criterion** — the most physically realistic proa simulation
+achievable, with *any course obtainable and permanently holdable without the oar*, on
+physical characteristics that may be manipulated only within a limited range and mainly
+where they are unknown — is stated in full at the top of `docs/README.md`, together with
+its current scope (TWA < 50 excluded since 2026-08-09 — deferred, not solved). Judge
+physics work by how much oar-shipped course coverage it buys.
 
 ## 6. Documentation Layering and Maintenance
 
@@ -77,8 +90,8 @@ Ważna uwaga: na branchu feature/kmp-migration masz pełną autonomię — wykon
 Project documentation follows a layered model to minimize token usage:
 
 - **`CLAUDE.md`** (this file, always loaded) — behavioral rules and the documentation map.
-- **`ARCHITECTURE.md`** (always loaded) — high-level context map: modules, boundaries, key patterns, links to deeper docs.
-- **`docs/<area>.md`** (load on demand) — one file per bounded area (e.g. `docs/battle-engine.md`, `docs/multiplayer.md`, `docs/viewmodels.md`). Read only the file(s) relevant to the current task.
+- **`ARCHITECTURE_physics_core_EN.md`** (always loaded) — high-level context map: modules, boundaries, key patterns, links to deeper docs. (Named `ARCHITECTURE.md` in earlier drafts of this file; the repo has only the `_physics_core_EN` one.)
+- **`docs/<area>.md`** (load on demand) — one file per bounded area (e.g. `docs/parameter-register.md`). Read only the file(s) relevant to the current task. Completed work orders and their findings are chronicle, not current state: they live in `Archive/` and are cited from code comments as evidence, not as descriptions of how the code works now.
 - **`docs/adr/NNNN-*.md`** (load on demand) — Architecture Decision Records. Short, dated, append-only. Read when working in an area whose ADR is referenced.
 - **Code-level docs** — KDoc/comments live next to the code. Do not duplicate them in markdown.
 
@@ -101,7 +114,7 @@ Do NOT put in markdown:
 
 At the end of every coding session, before reporting completion, run this checklist:
 
-1. **Identify documentation impact.** List which markdown files (`ARCHITECTURE.md`, `docs/*.md`, ADRs) describe the area you changed. If none describe it and the change is non-trivial, decide whether a new doc is justified — bias toward NO unless the change introduces a new module, pattern, or cross-cutting concern.
+1. **Identify documentation impact.** List which markdown files (`ARCHITECTURE_physics_core_EN.md`, `docs/*.md`, ADRs) describe the area you changed. If none describe it and the change is non-trivial, decide whether a new doc is justified — bias toward NO unless the change introduces a new module, pattern, or cross-cutting concern.
 2. **Check for staleness.** For each affected doc, scan for statements that the changes made inaccurate: outdated module names, removed patterns, changed flows, obsolete commands. List them explicitly before editing.
 3. **Apply surgical doc edits.** Update only the statements that became inaccurate. Do not rewrite sections that are still correct. Same rules as code (section #3): every changed line traces to the user's request or to a staleness fix.
 4. **Architectural decisions get an ADR.** If the change reflects a non-trivial architectural decision (new dependency, abandoned pattern, new module boundary, changed data flow), create `docs/adr/NNNN-short-title.md` using the next available number. ADRs are short (under one page): Context, Decision, Consequences, Date. They are append-only — never edit an old ADR; supersede it with a new one.

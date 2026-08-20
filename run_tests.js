@@ -1,49 +1,102 @@
 // run_tests.js — runs the full Step 1 test harness. Nonzero exit code on
-// any assertion failure. Writes scenario + polar CSVs to /out.
+// any assertion failure. Writes scenario CSVs (for 'default') and one
+// polar CSV per named boat (ADR 0054) to /out.
 
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { createConfig } from './core/config.js';
+import { createConfig, BOAT_VARIANTS } from './core/config.js';
 import { runAsserts } from './harness/asserts.js';
-import { scenarioSquall, scenarioShunt, scenarioAback, scenarioStop } from './harness/scenarios.js';
-import { computePolar } from './harness/polar.js';
+import { scenarioSquall, scenarioShunt, scenarioAback, scenarioStop, scenarioThroughGybeAback } from './harness/scenarios.js';
+import { computePolar, SWEEP_CI } from './harness/polar.js';
 import { toCSV } from './harness/export.js';
 
+function polarCsvFor(config) {
+  const polar = computePolar(config, SWEEP_CI);
+  return ['twa,tws,bestSpeed,bestSheetAngle,deltaAngle,bestCamberUse,bestBrailWind']
+    .concat(polar.map((r) => `${r.twa},${r.tws},${r.bestSpeed.toFixed(4)},${r.bestSheetAngle},${r.deltaAngle.toFixed(2)},${r.bestCamberUse},${r.bestBrailWind}`))
+    .join('\n');
+}
+
+// --fast (R7, Archive/work-order-2026-07-22.md): skips every computePolar-
+// backed assertion (see harness/asserts.js's `slow` param) and the CSV/
+// polar export below — both dominated by grid-search settle-to-steady
+// simulations, the slow part of the full run (now ~4 polars deep, ADR 0054,
+// so longer than the original ~6min). Target <~20s, for a quick inner-loop
+// check; `npm run test:full` (no flag) runs everything, including the
+// out/polar_<boat>.csv byte-gates CI depends on.
 function main() {
+  const fast = process.argv.includes('--fast');
+
   console.log('Building CONFIG (loading + cross-checking aero table)...');
   const config = createConfig();
   console.log('CONFIG OK.\n');
 
   mkdirSync('out', { recursive: true });
 
-  console.log('Running acceptance assertions...');
-  const results = runAsserts(config);
+  console.log(`Running acceptance assertions${fast ? ' (--fast: skipping polar-sweep checks)' : ''}...`);
+  const results = runAsserts(config, { slow: !fast });
+  const nonXfail = results.filter((r) => !r.xfail);
+  const xfail = results.filter((r) => r.xfail);
+
   let failCount = 0;
-  for (const r of results) {
+  for (const r of nonXfail) {
     console.log(`  [${r.pass ? 'PASS' : 'FAIL'}] ${r.name}${r.detail ? ' — ' + r.detail : ''}`);
     if (!r.pass) failCount++;
   }
-  console.log(`\n${results.length - failCount}/${results.length} assertions passed.\n`);
+  console.log(`\n${nonXfail.length - failCount}/${nonXfail.length} assertions passed.\n`);
 
-  console.log('Exporting scenario CSVs to /out...');
-  writeFileSync('out/scenario_squall.csv', toCSV(scenarioSquall(config)));
-  writeFileSync('out/scenario_shunt.csv', toCSV(scenarioShunt(config)));
-  writeFileSync('out/scenario_aback.csv', toCSV(scenarioAback(config)));
-  writeFileSync('out/scenario_stop.csv', toCSV(scenarioStop(config)));
+  // KNOWN MODEL LIMITATIONS (ROUND7_DECISION.md D-3/D-4): these run every
+  // time, are EXPECTED to fail, and are excluded from the pass count above
+  // — but a promotion (an xfail that starts passing) is treated as a build
+  // failure, not silently welcomed, since it means the model changed and
+  // the xfail mark needs an explicit human decision to lift.
+  let promotionCount = 0;
+  if (xfail.length) {
+    console.log('KNOWN MODEL LIMITATIONS (expected-fail, tracked — see each line\'s own detail for the diagnosing doc):');
+    for (const r of xfail) {
+      if (r.pass) {
+        console.log(`  [PROMOTION CANDIDATE] ${r.name}${r.detail ? ' — ' + r.detail : ''} (xfail:${r.xfail} now PASSES — promote it out of xfail)`);
+        promotionCount++;
+      } else {
+        console.log(`  [xfail:${r.xfail}] ${r.name}${r.detail ? ' — ' + r.detail : ''}`);
+      }
+    }
+    console.log('');
+  }
 
-  console.log('Computing + exporting polar.csv...');
-  const polar = computePolar(config, { twsList: [4, 6, 10], twaFrom: 40, twaTo: 170, step: 10 });
-  const polarCsv = ['twa,tws,bestSpeed,bestSheetAngle,deltaAngle,bestCamberUse']
-    .concat(polar.map((r) => `${r.twa},${r.tws},${r.bestSpeed.toFixed(4)},${r.bestSheetAngle},${r.deltaAngle.toFixed(2)},${r.bestCamberUse}`))
-    .join('\n');
-  writeFileSync('out/polar.csv', polarCsv);
+  if (fast) {
+    console.log('Skipping CSV/polar export (--fast).\n');
+  } else {
+    console.log('Exporting scenario CSVs to /out...');
+    writeFileSync('out/scenario_squall.csv', toCSV(scenarioSquall(config)));
+    writeFileSync('out/scenario_shunt.csv', toCSV(scenarioShunt(config)));
+    writeFileSync('out/scenario_aback.csv', toCSV(scenarioAback(config)));
+    writeFileSync('out/scenario_stop.csv', toCSV(scenarioStop(config)));
+    writeFileSync('out/scenario_through_gybe_aback.csv', toCSV(scenarioThroughGybeAback(config)));
 
-  console.log('Done. Output written to /out.\n');
+    // One polar per named boat (ADR 0054), not just 'default': out/polar.csv
+    // used to be the single CI-gated snapshot, computed from whatever
+    // createConfig() resolves to with no boat argument. Each of the four
+    // named boats now gets its own out/polar_<boat>.csv, gated the same way
+    // (.github/workflows/ci.yml). 'default' is computed from the SAME
+    // `config` object runAsserts just ran against, so its own file is
+    // unchanged from the pre-0054 out/polar.csv; the other three are each a
+    // fresh createConfig({ boat }).
+    console.log('Computing + exporting a polar.csv per boat...');
+    for (const boat of Object.keys(BOAT_VARIANTS)) {
+      const boatConfig = boat === config.boat ? config : createConfig({ boat });
+      writeFileSync(`out/polar_${boat}.csv`, polarCsvFor(boatConfig));
+      console.log(`  out/polar_${boat}.csv`);
+    }
 
-  if (failCount > 0) {
-    console.error(`FAILED: ${failCount} assertion(s) did not pass.`);
+    console.log('Done. Output written to /out.\n');
+  }
+
+  if (failCount > 0 || promotionCount > 0) {
+    if (failCount > 0) console.error(`FAILED: ${failCount} assertion(s) did not pass.`);
+    if (promotionCount > 0) console.error(`FAILED: ${promotionCount} xfail assertion(s) unexpectedly passed (promotion candidates).`);
     process.exit(1);
   }
-  console.log('ALL TESTS PASSED.');
+  console.log('ALL TESTS PASSED.' + (xfail.length ? ` (${xfail.length} known limitation(s) tracked as xfail, all still failing as expected.)` : ''));
 }
 
 main();

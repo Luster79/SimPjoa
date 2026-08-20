@@ -34,7 +34,8 @@
       "Bash(awk -F, 'NR==1 || \\($1 ~ /^\\(40|90|130|170\\)$/ && $2==\"6\"\\)' /home/Luster/SimPjoa/out/polar.csv)",
       "Bash(cp /tmp/probe_sign.mjs /home/Luster/SimPjoa/probe_sign.mjs)",
       "Bash(node probe_sign.mjs)",
-      "Bash(rm probe_sign.mjs)"
+      "Bash(rm probe_sign.mjs)",
+      "Bash(node harness/acceptance-manual.js --boat=default)"
     ]
   }
 }
