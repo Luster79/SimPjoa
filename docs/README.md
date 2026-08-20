@@ -1,6 +1,6 @@
 # docs/ — index
 
-*Last reviewed: 2026-08-19*
+*Last reviewed: 2026-08-20*
 
 `ARCHITECTURE_physics_core_EN.md` in the repo root is the context map for the
 code. This file is the map for everything in `docs/`.
@@ -195,6 +195,26 @@ either — the direct test ran 5+ hours unfinished and was abandoned rather
 than left blocking the decision. See `docs/adr/0050` for the full sweep
 table.
 
+**2026-08-19/20 (ADR 0051/0052/0053): the flagged gaps close, and PJOA Fat
+becomes the strongest evidence yet for the criterion itself.** ADR 0051
+re-screened the older, already-zeroed `heelClrSign`/`yawHeelSign` pair on
+the new baseline (including for the first time against `asymmetryLiftCoeff`
+active on `slim`/`fat`) — still inert, zero interaction, both terms stay at
+0. ADR 0052 built the genuinely missing heel-driven mechanism
+(`hull.heelLiftCoeff`, keyed on `sin(phi)` rather than construction bias)
+and found no value worth adopting: real cost on the positive side
+(AC-1.1/1.2 regression), flat-to-noise benefit on the negative side. ADR
+0053 then closed ADR 0050's own two flagged gaps directly: `slim` and
+`fat` both pass the full CI-gated acceptance suite as their own targets,
+98/98, zero regressions (3 and 5 xfail promotions respectively); and the
+obtaining-course walk (TWA90→180, 10deg step) that `default` still cannot
+complete (stalls at TWA160.3) is completed by BOTH — `fat` lands within
+1deg of the actual target in minutes, `slim` lands at the edge of the
+±10deg tolerance at ~90min/end of search cost. `fat` obtaining AND holding
+a course across the whole TWA90-180 band, not just at isolated points, is
+the strongest single result yet against the project's own success
+criterion.
+
 **Out of scope, unsolved:** TWA < 50, and whether a trim that holds heading
 while decaying to ~20% of its speed counts as holding at all.
 
@@ -279,6 +299,7 @@ Append-only. Never edit an old ADR; supersede it with a new one.
 | 0050 | The asymmetry coefficient search finds two windows, not one; ship both as named boats -- owner-directed overnight sweep (0-0.05) scored on corridor width AND K3's two close-hauled checks finds the response non-monotonic: a wide plateau (0-~0.008, best 0.004) and a narrow window ([0.014,0.015], best 0.0145, ~0.001 wide -- too fragile a target for an unsourced parameter). Neither dominates; both ship as `BOAT_VARIANTS` (`slim`=0.004, `fat`=0.0145), reusing `default`'s own CSV since only this one coefficient differs. `default` untouched (still 0). Neither variant has its own gated acceptance run; the obtaining-course walk was not re-verified for either (5+h unfinished, abandoned) |
 | 0051 | The existing heel-coupled pair (`heelClrSign`/`yawHeelSign`) reconfirmed inert, on the current baseline -- re-screens T3's four-combination matrix (`Archive/work-order-2026-08-05-sterownosc.md`) nine ADRs later, including for the first time against `asymmetryLiftCoeff` active on `slim`/`fat`. AC-4.2a/b untouched by any combination on any of the three boats, reproducing T3's structural finding exactly; AC-1.1/1.2 regression pattern also matches. New measurement: the pair has ZERO interaction with `asymmetryLiftCoeff`'s deep-band corridor gain at TWA170, both ends, all combinations (`fat` flat at 18/162 holders, `slim` flat at 10-11, in every cell). Both terms stay at 0. Also corrects the work order's own first-draft scoping error: the deep band (TWA150-180) is the wrong search grid for a `sin(phi)`-coupled term (heel there is only ~4deg) -- AC-1.1/1.2/4.2's own TWA40-110 grids are where heel is large enough to matter |
 | 0052 | Heel-induced hull asymmetry lift: a real, distinct mechanism, screened but not adopted -- the OTHER heel-driven asymmetry the same conversation surfaced: even a hull symmetric by construction stops being symmetric port/starboard once it heels (asymmetric waterplane, general yacht-design literature, no boat-specific magnitude -- same evidentiary tier as ADR 0049 itself). `hull.heelLiftCoeff` wired into `hullSideForce`, keyed on `sin(phi)` instead of `asymmetryLiftCoeff`'s `end`, default 0 (verified no-op, `out/polar.csv` byte-identical). Screened -0.2 to +0.2 on the corrected TWA40-110 grid (acceptance criteria) plus TWA170 (deep-band interaction with `asymmetryLiftCoeff`, slim/fat): positive values regress AC-1.1/1.2 monotonically from 0.05 up; negative values show no regression but no benefit either; deep-band interaction is flat-to-noise-level at every magnitude in either direction. Unlike ADR 0049, no benefit was found anywhere to weigh against the cost -- kept at its no-op default, R3's rollover check deferred since there is no nonzero candidate yet to check it against |
+| 0053 | PJOA Slim and Fat close both halves of the success criterion on TWA90-180, at very different cost -- closes ADR 0050's own flagged gaps: neither variant had run the full CI-gated acceptance suite as its own target, and the obtaining-course walk was never re-verified for either. Both now do: `slim`/`fat` each pass 98/98 non-xfail assertions with zero regressions (3 and 5 xfail promotions respectively, reproducing ADR 0049's own screen exactly). The 10deg-step obtaining walk (TWA90->TWA180, TWS6) that `default` cannot complete (stalls at TWA160.3, no reachable trim to 180) is completed by BOTH variants -- `fat` lands within 1deg of the target in ~7min/end, `slim` lands at the edge of the +-10deg tolerance in ~90min/end. Both close the criterion's two halves (obtain + hold) across the whole band, not just at isolated points; `fat` does so with materially more margin |
 
 ## Open work
 

@@ -84,7 +84,7 @@ function walkToCourse(config, fromTwa, toTwa, tws, end, stepDeg = 10) {
     state = found.hold.finalState;
     lastControls = found.controls;
     carried = found.trim;
-    legs.push({ wp, found: true, reached: found.reached, capsized: found.hold.capsized, v: found.hold.speedRatio });
+    legs.push({ wp, found: true, reached: found.reached, capsized: found.hold.capsized, v: found.hold.speedRatio, trim: found.trim });
     if (found.hold.capsized) break;
   }
   const final = lastControls ? holdsCourse(config, lastControls, state, { windowSeconds: 300 }) : null;
