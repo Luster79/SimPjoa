@@ -235,7 +235,7 @@ function polarRow(config, twa, tws, best) {
     // polar-optimal trim" — the operating point S1's helm-balance assertions
     // are defined at. Deliberately NOT added to the exported CSV: that
     // header is written out explicitly in run_tests.js and ui/app.js, so the
-    // byte-gated out/polar.csv is unaffected.
+    // byte-gated out/polar_<boat>.csv files (ADR 0054) are unaffected.
     bestCrewPos: best.crewPos,
     // bestTackX (S2): like bestCrewPos, reported on the row but deliberately
     // NOT added to the exported CSV header, which is written out explicitly

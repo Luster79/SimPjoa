@@ -1,7 +1,9 @@
 parameter,value,note
-# PJOA FOLK, the owner's own boat (pjoa.eu/2020/10/03/folk-pjoa/), 2026-08-04.
-# Values marked MEASURED are published by the designer; the rest carry the note
-# that says how they were derived. See docs/adr/0021.
+# PJOA Fat -- the PJOA FOLK (pjoa.eu/2020/10/03/folk-pjoa/) with the narrow,
+# high-reward end of ADR 0050's hull-asymmetry-lift sweep. Identical to
+# example_proa_parameters.csv in every row except asymmetry_lift_coeff --
+# see that file for the geometry's own provenance and docs/adr/0021 for why
+# this is the real boat rather than a Dierking estimate.
 boat_length_m,5.0,"MEASURED: pjoa.eu ""Lenght: 500cm"" (was 5.5, a Dierking T2/Wa'apa estimate)"
 hull_beam_m,0.52,"OWNER (from memory): 50-55 cm at the GUNWALE - it cannot be the waterline beam, see docs/adr/0022. Drawing only; no physics module reads hull.beam"
 displacement_kg,165.0,"MEASURED-derived: rigged 85-90 kg less the 13 kg ama = ~74 kg of boat, plus one 90 kg crew"
@@ -12,4 +14,4 @@ beam_overall_m,3.1,"MEASURED: pjoa.eu ""Beam: 310cm"" (was 2.5)"
 sail_area_m2,8.0,"MEASURED: pjoa.eu ""Crab law sail: 8 sqm"" (10 m2 is an option; was 12)"
 sail_apex_angle_deg,50.0,NOT PUBLISHED - kleszcz kraba 45-60, unchanged
 CE_height_m,2.0,"CORROBORATED: rig height 590/540cm; a crab claw peaked near the masthead has its centroid near 2 m. Unchanged"
-asymmetry_lift_coeff,0,"FREE-band, not a measurement -- see docs/adr/0049/0050. This 'default' variant is the CI/regression anchor (kept at 0 so every historical ADR figure keeps its meaning) and is DEPRECATED for new sailing/testing since ADR 0053 -- see pjoa_slim_parameters.csv / pjoa_fat_parameters.csv for the variants worth testing."
+asymmetry_lift_coeff,0.0145,"FREE-band, not a measurement -- builder testimony for the mechanism/direction only (docs/adr/0049), magnitude from ADR 0050's overnight sweep: the NARROW window's centre, ~0.001 wide on the coefficient axis (K3 close-hauled margins 5.0/7.3/5.0deg, the largest corridor measured). Full suite 98/98 (0 regressions, 5 xfail promotions) and a clean TWA90-180 obtaining walk (TWA179.1, ~7min/end) both verified in docs/adr/0053 -- the strongest evidence yet for the project's own success criterion."

@@ -117,15 +117,15 @@ Polar mode runs `harness/polar.js`'s search in-browser against the live
 config with a progress readout. It is the same grid-search, but not the
 same grid: the demo uses `SWEEP_FULL` (TWS 4/6/8/10), while
 `run_tests.js` uses `SWEEP_CI` (4/6/10) — both named in `harness/polar.js`,
-which explains why. So expect 56 rows here against `out/polar.csv`'s 41,
-and a run on the order of four to five minutes.
+which explains why. So expect 56 rows here against `out/polar_<boat>.csv`'s
+41, and a run on the order of four to five minutes.
 
 The sweep yields between individual trials rather than between headings,
 so the tab stays responsive throughout, and leaving the panel cancels it.
 A completed polar is stored with the boat design that produced it (see
 the boat panel), keyed on the physics fields, so reopening a saved boat
 brings its polar back instead of recomputing it. "Export CSV" downloads
-the result in the same column layout as `out/polar.csv`.
+the result in the same column layout as `out/polar_<boat>.csv`.
 
 ### Proa identity graphics (round 11, `ROUND11_proa_identity_graphics.md`)
 

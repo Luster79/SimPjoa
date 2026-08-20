@@ -347,10 +347,12 @@ for a proof that a neighbouring item in its own work order invalidated hours
 after it was written.
 ## Conventions worth knowing before changing physics
 
-- **`out/polar.csv` is byte-gated in CI.** Any change to the model or the
-  search will fail that gate once, by design. Review the diff; if it is
-  intended, commit the regenerated file with the change. Do not work around the
-  gate.
+- **`out/polar_<boat>.csv` is byte-gated in CI, one file per named boat**
+  (ADR 0054 — was a single `out/polar.csv` for `default` only). `run_tests.js`
+  writes all four every full run. Any change to the model or the search will
+  fail the gate once, by design, on whichever boat(s) it touches. Review the
+  diff; if it is intended, commit the regenerated file(s) with the change. Do
+  not work around the gate.
 - **`dist/simulator_standalone.html` is a committed build artifact.** Commit
   sources first, then rebuild and commit `dist/` separately — that way the
   version stamp is a clean commit hash rather than `<hash>+dirty`.
@@ -360,20 +362,20 @@ after it was written.
 - **Re-anchoring an assertion band is normal after an intended physics change;
   re-picking a probe until it agrees is not.** If a claim only holds at a
   hand-chosen operating point, measure it across a grid and report the tally.
-- **There are four named boats, from two CSVs.** `createConfig()` builds
-  `default` (the PJOA FOLK with the ADR 0029 ama, from `data/
-  example_proa_parameters.csv`); `createConfig({ boat: 'old' })` builds the
-  same boat before that revision, from `data/proa_parameters_old.csv`. The
-  variant is read *before* the config is assembled — every derived quantity
-  comes from the chosen file — so it is a `createConfig` argument, not a patch
-  field like `sail.aeroTableVersion`. Adding a variant that needs its OWN
-  geometry means adding a CSV, an entry in `BOAT_VARIANTS`, and the file to
-  **both** `tools/bundle.js` and `ui/shims/node-fs.js` (the shim cannot fetch
-  on demand). `slim` and `fat` (ADR 0050) are the exception that proves the
-  rule: they reuse `default`'s own CSV file verbatim and differ from it in
-  exactly one field (`hull.asymmetryLiftCoeff`, applied as a small patch in
-  `createConfig` — see `ASYMMETRY_VARIANT_PATCH`), so neither `tools/
-  bundle.js` nor the shim needed touching.
+- **There are four named boats, each its own CSV** (ADR 0054 — `slim`/`fat`
+  used to reuse `default`'s own file plus a JS-level coefficient patch;
+  `data/pjoa_slim_parameters.csv`/`pjoa_fat_parameters.csv` replace that with
+  full, self-contained files, duplicating the ten geometry rows on purpose —
+  see that ADR for the tradeoff). `createConfig()` builds `default` (the PJOA
+  FOLK with the ADR 0029 ama, from `data/example_proa_parameters.csv`);
+  `createConfig({ boat: 'old' })` builds the same boat before that revision,
+  from `data/proa_parameters_old.csv`. The variant is read *before* the
+  config is assembled — every derived quantity comes from the chosen file —
+  so it is a `createConfig` argument, not a patch field like
+  `sail.aeroTableVersion`. Adding a variant means adding a CSV, an entry in
+  `BOAT_VARIANTS`, and the file to **both** `tools/bundle.js` and
+  `ui/shims/node-fs.js` (the shim cannot fetch on demand) — no exceptions
+  now, every variant pays this cost the same way.
 - **`default` is deprecated (owner, 2026-08-20, after ADR 0053) but not
   removed.** It cannot complete the criterion's own obtaining-course walk
   where `slim`/`fat` both do (ADR 0053) — dropped from the UI's boat

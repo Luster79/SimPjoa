@@ -22,11 +22,13 @@ const DATA_FILES = [
   new URL('../../data/crab_claw_CL_CD_polhamus.csv', import.meta.url).href,
   new URL('../../data/crab_claw_CL_CD_v2.csv', import.meta.url).href,
   new URL('../../data/example_proa_parameters.csv', import.meta.url).href,
-  // Both named boats are pre-fetched, not just the default one: config.js
+  // All four named boats are pre-fetched, not just the default one: config.js
   // picks the file at createConfig() time from the `boat` argument, and this
   // shim cannot fetch on demand (see the top comment). Same trap that broke
   // the dev server when the v2 aero table was added without updating this list.
   new URL('../../data/proa_parameters_old.csv', import.meta.url).href,
+  new URL('../../data/pjoa_slim_parameters.csv', import.meta.url).href,
+  new URL('../../data/pjoa_fat_parameters.csv', import.meta.url).href,
 ];
 
 const cache = new Map();

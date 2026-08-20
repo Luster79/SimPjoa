@@ -44,6 +44,8 @@ const DATA_FILES = {
   'crab_claw_CL_CD_v2.csv': 'data/crab_claw_CL_CD_v2.csv', // round 10, R10-1 — see docs/adr/0003
   'example_proa_parameters.csv': 'data/example_proa_parameters.csv',
   'proa_parameters_old.csv': 'data/proa_parameters_old.csv', // the 'old' boat variant — docs/adr/0029, 0030
+  'pjoa_slim_parameters.csv': 'data/pjoa_slim_parameters.csv', // the 'slim' boat variant — docs/adr/0050, 0054
+  'pjoa_fat_parameters.csv': 'data/pjoa_fat_parameters.csv', // the 'fat' boat variant — docs/adr/0050, 0054
 };
 
 // ---------------------------------------------------------------------

@@ -1,6 +1,6 @@
 # Parameter register — closed by source vs. free in band
 
-*Last reviewed: 2026-08-19*
+*Last reviewed: 2026-08-20*
 
 K6, `Archive/work-order-2026-08-09-kryterium-bez-wiosla.md`. The project's
 success criterion (`docs/README.md`) grants a licence: physical
@@ -71,7 +71,7 @@ whether the project is licensed to move it without new source evidence.
 | **`hull.heelClrShiftCoeff`** | 0.15 | Order of `crewForeAftTrimCoeff`; magnitude untested beyond this one value | K4 candidate |
 | **`hull.heelClrSign`** | 0 | Tested at {-1,0,+1}; **0 is a documented negative result at ONE coefficient**, not a proof no sign helps | K4 candidate |
 | **`sail.yawHeelSign`** | 0 | Same status as `heelClrSign` — tested paired, not solo, not at other magnitudes | K4 candidate |
-| **`hull.asymmetryLiftCoeff`** | 0 on `default`/`old`; 0.004 on `slim`; 0.0145 on `fat` | Builder testimony (PJOA FOLK-specific, owner-authority source) for the mechanism and its direction, no citation for a magnitude. ADR 0050's overnight sweep (0-0.05, both K3 close-hauled checks + the full deep-course band) found the response NON-MONOTONIC: a narrow window [0.014,0.015] and a wide plateau 0-0.008, neither dominating the other. Rather than pick one, both ship as named `BOAT_VARIANTS` (`slim`/`fat`) — `default` stays at the field's own literal 0, unchanged, so every pre-existing acceptance figure keeps its meaning | ADR 0049, 0050 |
+| **`hull.asymmetryLiftCoeff`** | 0 on `default`/`old`; 0.004 on `slim`; 0.0145 on `fat` | Builder testimony (PJOA FOLK-specific, owner-authority source) for the mechanism and its direction, no citation for a magnitude. ADR 0050's overnight sweep (0-0.05, both K3 close-hauled checks + the full deep-course band) found the response NON-MONOTONIC: a narrow window [0.014,0.015] and a wide plateau 0-0.008, neither dominating the other. Rather than pick one, both ship as named `BOAT_VARIANTS` (`slim`/`fat`) — `default` stays at the field's own literal 0, unchanged, so every pre-existing acceptance figure keeps its meaning. Stored per-boat in each variant's own CSV (`asymmetry_lift_coeff` row, ADR 0054) since 2026-08-20, not a JS-level patch | ADR 0049, 0050, 0054 |
 | **`hull.heelLiftCoeff`** | 0 on every boat | General yacht-design literature for the mechanism's existence/direction (heeled asymmetric waterplane, distinct from `asymmetryLiftCoeff`'s construction bias), no boat-specific magnitude. Screened -0.2 to +0.2: positive values regress AC-1.1/1.2 from 0.05 up; negative values show no regression but no benefit either; deep-band interaction with `asymmetryLiftCoeff` (slim/fat) is flat-to-noise-level at every magnitude tested. No value found worth adopting | ADR 0052 |
 | `hull.lowSpeedSideDamping` | 100 N/(m/s) | Tunable, keeps near-stalled boat from free drift | — |
 | `hull.crossFlowDragCoeff` | 1.1 | Bluff-body cross-flow range | — |

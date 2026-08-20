@@ -1,19 +1,28 @@
 // run_tests.js — runs the full Step 1 test harness. Nonzero exit code on
-// any assertion failure. Writes scenario + polar CSVs to /out.
+// any assertion failure. Writes scenario CSVs (for 'default') and one
+// polar CSV per named boat (ADR 0054) to /out.
 
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { createConfig } from './core/config.js';
+import { createConfig, BOAT_VARIANTS } from './core/config.js';
 import { runAsserts } from './harness/asserts.js';
 import { scenarioSquall, scenarioShunt, scenarioAback, scenarioStop, scenarioThroughGybeAback } from './harness/scenarios.js';
 import { computePolar, SWEEP_CI } from './harness/polar.js';
 import { toCSV } from './harness/export.js';
 
+function polarCsvFor(config) {
+  const polar = computePolar(config, SWEEP_CI);
+  return ['twa,tws,bestSpeed,bestSheetAngle,deltaAngle,bestCamberUse,bestBrailWind']
+    .concat(polar.map((r) => `${r.twa},${r.tws},${r.bestSpeed.toFixed(4)},${r.bestSheetAngle},${r.deltaAngle.toFixed(2)},${r.bestCamberUse},${r.bestBrailWind}`))
+    .join('\n');
+}
+
 // --fast (R7, Archive/work-order-2026-07-22.md): skips every computePolar-
 // backed assertion (see harness/asserts.js's `slow` param) and the CSV/
 // polar export below — both dominated by grid-search settle-to-steady
-// simulations, the slow part of the ~6min full run. Target <~20s, for a
-// quick inner-loop check; `npm run test:full` (no flag) runs everything,
-// including the out/polar.csv byte-gate CI depends on.
+// simulations, the slow part of the full run (now ~4 polars deep, ADR 0054,
+// so longer than the original ~6min). Target <~20s, for a quick inner-loop
+// check; `npm run test:full` (no flag) runs everything, including the
+// out/polar_<boat>.csv byte-gates CI depends on.
 function main() {
   const fast = process.argv.includes('--fast');
 
@@ -64,12 +73,20 @@ function main() {
     writeFileSync('out/scenario_stop.csv', toCSV(scenarioStop(config)));
     writeFileSync('out/scenario_through_gybe_aback.csv', toCSV(scenarioThroughGybeAback(config)));
 
-    console.log('Computing + exporting polar.csv...');
-    const polar = computePolar(config, SWEEP_CI);
-    const polarCsv = ['twa,tws,bestSpeed,bestSheetAngle,deltaAngle,bestCamberUse,bestBrailWind']
-      .concat(polar.map((r) => `${r.twa},${r.tws},${r.bestSpeed.toFixed(4)},${r.bestSheetAngle},${r.deltaAngle.toFixed(2)},${r.bestCamberUse},${r.bestBrailWind}`))
-      .join('\n');
-    writeFileSync('out/polar.csv', polarCsv);
+    // One polar per named boat (ADR 0054), not just 'default': out/polar.csv
+    // used to be the single CI-gated snapshot, computed from whatever
+    // createConfig() resolves to with no boat argument. Each of the four
+    // named boats now gets its own out/polar_<boat>.csv, gated the same way
+    // (.github/workflows/ci.yml). 'default' is computed from the SAME
+    // `config` object runAsserts just ran against, so its own file is
+    // unchanged from the pre-0054 out/polar.csv; the other three are each a
+    // fresh createConfig({ boat }).
+    console.log('Computing + exporting a polar.csv per boat...');
+    for (const boat of Object.keys(BOAT_VARIANTS)) {
+      const boatConfig = boat === config.boat ? config : createConfig({ boat });
+      writeFileSync(`out/polar_${boat}.csv`, polarCsvFor(boatConfig));
+      console.log(`  out/polar_${boat}.csv`);
+    }
 
     console.log('Done. Output written to /out.\n');
   }

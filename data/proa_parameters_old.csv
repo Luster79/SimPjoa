@@ -15,3 +15,4 @@ beam_overall_m,3.1,"MEASURED: pjoa.eu ""Beam: 310cm"" (was 2.5)"
 sail_area_m2,8.0,"MEASURED: pjoa.eu ""Crab law sail: 8 sqm"" (10 m2 is an option; was 12)"
 sail_apex_angle_deg,50.0,NOT PUBLISHED - kleszcz kraba 45-60, unchanged
 CE_height_m,2.0,"CORROBORATED: rig height 590/540cm; a crab claw peaked near the masthead has its centroid near 2 m. Unchanged"
+asymmetry_lift_coeff,0,"FREE-band, not a measurement -- see docs/adr/0049/0050. Never screened on this pre-ADR-0029 hull; 0 is the untested/no-op default, not a finding."

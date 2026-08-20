@@ -69,8 +69,8 @@ in the project root is the context map — module layout (`/core`, `/harness`, `
 frame/sign conventions (world vs. boat vs. active-bow frame, `state.end`), and the physics
 modules (aero, hydro, stability/roll, sheet/shunt state machines). `docs/README.md`
 is the index for everything else — ADRs, work orders and their findings — and states
-the conventions that bind physics changes (the `out/polar.csv` byte gate, the
-source-then-`dist/` commit order, and what `xfail` means here).
+the conventions that bind physics changes (the per-boat `out/polar_<boat>.csv`
+byte gates, the source-then-`dist/` commit order, and what `xfail` means here).
 Consult both before modifying anything under `/core` or `/harness`, or before changing the
 shunt/roll state machines in the UI — those all depend on the conventions they document.
 

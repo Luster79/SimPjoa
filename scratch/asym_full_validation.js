@@ -47,7 +47,7 @@ function main() {
   const polarCsv = ['twa,tws,bestSpeed,bestSheetAngle,deltaAngle,bestCamberUse,bestBrailWind']
     .concat(polar.map((r) => `${r.twa},${r.tws},${r.bestSpeed.toFixed(4)},${r.bestSheetAngle},${r.deltaAngle.toFixed(2)},${r.bestCamberUse},${r.bestBrailWind}`))
     .join('\n');
-  const baseline = readFileSync('out/polar.csv', 'utf8').trim().split('\n');
+  const baseline = readFileSync('out/polar_default.csv', 'utf8').trim().split('\n');
   const rows = polarCsv.split('\n');
   let diffCount = 0, worstSpeedDelta = 0, worstRow = '', closeHauledWorst = 0, closeHauledRow = '';
   const deltas = [];
