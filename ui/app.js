@@ -126,7 +126,7 @@ const TRANSLATIONS = {
     'hint.boatDesign': 'Physical design parameters — hull, ama, sail, rudder, stability. Changes apply on "Apply" and reset the boat\'s motion state.',
     'tag.physics': 'affects physics', 'tag.graphics': 'drawing/UI only',
     'btn.applyBoat': 'Apply', 'btn.resetBoatDefaults': 'Reset to defaults',
-    'lbl.boatVariant': 'Boat', 'opt.boatDefault': 'PJOA v2',
+    'lbl.boatVariant': 'Boat', 'opt.boatDefault': 'PJOA v2 (deprecated)',
     'opt.boatOld': 'PJOA FOLK \u2014 before the ama revision',
     'opt.boatSlim': 'PJOA Slim', 'opt.boatFat': 'PJOA Fat',
     'hint.boatVariant': 'Switching rebuilds the boat from its own parameter file and discards edits below.',

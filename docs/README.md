@@ -374,6 +374,16 @@ after it was written.
   exactly one field (`hull.asymmetryLiftCoeff`, applied as a small patch in
   `createConfig` — see `ASYMMETRY_VARIANT_PATCH`), so neither `tools/
   bundle.js` nor the shim needed touching.
+- **`default` is deprecated (owner, 2026-08-20, after ADR 0053) but not
+  removed.** It cannot complete the criterion's own obtaining-course walk
+  where `slim`/`fat` both do (ADR 0053) — dropped from the UI's boat
+  selector and out of scope for new manual testing. Still the literal
+  fallback `createConfig()` resolves to with no `boat` argument, because
+  the entire existing acceptance suite and every historical ADR's own
+  cited figures resolve through that exact key — see `core/config.js`'s
+  own comment on `BOAT_VARIANTS` before touching this further; switching
+  the gate's own anchor to `fat` is a separate, much bigger decision this
+  note does not make.
 
 ### Lessons this project paid for
 

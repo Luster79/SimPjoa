@@ -269,6 +269,22 @@ export const BOAT_VARIANTS = {
   fat: 'example_proa_parameters.csv',
 };
 
+// DEPRECATED (owner, 2026-08-20, after ADR 0053): 'default' — asymmetryLiftCoeff
+// pinned at 0 — cannot complete the criterion's own obtaining-course walk
+// (TWA90->180 stalls at TWA160.3, both ends, no reachable trim past it),
+// where BOTH `slim` and `fat` do. Removed from the UI's boat-selection list
+// and out of scope for new manual sailing/comparison work — `fat` and
+// `slim` are the variants worth testing going forward.
+//   Kept alive here, unchanged, ONLY because `createConfig()`'s own no-arg
+// fallback and the ENTIRE existing acceptance suite (`run_tests.js`, the
+// `out/polar.csv` byte-gate, every historical ADR's own cited figures)
+// resolve through this exact key — deleting the entry would break all of
+// that immediately, with nothing standing in to replace it. Swapping the
+// gate's own anchor to `fat` is a real, much bigger decision (regenerate
+// `out/polar.csv`, resolve the xfail promotions that follow, and recast
+// what every prior ADR's numbers are relative to) that this comment does
+// NOT make — see ADR 0053's own "Consequences" and ask before doing it.
+
 // ADR 0050's overnight coefficient sweep found the response landscape
 // non-monotonic: a narrow, high-reward window at [0.014, 0.015] (best
 // corridor and close-hauled margins, but only ~0.001 wide on the
